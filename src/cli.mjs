@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { ensureDirs, findLlamaServer, hasHomebrew } from "./config.mjs";
+import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { createProfileFromModel, normalizeProfile } from "./profiles.mjs";
 import { readProfile, saveProfile, deleteProfile, loadProfiles } from "./profiles.mjs";
@@ -22,6 +22,7 @@ export async function run(argv) {
   if (command === "version" || command === "--version" || command === "-v") return printVersion();
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
+  if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
 
   throw new Error(`Unknown command: ${command}. Run offgrid-ai help`);
 }
@@ -509,18 +510,46 @@ async function onboardFlow() {
     // 1. Homebrew
     const hasBrew = await hasHomebrew();
     if (!hasBrew) {
-      const install = await prompt.yesNo("Homebrew is required. Install it?", true);
-      if (!install) { console.log(pc.red("offgrid-ai needs Homebrew. Install it from https://brew.sh")); return; }
-      console.log(pc.dim("Install Homebrew from https://brew.sh, then run offgrid-ai again."));
-      return;
+      const install = await prompt.yesNo("Homebrew is required. Install it now?", true);
+      if (!install) {
+        console.log(pc.red("offgrid-ai needs Homebrew to install dependencies."));
+        console.log(pc.dim("Install it from https://brew.sh, then run offgrid-ai again."));
+        return;
+      }
+      console.log(pc.cyan("Installing Homebrew..."));
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      try {
+        await promisify(execFile)("/bin/bash", ["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""], { stdio: "inherit" });
+        // Add brew to PATH for this session
+        const brewPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
+        for (const p of brewPaths) {
+          if (existsSync(p)) {
+            process.env.PATH = `${p}:${process.env.PATH}`;
+            break;
+          }
+        }
+      } catch (err) {
+        console.log(pc.red(`Homebrew installation failed: ${err.message}`));
+        console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
+        return;
+      }
+      if (!(await hasHomebrew())) {
+        console.log(pc.red("Homebrew was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
+        return;
+      }
     }
     console.log(pc.green("✓ Homebrew found"));
 
     // 2. llama-server
     let llamaBinary = await findLlamaServer();
     if (!llamaBinary) {
-      const install = await prompt.yesNo("llama-server is required. Install via Homebrew?", true);
-      if (!install) { console.log(pc.red("offgrid-ai needs llama-server to run local models.")); return; }
+      const install = await prompt.yesNo("llama-server is required to run local models. Install via Homebrew?", true);
+      if (!install) {
+        console.log(pc.red("offgrid-ai needs llama-server to run local models."));
+        console.log(pc.dim("Install it manually: brew install llama.cpp"));
+        return;
+      }
       console.log(pc.cyan("Installing llama.cpp..."));
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
@@ -528,36 +557,173 @@ async function onboardFlow() {
         await promisify(execFile)("brew", ["install", "llama.cpp"], { stdio: "inherit" });
         llamaBinary = await findLlamaServer();
       } catch (err) {
-        console.log(pc.red(`Failed: ${err.message}`));
+        console.log(pc.red(`Failed to install llama.cpp: ${err.message}`));
+        return;
+      }
+      if (!llamaBinary) {
+        console.log(pc.yellow("llama.cpp installed but llama-server not found. You may need to restart your terminal."));
         return;
       }
     }
     console.log(pc.green(`✓ llama-server: ${llamaBinary}`));
 
-    // 3. Check for models
+    // 3. Model backends — at least one is mandatory
     const ggufModels = await scanGgufModels();
     const managedModels = await scanManagedModels();
     const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);
+    const hasModels = ggufModels.length > 0 || totalManaged > 0;
 
-    if (ggufModels.length > 0) {
-      console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"} in LM Studio`));
-    }
-    for (const { backendId, models } of managedModels) {
-      if (models.length > 0) {
-        console.log(pc.green(`✓ ${BACKENDS[backendId].label}: ${models.length} model${models.length === 1 ? "" : "s"}`));
+    if (hasModels) {
+      // They already have models — show what was found
+      if (ggufModels.length > 0) {
+        console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"}`));
       }
-    }
+      for (const { backendId, models } of managedModels) {
+        if (models.length > 0) {
+          console.log(pc.green(`✓ ${BACKENDS[backendId].label}: ${models.length} model${models.length === 1 ? "" : "s"}`));
+        }
+      }
+    } else {
+      // No models found — offer to install backends that come with models
+      console.log(pc.yellow("\nNo models found."));
+      console.log(pc.dim("You need at least one model backend to use offgrid-ai.\n"));
 
-    if (ggufModels.length === 0 && totalManaged === 0) {
-      console.log(pc.yellow("\nNo models found. Download one in LM Studio, start Ollama, or install oMLX."));
-      console.log(pc.dim("  LM Studio: https://lmstudio.ai"));
-      console.log(pc.dim("  Then run offgrid-ai again."));
+      const backendChoice = await prompt.choice("Install a model backend?", [
+        { value: "ollama", label: "Ollama", hint: "Easiest way — models download on demand" },
+        { value: "lmstudio", label: "LM Studio", hint: "Visual model browser (opens download page)" },
+        { value: "omlx", label: "oMLX", hint: "Apple Silicon optimized" },
+        { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
+      ], "ollama");
+
+      if (backendChoice === "ollama") {
+        console.log(pc.cyan("Installing Ollama via Homebrew..."));
+        const { execFile } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        try {
+          await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
+          console.log(pc.green("✓ Ollama installed"));
+          console.log(pc.cyan("\nStarting Ollama..."));
+          try {
+            await promisify(execFile)("ollama", ["serve"], { stdio: "ignore", detached: true });
+            // Give it a moment to start
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          } catch { /* may already be running */ }
+          console.log(pc.green("Ollama is running."));
+          console.log(pc.yellow("\nPull your first model:"));
+          console.log(pc.bold("  ollama pull gemma3:4b"));
+          console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
+        } catch (err) {
+          console.log(pc.red(`Failed to install Ollama: ${err.message}`));
+          console.log(pc.dim("Install it manually from https://ollama.com"));
+        }
+      } else if (backendChoice === "lmstudio") {
+        console.log(pc.cyan("LM Studio needs to be installed manually."));
+        console.log(pc.bold("\n  Download LM Studio: https://lmstudio.ai"));
+        console.log(pc.dim("Then browse and download models inside LM Studio, and run offgrid-ai again."));
+      } else if (backendChoice === "omlx") {
+        console.log(pc.cyan("Installing oMLX via pip..."));
+        const { execFile } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        try {
+          await promisify(execFile)("pip3", ["install", "omlx"], { stdio: "inherit" });
+          console.log(pc.green("✓ oMLX installed"));
+          console.log(pc.yellow("\nStart oMLX server:"));
+          console.log(pc.bold("  omlx serve"));
+          console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
+        } catch (err) {
+          console.log(pc.red(`Failed to install oMLX: ${err.message}`));
+          console.log(pc.dim("Install it manually: pip3 install omlx"));
+        }
+      } else {
+        console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
+      }
       return;
     }
 
-    console.log(pc.green("\nSetup complete! Run offgrid-ai to pick and run a model."));
+    console.log(pc.green("\n✓ Setup complete! Run offgrid-ai to pick and run a model."));
   } finally {
     prompt.close();
+  }
+}
+
+// ── Uninstall ───────────────────────────────────────────────────────────────
+
+async function uninstallCommand(argv) {
+  if (!process.stdin.isTTY) {
+    // Non-interactive: remove everything
+    await removeDataDir();
+    removeSelf();
+    return;
+  }
+
+  startInteractive("offgrid-ai uninstall");
+  const prompt = createPrompt();
+  try {
+    console.log(pc.bold("offgrid-ai uninstall\n"));
+
+    // Stop any running servers first
+    const running = await runningProfiles();
+    if (running.length > 0) {
+      console.log(pc.yellow(`${running.length} server(s) still running. Stopping...`));
+      for (const { profile } of running) {
+        await stopProfile(profile);
+      }
+      console.log(pc.green("All servers stopped."));
+    }
+
+    // Ask about data
+    const dataDir = DATA_DIR;
+    const keepData = await prompt.yesNo("Keep your profiles and model configurations? (Recommended if you plan to reinstall)", true);
+
+    if (!keepData) {
+      const confirmDelete = await prompt.yesNo(`Delete ${dataDir}? This removes all profiles and settings.`, false);
+      if (confirmDelete) {
+        await removeDataDir();
+      } else {
+        console.log(pc.dim("Keeping data directory."));
+      }
+    } else {
+      console.log(pc.dim(`Keeping ${dataDir} for when you reinstall.`));
+    }
+
+    // Remove the npm package
+    const confirmUninstall = await prompt.yesNo("Uninstall offgrid-ai npm package?", true);
+    if (confirmUninstall) {
+      removeSelf();
+    } else {
+      console.log(pc.dim("Cancelled."));
+    }
+  } finally {
+    prompt.close();
+  }
+}
+
+async function removeDataDir() {
+  const dataDir = DATA_DIR;
+  if (existsSync(dataDir)) {
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      console.log(pc.green(`✓ Removed ${dataDir}`));
+    } catch (err) {
+      console.log(pc.red(`Failed to remove ${dataDir}: ${err.message}`));
+      console.log(pc.dim(`Remove it manually: rm -rf ${dataDir}`));
+    }
+  } else {
+    console.log(pc.dim(`${dataDir} doesn't exist — already clean.`));
+  }
+}
+
+async function removeSelf() {
+  console.log(pc.cyan("\nUninstalling offgrid-ai..."));
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  try {
+    await promisify(execFile)("npm", ["uninstall", "-g", "offgrid-ai"], { stdio: "inherit" });
+    console.log(pc.green("\n✓ offgrid-ai has been uninstalled."));
+    console.log(pc.dim("Reinstall anytime with: npm install -g offgrid-ai"));
+  } catch {
+    console.log(pc.red("\nCould not auto-uninstall. Run this manually:"));
+    console.log(pc.bold("  npm uninstall -g offgrid-ai"));
   }
 }
 
@@ -592,11 +758,12 @@ function printHelp() {
   console.log(`${pc.bold("offgrid-ai")} — privacy-first local LLM runner
 
 Usage:
-  offgrid-ai          Pick a model and run it
-  offgrid-ai status   Show running local models
-  offgrid-ai stop     Stop a running server (or: offgrid-ai stop <id>)
-  offgrid-ai help     Show this help
-  offgrid-ai version  Show version
+  offgrid-ai            Pick a model and run it
+  offgrid-ai status     Show running local models
+  offgrid-ai stop       Stop a running server (or: offgrid-ai stop <id>)
+  offgrid-ai uninstall  Remove offgrid-ai (optionally keep profiles)
+  offgrid-ai help       Show this help
+  offgrid-ai version    Show version
 
 First run? offgrid-ai walks you through installing everything you need.
 After that, just run it — it finds your models, auto-configures, and launches Pi.`);
