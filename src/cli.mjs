@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
@@ -76,23 +76,11 @@ export async function mainFlow() {
     return;
   }
 
-  // 4. Interactive: pick an action
+  // 6. Interactive: pick an action
   startInteractive("offgrid-ai");
   const prompt = createPrompt();
   try {
-    // Build items list
-    const items = [];
-
-    // Existing profiles (quick run)
-    if (profiles.length > 0) {
-      for (const profile of profiles) {
-        const running = await isProfileRunning(profile);
-        const backend = backendFor(profile.backend);
-        items.push({ type: "profile", profile, running });
-      }
-    }
-
-    // New GGUF models (auto-setup)
+    // Show what we found
     const profiledPaths = new Set(profiles.map((p) => p.modelPath).filter(Boolean));
     const newModels = ggufModels.filter((m) => !profiledPaths.has(m.path));
 
@@ -592,6 +580,7 @@ async function onboardFlow() {
         { value: "ollama", label: "Ollama", hint: "brew install ollama — models download on demand" },
         { value: "lmstudio", label: "LM Studio", hint: "brew install --cask lm-studio — visual model browser" },
         { value: "omlx", label: "oMLX", hint: "brew tap jundot/omlx && brew install omlx — Apple Silicon optimized" },
+        { value: "all", label: "Install all three", hint: "Ollama + LM Studio + oMLX" },
         { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
       ], "ollama");
 
@@ -639,6 +628,39 @@ async function onboardFlow() {
           console.log(pc.red(`Failed to install oMLX: ${err.message}`));
           console.log(pc.dim("Install it manually: brew tap jundot/omlx && brew install omlx"));
         }
+      } else if (backendChoice === "all") {
+        let installed = [];
+        // Ollama
+        console.log(pc.cyan("Installing Ollama via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
+          installed.push("Ollama");
+        } catch {
+          console.log(pc.yellow("Ollama installation failed. Install manually from https://ollama.com"));
+        }
+        // LM Studio
+        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
+          installed.push("LM Studio");
+        } catch {
+          console.log(pc.yellow("LM Studio installation failed. Download from https://lmstudio.ai"));
+        }
+        // oMLX
+        console.log(pc.cyan("Installing oMLX via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], { stdio: "inherit" });
+          await promisify(execFile)("brew", ["install", "omlx"], { stdio: "inherit" });
+          installed.push("oMLX");
+        } catch {
+          console.log(pc.yellow("oMLX installation failed. Install manually: brew tap jundot/omlx && brew install omlx"));
+        }
+        if (installed.length > 0) {
+          console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
+          console.log(pc.yellow("Next steps:"));
+          console.log(pc.bold("  ollama pull gemma3:4b"));
+          console.log(pc.dim("Or open LM Studio to browse models, or run: omlx start"));
+        }
       } else {
         console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
       }
@@ -657,7 +679,7 @@ async function uninstallCommand(argv) {
   if (!process.stdin.isTTY) {
     // Non-interactive: remove everything
     await removeDataDir();
-    removeSelf();
+    await removeSelf();
     return;
   }
 

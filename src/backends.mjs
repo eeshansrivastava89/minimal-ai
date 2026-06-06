@@ -57,20 +57,6 @@ export function backendFor(backendId) {
   return backend;
 }
 
-export function inferBackendId(modelOrProfile) {
-  const haystack = [
-    modelOrProfile?.path,
-    modelOrProfile?.modelPath,
-    modelOrProfile?.label,
-    modelOrProfile?.modelAlias,
-    modelOrProfile?.id,
-    modelOrProfile?.providerId,
-    modelOrProfile?.backend,
-  ].filter(Boolean).join(" ").toLowerCase();
-  if (haystack.includes("mtp")) return "llama-cpp-mtp";
-  return "llama-cpp";
-}
-
 export async function backendBinaryFor(backendId) {
   const backend = BACKENDS[backendId ?? "llama-cpp"];
   if (backend.type === "managed-server") return null;

@@ -4,20 +4,6 @@ import pc from "picocolors";
 export { pc };
 export { pc as colors };
 
-export function printHelp() {
-  console.log(`${pc.bold("offgrid-ai")} — privacy-first local LLM runner\n`);
-  console.log("Usage:");
-  console.log("  offgrid-ai              Pick a model and run");
-  console.log("  offgrid-ai models       List profiles and models");
-  console.log("  offgrid-ai run [id]     Run a profile (start server + launch Pi)");
-  console.log("  offgrid-ai stop [id]    Stop a running server");
-  console.log("  offgrid-ai benchmark    Run a benchmark prompt");
-  console.log("");
-  console.log(pc.bold("Run modes (--with):"));
-  console.log("  pi        Launch Pi with the selected model (default)");
-  console.log("  server    Start server only, no harness");
-}
-
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -61,15 +47,6 @@ export function createPrompt() {
 function handleCancel(value) {
   if (isCancel(value)) { cancel("Cancelled."); process.exit(0); }
   return value;
-}
-
-export function relativeTime(date) {
-  const ms = Date.now() - date.getTime();
-  const abs = Math.abs(ms);
-  for (const [label, size] of [["day", 86400000], ["hour", 3600000], ["minute", 60000], ["second", 1000]]) {
-    if (abs >= size) { const v = Math.round(abs / size); return `${v} ${label}${v === 1 ? "" : "s"} ago`; }
-  }
-  return "just now";
 }
 
 export function renderRows(rows) {
