@@ -589,23 +589,23 @@ async function onboardFlow() {
       console.log(pc.dim("You need at least one model backend to use offgrid-ai.\n"));
 
       const backendChoice = await prompt.choice("Install a model backend?", [
-        { value: "ollama", label: "Ollama", hint: "Easiest way — models download on demand" },
-        { value: "lmstudio", label: "LM Studio", hint: "Visual model browser (opens download page)" },
-        { value: "omlx", label: "oMLX", hint: "Apple Silicon optimized" },
+        { value: "ollama", label: "Ollama", hint: "brew install ollama — models download on demand" },
+        { value: "lmstudio", label: "LM Studio", hint: "brew install --cask lm-studio — visual model browser" },
+        { value: "omlx", label: "oMLX", hint: "brew tap jundot/omlx && brew install omlx — Apple Silicon optimized" },
         { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
       ], "ollama");
 
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+
       if (backendChoice === "ollama") {
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
-        const { execFile } = await import("node:child_process");
-        const { promisify } = await import("node:util");
         try {
           await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
           console.log(pc.green("✓ Ollama installed"));
           console.log(pc.cyan("\nStarting Ollama..."));
           try {
             await promisify(execFile)("ollama", ["serve"], { stdio: "ignore", detached: true });
-            // Give it a moment to start
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch { /* may already be running */ }
           console.log(pc.green("Ollama is running."));
@@ -617,22 +617,27 @@ async function onboardFlow() {
           console.log(pc.dim("Install it manually from https://ollama.com"));
         }
       } else if (backendChoice === "lmstudio") {
-        console.log(pc.cyan("LM Studio needs to be installed manually."));
-        console.log(pc.bold("\n  Download LM Studio: https://lmstudio.ai"));
-        console.log(pc.dim("Then browse and download models inside LM Studio, and run offgrid-ai again."));
-      } else if (backendChoice === "omlx") {
-        console.log(pc.cyan("Installing oMLX via pip..."));
-        const { execFile } = await import("node:child_process");
-        const { promisify } = await import("node:util");
+        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
-          await promisify(execFile)("pip3", ["install", "omlx"], { stdio: "inherit" });
+          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
+          console.log(pc.green("✓ LM Studio installed"));
+          console.log(pc.yellow("\nOpen LM Studio to browse and download models, then run offgrid-ai again."));
+        } catch (err) {
+          console.log(pc.red(`Failed to install LM Studio: ${err.message}`));
+          console.log(pc.dim("Download it manually from https://lmstudio.ai"));
+        }
+      } else if (backendChoice === "omlx") {
+        console.log(pc.cyan("Installing oMLX via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], { stdio: "inherit" });
+          await promisify(execFile)("brew", ["install", "omlx"], { stdio: "inherit" });
           console.log(pc.green("✓ oMLX installed"));
           console.log(pc.yellow("\nStart oMLX server:"));
-          console.log(pc.bold("  omlx serve"));
+          console.log(pc.bold("  omlx start"));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch (err) {
           console.log(pc.red(`Failed to install oMLX: ${err.message}`));
-          console.log(pc.dim("Install it manually: pip3 install omlx"));
+          console.log(pc.dim("Install it manually: brew tap jundot/omlx && brew install omlx"));
         }
       } else {
         console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
