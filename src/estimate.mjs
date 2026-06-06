@@ -1,0 +1,113 @@
+import { existsSync, statSync } from "node:fs";
+import { readGgufMetadata } from "./gguf.mjs";
+import pc from "picocolors";
+
+export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
+  const modelBytes = statSync(modelPath).size;
+  const mmprojBytes = mmprojPath && existsSync(mmprojPath) ? statSync(mmprojPath).size : 0;
+  const draftBytes = draftModelPath && existsSync(draftModelPath) ? statSync(draftModelPath).size : 0;
+  const metadata = readGgufMetadata(modelPath);
+  const architecture = metadata["general.architecture"];
+  const prefix = typeof architecture === "string" ? architecture : null;
+  const layers = numberMeta(metadata, prefix && `${prefix}.block_count`);
+  const headKv = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.head_count_kv`);
+  const keyLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.key_length`);
+  const valueLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.value_length`);
+  const slidingWindow = numberMeta(metadata, prefix && `${prefix}.attention.sliding_window`);
+  const slidingWindowPattern = booleanArrayMeta(metadata, prefix && `${prefix}.attention.sliding_window_pattern`);
+  const keyLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.key_length_swa`);
+  const valueLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.value_length_swa`);
+  const bytesK = bytesForCacheType(flags.cacheTypeK);
+  const bytesV = bytesForCacheType(flags.cacheTypeV);
+  const kv = estimateKvBytes({
+    ctxSize: flags.ctxSize,
+    parallel: flags.parallel ?? 1,
+    layers,
+    headKv,
+    keyLength,
+    valueLength,
+    slidingWindow,
+    slidingWindowPattern,
+    keyLengthSwa,
+    valueLengthSwa,
+    bytesK,
+    bytesV,
+  });
+  const overheadBytes = 1024 ** 3;
+  return {
+    modelBytes,
+    mmprojBytes,
+    draftBytes,
+    kvBytes: kv.bytes,
+    overheadBytes,
+    totalBytes: modelBytes + mmprojBytes + draftBytes + kv.bytes + overheadBytes,
+    note: kv.note,
+  };
+}
+
+function estimateKvBytes(input) {
+  const { ctxSize, parallel, layers, bytesK, bytesV } = input;
+  if (!layers || !ctxSize || !bytesK || !bytesV) {
+    return { bytes: 0, note: "KV estimate unavailable: missing GGUF architecture metadata.", mode: "unknown" };
+  }
+
+  const canLayer = input.headKv && input.keyLength && input.valueLength;
+  if (!canLayer) return { bytes: 0, note: "KV estimate unavailable: missing GGUF architecture metadata.", mode: "unknown" };
+
+  if (Array.isArray(input.headKv) || Array.isArray(input.keyLength) || Array.isArray(input.valueLength) || input.slidingWindowPattern?.length) {
+    let total = 0;
+    for (let i = 0; i < layers; i++) {
+      const headKv = valueForLayer(input.headKv, i);
+      let keyLength = valueForLayer(input.keyLength, i);
+      let valueLength = valueForLayer(input.valueLength, i);
+      let layerCtx = ctxSize;
+      if (input.slidingWindowPattern?.[i] && input.slidingWindow) {
+        layerCtx = Math.min(ctxSize, input.slidingWindow);
+        keyLength = input.keyLengthSwa ?? keyLength;
+        valueLength = input.valueLengthSwa ?? valueLength;
+      }
+      if (!headKv || !keyLength || !valueLength) {
+        return { bytes: 0, note: "KV estimate unavailable: incomplete layer-specific GGUF metadata.", mode: "unknown" };
+      }
+      total += layerCtx * parallel * headKv * ((keyLength * bytesK) + (valueLength * bytesV));
+    }
+    return { bytes: total, note: "", mode: input.slidingWindowPattern?.length ? "layered-swa" : "layered" };
+  }
+
+  return {
+    bytes: ctxSize * parallel * layers * input.headKv * ((input.keyLength * bytesK) + (input.valueLength * bytesV)),
+    note: "",
+    mode: "simple",
+  };
+}
+
+function valueForLayer(value, index) {
+  return Array.isArray(value) ? value[index] : value;
+}
+
+function numberMeta(meta, key) {
+  const value = key ? meta[key] : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function numberOrArrayMeta(meta, key) {
+  const value = key ? meta[key] : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (Array.isArray(value) && value.every((item) => typeof item === "number" && Number.isFinite(item))) return value;
+  return undefined;
+}
+
+function booleanArrayMeta(meta, key) {
+  const value = key ? meta[key] : undefined;
+  return Array.isArray(value) && value.every((item) => typeof item === "boolean") ? value : undefined;
+}
+
+function bytesForCacheType(type) {
+  const normalized = String(type ?? "").toLowerCase();
+  if (normalized === "f32") return 4;
+  if (normalized === "f16" || normalized === "bf16") return 2;
+  if (normalized === "q8_0") return 1;
+  if (["q4_0", "q4_1", "iq4_nl"].includes(normalized)) return 0.5;
+  if (["q5_0", "q5_1"].includes(normalized)) return 0.625;
+  return undefined;
+}

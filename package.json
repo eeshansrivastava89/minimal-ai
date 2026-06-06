@@ -1,0 +1,22 @@
+{
+  "name": "offgrid-ai",
+  "version": "0.1.0",
+  "description": "Privacy-first CLI for running local LLMs — discover, configure, run, benchmark",
+  "type": "module",
+  "bin": {
+    "offgrid-ai": "./bin/offgrid-ai.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node bin/offgrid-ai.mjs",
+    "test": "node --test test/*.mjs"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.4.0",
+    "picocolors": "^1.1.0"
+  },
+  "keywords": ["local-llm", "llama-cpp", "ollama", "cli"],
+  "license": "MIT"
+}
