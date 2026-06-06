@@ -179,7 +179,7 @@ add_summary "package.json version" "INFO" "v${current_version}"
 print_ok "Package version: v${current_version}"
 
 # Check if this version already exists on npm
-if npm view "@eeshans/offgrid-ai@$current_version" version 2>/dev/null; then
+if npm view "offgrid-ai@$current_version" version 2>/dev/null; then
   add_summary "Version collision" "FAIL" "v${current_version} already published"
   FAILED_STEP="Version collision"
   print_fail "Version v${current_version} already exists on npm. Bump the version first."
