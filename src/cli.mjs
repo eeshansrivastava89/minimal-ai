@@ -28,27 +28,47 @@ export async function run(argv) {
 export async function mainFlow() {
   await ensureDirs();
 
-  // 1. Check onboarding — is llama-server available?
+  // 1. Check what backends are available
   const llamaBinary = await findLlamaServer();
-  if (!llamaBinary) {
-    if (!process.stdin.isTTY) throw new Error("llama-server not found. Run offgrid-ai interactively to set up.");
-    return await onboardFlow();
-  }
-
-  // 2. Check for any models at all
   const ggufModels = await scanGgufModels();
   const managedModels = await scanManagedModels();
   const profiles = await loadProfiles();
+  const hasAnyBackend = llamaBinary || managedModels.some((m) => m.models.length > 0);
+  const hasAnyModels = ggufModels.length > 0 || managedModels.some((m) => m.models.length > 0);
+  const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);
 
-  if (ggufModels.length === 0 && managedModels.length === 0 && profiles.length === 0) {
-    if (!process.stdin.isTTY) throw new Error("No models found. Download one in LM Studio or start Ollama, then run offgrid-ai.");
+  // 2. Nothing available at all — need onboarding
+  if (!hasAnyBackend && !hasAnyModels && profiles.length === 0) {
+    if (!process.stdin.isTTY) {
+      throw new Error("No local LLM backends found. Run offgrid-ai interactively to set up.");
+    }
+    return await onboardFlow();
+  }
+
+  // 3. Has models but no llama-server (managed backends only)
+  if (!llamaBinary && ggufModels.length > 0) {
+    // They have GGUF files but can't run them — tell them about llama-server
+    console.log(pc.yellow(`${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"} found, but llama-server is not installed.`));
+    console.log(pc.dim("Install it with: brew install llama.cpp"));
+    console.log(pc.dim("Or use Ollama/oMLX for managed model backends."));
+    if (totalManaged === 0 && profiles.length === 0) {
+      return; // Nothing to do without llama-server
+    }
+    // Fall through — they can still use managed backends
+  }
+
+  // 4. No models found at all (but backends exist)
+  if (!hasAnyModels && profiles.length === 0) {
+    if (!process.stdin.isTTY) {
+      throw new Error("No models found. Download one in LM Studio or start Ollama, then run offgrid-ai.");
+    }
     console.log(pc.yellow("No models found."));
     console.log(pc.dim("Download a model in LM Studio (https://lmstudio.ai), start Ollama, or install oMLX."));
     console.log(pc.dim("Then run offgrid-ai again."));
     return;
   }
 
-  // 3. If not interactive, just show status
+  // 5. If not interactive, just show status
   if (!process.stdin.isTTY) {
     await statusCommand();
     return;
