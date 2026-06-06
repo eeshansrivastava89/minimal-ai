@@ -29,7 +29,10 @@
   "scripts": {
     "start": "node bin/offgrid-ai.mjs",
     "test": "node --test test/*.mjs",
-    "prepack": "echo 'Publishing offgrid-ai'"
+    "check:privacy": "node scripts/privacy-gate.mjs",
+    "release:check": "bash scripts/release-check.sh",
+    "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual",
+    "prepack": "npm run check:privacy"
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",

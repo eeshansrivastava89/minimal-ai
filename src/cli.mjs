@@ -19,6 +19,7 @@ export async function run(argv) {
   const [command] = argv;
 
   if (command === "help" || command === "--help" || command === "-h") return printHelp();
+  if (command === "version" || command === "--version" || command === "-v") return printVersion();
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
 
@@ -574,6 +575,19 @@ async function scanManagedModels() {
   return results;
 }
 
+async function printVersion() {
+  const { readFileSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+    console.log(`offgrid-ai v${pkg.version}`);
+  } catch {
+    console.log("offgrid-ai v0.1.0");
+  }
+}
+
 function printHelp() {
   console.log(`${pc.bold("offgrid-ai")} — privacy-first local LLM runner
 
@@ -582,6 +596,7 @@ Usage:
   offgrid-ai status   Show running local models
   offgrid-ai stop     Stop a running server (or: offgrid-ai stop <id>)
   offgrid-ai help     Show this help
+  offgrid-ai version  Show version
 
 First run? offgrid-ai walks you through installing everything you need.
 After that, just run it — it finds your models, auto-configures, and launches Pi.`);
