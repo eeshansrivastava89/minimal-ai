@@ -2,10 +2,10 @@
 # offgrid-ai installer
 #
 # Install:
-#   curl -fsSL https://raw.githubusercontent.com/eeshans/offgrid-ai/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 #
 # Or review first:
-#   curl -fsSL https://raw.githubusercontent.com/eeshans/offgrid-ai/main/install.sh | less
+#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | less
 #
 # What this does:
 #   1. Checks for Node.js
