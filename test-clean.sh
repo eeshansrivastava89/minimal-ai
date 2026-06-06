@@ -1,60 +1,88 @@
 #!/usr/bin/env bash
-# test-clean.sh — run offgrid-ai as a brand new user
-# Strips Homebrew and llama-server from PATH, isolates data dir
+# offgrid-ai clean-room test environment
 #
 # Usage:
-#   ./test-clean.sh              # fresh user, nothing installed
-#   ./test-clean.sh --with-brew  # has Homebrew but no llama-server
-#   ./test-clean.sh --with-llama # has Homebrew + llama-server
+#   source test-clean.sh        # Enter the clean room
+#   offgrid-ai                  # Run commands as a new user
+#   exit-clean                  # Leave the clean room
+#
+# Simulates: brand-new Mac (no Homebrew, no llama-server, no models, no Pi)
+# Your real system is untouched.
 
-set -euo pipefail
-
-CLEAN_HOME="$(mktemp -d /tmp/offgrid-test-home-XXXXXX)"
-CLEAN_DATA="$(mktemp -d /tmp/offgrid-test-data-XXXXXX)"
-
-# Clean PATH: just system dirs, no Homebrew, no user bins
-# This makes `which brew` and `which llama-server` fail
-CLEAN_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-
-# If --with-brew, add Homebrew back
-if [[ "${1:-}" == "--with-brew" || "${1:-}" == "--with-llama" ]]; then
-  if [[ -f /opt/homebrew/bin/brew ]]; then
-    CLEAN_PATH="/opt/homebrew/bin:$CLEAN_PATH"
-  elif [[ -f /usr/local/bin/brew ]]; then
-    CLEAN_PATH="/usr/local/bin:$CLEAN_PATH"
-  fi
+# If already in a clean room, exit first
+if [[ -n "$OFFGRID_CLEAN_ROOM" ]]; then
+  echo "Already in a clean room. Run exit-clean first."
+  return 2>/dev/null || exit 0
 fi
 
-# If --with-llama, add llama-server to PATH
-if [[ "${1:-}" == "--with-llama" ]]; then
-  LLAMA_DIR="$(dirname "$(find /opt/homebrew /usr/local /Users -name 'llama-server' -type f 2>/dev/null | head -1)" 2>/dev/null || true)"
-  if [[ -n "$LLAMA_DIR" && -d "$LLAMA_DIR" ]]; then
-    CLEAN_PATH="$LLAMA_DIR:$CLEAN_PATH"
-  fi
-fi
+# Create clean directories
+TEST_HOME="/tmp/offgrid-test-home"
+TEST_DATA="/tmp/offgrid-test-data"
+rm -rf "$TEST_HOME" "$TEST_DATA"
+mkdir -p "$TEST_HOME" "$TEST_DATA"
 
-# Also add Node.js (need it to run offgrid-ai itself)
+# Find the project directory
+OFFGRID_DIR_ORIG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Build a clean PATH: system dirs + node
 NODE_BIN="$(dirname "$(which node)")"
-CLEAN_PATH="$NODE_BIN:$CLEAN_PATH"
+CLEAN_PATH="$NODE_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Clean room test environment"
-echo "  HOME=$CLEAN_HOME"
-echo "  OFFGRID_DIR=$CLEAN_DATA"
-echo "  PATH=$CLEAN_PATH"
-echo ""
-echo "  Simulating: ${1:-brand new user (nothing installed)}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
+# Create a 'offgrid-ai' wrapper so the command works naturally
+mkdir -p "$TEST_HOME/bin"
+cat > "$TEST_HOME/bin/offgrid-ai" << EOF
+#!/usr/bin/env bash
+exec node "$OFFGRID_DIR_ORIG/bin/offgrid-ai.mjs" "\$@"
+EOF
+chmod +x "$TEST_HOME/bin/offgrid-ai"
 
-OFFGRID_DIR="$CLEAN_DATA" \
-HOME="$CLEAN_HOME" \
-PATH="$CLEAN_PATH" \
-LLAMA_SERVER_BINARY="" \
-node "$(dirname "$0")/bin/offgrid-ai.mjs" "${@:2}"
+# Save original environment
+OLD_HOME="$HOME"
+OLD_OFFGRID_DIR="${OFFGRID_DIR:-}"
+OLD_PATH="$PATH"
+OLD_LLAMA="$LLAMA_SERVER_BINARY"
+OLD_PS1="$PS1"
+
+# Set clean environment
+export HOME="$TEST_HOME"
+export OFFGRID_DIR="$TEST_DATA"
+export PATH="$TEST_HOME/bin:$CLEAN_PATH"
+export LLAMA_SERVER_BINARY=""
+export OFFGRID_CLEAN_ROOM=1
+export PS1='\[\033[1;34m\]🧪 clean\[\033[0m\] \$ '
+
+# Create exit-clean function
+exit-clean() {
+  export HOME="$OLD_HOME"
+  export OFFGRID_DIR="$OLD_OFFGRID_DIR"
+  export PATH="$OLD_PATH"
+  export LLAMA_SERVER_BINARY="$OLD_LLAMA"
+  export PS1="$OLD_PS1"
+  unset OFFGRID_CLEAN_ROOM
+  unset -f exit-clean
+  echo ""
+  echo "  🧹  Clean room exited. Your real environment is restored."
+  echo "  Test data: $TEST_DATA"
+  echo "  Clean up:  rm -rf $TEST_HOME $TEST_DATA"
+}
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Test data: $CLEAN_DATA"
-echo "  Clean up:  rm -rf $CLEAN_HOME $CLEAN_DATA"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ┌──────────────────────────────────────────────────────────────┐"
+echo "  │                                                              │"
+echo "  │   🧪  offgrid-ai clean-room test environment                │"
+echo "  │                                                              │"
+echo "  │   Simulating: brand-new Mac with nothing installed            │"
+echo "  │   No Homebrew · No llama-server · No models · No Pi config   │"
+echo "  │                                                              │"
+echo "  │   Your real system is untouched.                            │"
+echo "  │                                                              │"
+echo "  │   Try these commands:                                        │"
+echo "  │     offgrid-ai          # main interactive flow              │"
+echo "  │     offgrid-ai status   # show running servers              │"
+echo "  │     offgrid-ai stop     # stop a server                    │"
+echo "  │     offgrid-ai help     # show help                         │"
+echo "  │                                                              │"
+echo "  │   Type exit-clean to leave the clean room.                  │"
+echo "  │                                                              │"
+echo "  └──────────────────────────────────────────────────────────────┘"
+echo ""
