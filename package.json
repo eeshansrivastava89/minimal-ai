@@ -1,22 +1,48 @@
 {
-  "name": "offgrid-ai",
+  "name": "@eeshans/offgrid-ai",
   "version": "0.1.0",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, benchmark",
+  "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
   "bin": {
     "offgrid-ai": "./bin/offgrid-ai.mjs"
+  },
+  "files": [
+    "bin/*.mjs",
+    "src/*.mjs",
+    "install.sh"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eeshansrivastava89/offgrid-ai.git"
+  },
+  "homepage": "https://github.com/eeshansrivastava89/offgrid-ai#readme",
+  "bugs": {
+    "url": "https://github.com/eeshansrivastava89/offgrid-ai/issues"
   },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node bin/offgrid-ai.mjs",
-    "test": "node --test test/*.mjs"
+    "test": "node --test test/*.mjs",
+    "prepack": "echo 'Publishing offgrid-ai'"
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
     "picocolors": "^1.1.0"
   },
-  "keywords": ["local-llm", "llama-cpp", "ollama", "cli"],
+  "keywords": [
+    "local-llm",
+    "llama-cpp",
+    "ollama",
+    "cli",
+    "privacy",
+    "llm",
+    "ai"
+  ],
   "license": "MIT"
 }
