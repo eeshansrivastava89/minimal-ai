@@ -12,6 +12,9 @@
     "src/*.mjs",
     "install.sh"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eeshansrivastava89/offgrid-ai.git"
