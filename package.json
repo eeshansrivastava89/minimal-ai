@@ -5,7 +5,7 @@
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
   "bin": {
-    "offgrid-ai": "./bin/offgrid-ai.mjs"
+    "offgrid-ai": "bin/offgrid-ai.mjs"
   },
   "files": [
     "bin/*.mjs",
