@@ -62,7 +62,7 @@ export async function saveProfile(profile) {
   const dir = profileDir(id);
   await mkdir(dir, { recursive: true });
   const now = new Date().toISOString();
-  const existing = await readJsonIfExists(profileJsonPath(id), null);
+  const existing = await readJson(profileJsonPath(id), null);
   const saved = {
     ...profile,
     id,
