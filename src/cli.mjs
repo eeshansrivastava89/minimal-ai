@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { existsSync, statSync, rmSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, statSync, rmSync, readFileSync, appendFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
@@ -587,9 +587,17 @@ async function onboardFlow() {
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
 
+      const lmsAppBundle = "/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms";
+      const lmsBin = join(homedir(), ".lmstudio", "bin");
+
       const ensureLmsOnPath = () => {
-        const lmsBin = join(homedir(), ".lmstudio", "bin");
-        if (!existsSync(join(lmsBin, "lms"))) return;
+        const lmsDest = join(lmsBin, "lms");
+        // Bootstrap lms from app bundle if not yet in ~/.lmstudio/bin
+        if (!existsSync(lmsDest) && existsSync(lmsAppBundle)) {
+          mkdirSync(lmsBin, { recursive: true });
+          copyFileSync(lmsAppBundle, lmsDest);
+        }
+        if (!existsSync(lmsDest)) return;
         if (process.env.PATH.split(":").includes(lmsBin)) return;
         process.env.PATH = `${lmsBin}:${process.env.PATH}`;
         const profileFiles = [join(homedir(), ".zshrc"), join(homedir(), ".bash_profile")];
