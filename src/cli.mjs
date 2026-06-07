@@ -1,4 +1,4 @@
-import { homedir, totalmem } from "node:os";
+import { totalmem } from "node:os";
 import { existsSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
@@ -145,9 +145,8 @@ export async function mainFlow() {
       console.log(pc.bold("\nSaved profiles"));
       for (const profile of profiles) {
         const backend = backendFor(profile.backend);
-        const running = await isProfileRunning(profile);
-        const idx = items.length;
         const colorMap = { "llama-cpp": pc.yellow, "llama-cpp-mtp": pc.blue, "ollama": pc.magenta, "omlx": pc.cyan };
+        const running = await isProfileRunning(profile);
         const c = colorMap[profile.backend] ?? pc.magenta;
         console.log(`  ${running ? pc.green("●") : pc.dim("○")} ${pc.bold(profile.label)} ${c(`[${backend.label}]`)} · ${pc.cyan(profile.modelAlias)}`);
       }

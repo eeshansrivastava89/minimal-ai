@@ -29,10 +29,12 @@
   "scripts": {
     "start": "node bin/offgrid-ai.mjs",
     "test": "node --test test/*.mjs",
+    "lint": "eslint src/*.mjs bin/*.mjs",
     "check:privacy": "node scripts/privacy-gate.mjs",
     "release:check": "bash scripts/release-check.sh",
     "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual",
-    "prepack": "npm run check:privacy"
+    "prepack": "npm run check:privacy",
+    "pretest": "npm run lint"
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
@@ -47,5 +49,10 @@
     "llm",
     "ai"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0"
+  }
 }

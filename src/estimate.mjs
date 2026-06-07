@@ -1,6 +1,5 @@
 import { existsSync, statSync } from "node:fs";
 import { readGgufMetadata } from "./gguf.mjs";
-import pc from "picocolors";
 
 export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
   const modelBytes = statSync(modelPath).size;
