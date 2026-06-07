@@ -40,7 +40,23 @@ export async function mainFlow() {
   const hasAnyModels = ggufModels.length > 0 || managedModels.some((m) => m.models.length > 0);
   const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);
 
-  // 2. Nothing available at all — need onboarding
+  // 2. Check mandatory deps — if anything essential is missing, re-offer onboarding
+  const piInstalled = await hasPi();
+  const brewInstalled = await hasHomebrew();
+  const missingDeps = [];
+  if (!brewInstalled) missingDeps.push("Homebrew");
+  if (!llamaBinary) missingDeps.push("llama-server");
+  if (!piInstalled) missingDeps.push("Pi");
+  if (missingDeps.length > 0) {
+    if (!process.stdin.isTTY) {
+      throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run offgrid-ai interactively to install.`);
+    }
+    console.log(pc.yellow(`Missing: ${missingDeps.join(", ")}`));
+    console.log(pc.dim("offgrid-ai needs these to run. Let's finish setup.\n"));
+    return await onboardFlow();
+  }
+
+  // 3. Nothing available at all — need onboarding
   if (!hasAnyBackend && !hasAnyModels && profiles.length === 0) {
     if (!process.stdin.isTTY) {
       throw new Error("No local LLM backends found. Run offgrid-ai interactively to set up.");
