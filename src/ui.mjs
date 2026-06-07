@@ -1,5 +1,6 @@
 import { cancel, confirm, intro, isCancel, select, text } from "@clack/prompts";
 import pc from "picocolors";
+import { stripVTControlCharacters } from "node:util";
 
 export { pc };
 export { pc as colors };
@@ -50,9 +51,9 @@ function handleCancel(value) {
 }
 
 export function renderRows(rows) {
-  const width = Math.max(...rows.map(([key]) => pc.strip(String(key)).length));
+  const width = Math.max(...rows.map(([key]) => stripVTControlCharacters(String(key)).length));
   return rows.map(([key, value]) => {
-    const visible = pc.strip(String(key)).length;
+    const visible = stripVTControlCharacters(String(key)).length;
     return `${key}${" ".repeat(Math.max(1, width - visible + 2))}${value}`;
   }).join("\n");
 }

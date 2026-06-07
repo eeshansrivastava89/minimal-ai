@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import pc from "picocolors";
+import { stripVTControlCharacters } from "node:util";
 
 export function tailFriendly(rawLogPath, friendlyLogPath) {
   let offset = existsSync(rawLogPath) ? statSync(rawLogPath).size : 0;
@@ -21,7 +22,7 @@ export function tailFriendly(rawLogPath, friendlyLogPath) {
         if (!friendly || seen.has(friendly)) continue;
         seen.add(friendly);
         console.log(friendly);
-        await appendFile(friendlyLogPath, pc.strip(friendly) + "\n", "utf8");
+        await appendFile(friendlyLogPath, stripVTControlCharacters(friendly) + "\n", "utf8");
       }
     } catch { /* friendly logging must never crash */ }
   }, 300);
