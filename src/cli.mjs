@@ -491,6 +491,18 @@ async function runningProfiles() {
 async function onboardFlow() {
   startInteractive("offgrid-ai setup");
   const prompt = createPrompt();
+
+  const { spawn } = await import("node:child_process");
+
+  /** Run a command, stream output to terminal, throw on failure. */
+  const run = (cmd, args, label) => new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${label || cmd} exited with code ${code}`));
+    });
+    child.on("error", (err) => reject(err));
+  });
   try {
     console.log(pc.bold("Welcome to offgrid-ai!"));
     console.log(pc.dim("Let's make sure you have everything you need to run local models.\n"));
@@ -505,10 +517,8 @@ async function onboardFlow() {
         return;
       }
       console.log(pc.cyan("Installing Homebrew..."));
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
       try {
-        await promisify(execFile)("/bin/bash", ["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""], { stdio: "inherit" });
+        await run("/bin/bash", ["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""], "Homebrew");
         // Add brew to PATH for this session
         const brewPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
         for (const p of brewPaths) {
@@ -518,7 +528,7 @@ async function onboardFlow() {
           }
         }
       } catch (err) {
-        console.log(pc.red(`Homebrew installation failed: ${err.message}`));
+        console.log(pc.red(`✗ Homebrew installation failed.`));
         console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
         return;
       }
@@ -539,13 +549,12 @@ async function onboardFlow() {
         return;
       }
       console.log(pc.cyan("Installing llama.cpp..."));
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
       try {
-        await promisify(execFile)("brew", ["install", "llama.cpp"], { stdio: "inherit" });
+        await run("brew", ["install", "llama.cpp"], "llama.cpp");
         llamaBinary = await findLlamaServer();
-      } catch (err) {
-        console.log(pc.red(`Failed to install llama.cpp: ${err.message}`));
+      } catch {
+        console.log(pc.red("✗ Failed to install llama.cpp."));
+        console.log(pc.dim("Install it manually: brew install llama.cpp"));
         return;
       }
       if (!llamaBinary) {
@@ -584,9 +593,6 @@ async function onboardFlow() {
         { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
       ], "lmstudio");
 
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-
       const lmsAppBundle = "/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms";
       const lmsBin = join(homedir(), ".lmstudio", "bin");
 
@@ -597,8 +603,11 @@ async function onboardFlow() {
           mkdirSync(lmsBin, { recursive: true });
           copyFileSync(lmsAppBundle, lmsDest);
         }
-        if (!existsSync(lmsDest)) return;
-        if (process.env.PATH.split(":").includes(lmsBin)) return;
+        if (!existsSync(lmsDest)) {
+          console.log(pc.yellow("  Note: lms CLI will be available after opening LM Studio once."));
+          return false;
+        }
+        if (process.env.PATH.split(":").includes(lmsBin)) return true;
         process.env.PATH = `${lmsBin}:${process.env.PATH}`;
         const profileFiles = [join(homedir(), ".zshrc"), join(homedir(), ".bash_profile")];
         const line = `export PATH="$PATH:$HOME/.lmstudio/bin"`;
@@ -608,29 +617,34 @@ async function onboardFlow() {
           if (content.includes(".lmstudio/bin")) continue;
           appendFileSync(f, `\n${line}\n`);
         }
+        return true;
       };
 
       if (backendChoice === "lmstudio") {
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
-          ensureLmsOnPath();
+          await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
+          const lmsReady = ensureLmsOnPath();
           console.log(pc.green("✓ LM Studio installed"));
           console.log(pc.yellow("\nDownload your first model:"));
-          console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+          if (lmsReady) {
+            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+          } else {
+            console.log(pc.bold("  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
+          }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch (err) {
-          console.log(pc.red(`Failed to install LM Studio: ${err.message}`));
+          console.log(pc.red(`✗ LM Studio installation failed.`));
           console.log(pc.dim("Download it manually from https://lmstudio.ai"));
         }
       } else if (backendChoice === "ollama") {
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
+          await run("brew", ["install", "ollama"], "Ollama");
           console.log(pc.green("✓ Ollama installed"));
           console.log(pc.cyan("\nStarting Ollama..."));
           try {
-            await promisify(execFile)("ollama", ["serve"], { stdio: "ignore", detached: true });
+            await run("ollama", ["serve"], "Ollama serve");
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch { /* may already be running */ }
           console.log(pc.green("Ollama is running."));
@@ -638,55 +652,57 @@ async function onboardFlow() {
           console.log(pc.bold("  ollama pull gemma3:4b"));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch (err) {
-          console.log(pc.red(`Failed to install Ollama: ${err.message}`));
+          console.log(pc.red(`✗ Ollama installation failed.`));
           console.log(pc.dim("Install it manually from https://ollama.com"));
         }
       } else if (backendChoice === "omlx") {
         console.log(pc.cyan("Installing oMLX via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], { stdio: "inherit" });
-          await promisify(execFile)("brew", ["install", "omlx"], { stdio: "inherit" });
+          await run("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
+          await run("brew", ["install", "omlx"], "oMLX");
           console.log(pc.green("✓ oMLX installed"));
           console.log(pc.yellow("\nStart oMLX server:"));
           console.log(pc.bold("  omlx start"));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch (err) {
-          console.log(pc.red(`Failed to install oMLX: ${err.message}`));
-          console.log(pc.dim("Install it manually: brew tap jundot/omlx && brew install omlx"));
+          console.log(pc.red(`✗ oMLX installation failed.`));
+          console.log(pc.dim("Install manually: brew tap jundot/omlx && brew install omlx"));
         }
       } else if (backendChoice === "all") {
         let installed = [];
         // LM Studio
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
-          ensureLmsOnPath();
-          installed.push("LM Studio");
+          await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
+          const lmsReady = ensureLmsOnPath();
+          installed.push(lmsReady ? "LM Studio" : "LM Studio (open app once for lms CLI)");
         } catch {
-          console.log(pc.yellow("LM Studio installation failed. Download from https://lmstudio.ai"));
+          console.log(pc.yellow("✗ LM Studio installation failed. Download from https://lmstudio.ai"));
         }
         // Ollama
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
+          await run("brew", ["install", "ollama"], "Ollama");
           installed.push("Ollama");
         } catch {
-          console.log(pc.yellow("Ollama installation failed. Install manually from https://ollama.com"));
+          console.log(pc.yellow("✗ Ollama installation failed. Install manually from https://ollama.com"));
         }
         // oMLX
         console.log(pc.cyan("Installing oMLX via Homebrew..."));
         try {
-          await promisify(execFile)("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], { stdio: "inherit" });
-          await promisify(execFile)("brew", ["install", "omlx"], { stdio: "inherit" });
+          await run("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
+          await run("brew", ["install", "omlx"], "oMLX");
           installed.push("oMLX");
         } catch {
-          console.log(pc.yellow("oMLX installation failed. Install manually: brew tap jundot/omlx && brew install omlx"));
+          console.log(pc.yellow("✗ oMLX installation failed. Install manually: brew tap jundot/omlx && brew install omlx"));
         }
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
           console.log(pc.yellow("Next steps — download your first model:"));
-          if (installed.includes("LM Studio")) {
-            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+          const hasLms = installed.some(i => i.includes("LM Studio"));
+          if (hasLms) {
+            const lmsReady = installed.some(i => i === "LM Studio");
+            console.log(pc.bold(lmsReady ? "  lms get qwen/qwen3.5-9b" : "  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
           }
           if (installed.includes("Ollama")) {
             console.log(pc.bold("  ollama pull gemma3:4b"));
@@ -777,14 +793,18 @@ async function removeDataDir() {
 
 async function removeSelf() {
   console.log(pc.cyan("\nUninstalling offgrid-ai..."));
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
+  const { spawn: spawnUninstall } = await import("node:child_process");
+  const runCmd = (cmd, args, label) => new Promise((resolve, reject) => {
+    const child = spawnUninstall(cmd, args, { stdio: "inherit" });
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${label || cmd} exited with code ${code}`)));
+    child.on("error", (err) => reject(err));
+  });
   try {
-    await promisify(execFile)("npm", ["uninstall", "-g", "offgrid-ai"], { stdio: "inherit" });
+    await runCmd("npm", ["uninstall", "-g", "offgrid-ai"], "npm uninstall");
     console.log(pc.green("\n✓ offgrid-ai has been uninstalled."));
     console.log(pc.dim("Reinstall anytime with: npm install -g offgrid-ai"));
   } catch {
-    console.log(pc.red("\nCould not auto-uninstall. Run this manually:"));
+    console.log(pc.red("\n✗ Could not auto-uninstall. Run this manually:"));
     console.log(pc.bold("  npm uninstall -g offgrid-ai"));
   }
 }
