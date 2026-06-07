@@ -53,11 +53,8 @@ rm -rf ~/.offgrid-ai
 Remove Node.js (if installed via nvm by the curl installer):
 
 ```bash
-nvm uninstall node
 rm -rf ~/.nvm
-# Then remove these lines from ~/.zshrc:
-# export NVM_DIR="$HOME/.nvm"
-# [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+sed -i '' '/NVM_DIR/d; /nvm.sh/d' ~/.zshrc
 ```
 
 Remove Node.js (if installed via Homebrew):
