@@ -1,6 +1,5 @@
 import { totalmem } from "node:os";
 import { existsSync, statSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { createProfileFromModel, normalizeProfile } from "./profiles.mjs";
@@ -293,13 +292,22 @@ async function runProfile(profile, options = {}) {
       console.log(pc.dim("Use --reuse-existing to reuse this server."));
     } else if (!ready) {
       console.log(pc.dim(`Starting ${backend.label} for ${profile.label}...`));
-      const state = await startServer(profile);
-      const tail = state?.rawLogPath ? tailFriendly(state.rawLogPath, state.friendlyLogPath) : { stop() {} };
+      let state;
       try {
-        await waitForReady(profile, state?.pid, state?.rawLogPath);
-        console.log(pc.green(`[ready] ${profile.baseUrl}/models`));
-      } finally {
-        tail.stop();
+        state = await startServer(profile);
+        const tail = state?.rawLogPath ? tailFriendly(state.rawLogPath, state.friendlyLogPath) : { stop() {} };
+        try {
+          await waitForReady(profile, state?.pid, state?.rawLogPath);
+          console.log(pc.green(`[ready] ${profile.baseUrl}/models`));
+        } finally {
+          tail.stop();
+        }
+      } catch (err) {
+        // Clean up orphaned server process if startup failed
+        if (state?.pid) {
+          try { await stopProfile(profile); } catch { /* best effort */ }
+        }
+        throw err;
       }
     }
   }
@@ -419,7 +427,7 @@ async function removeProfileInteractive(id) {
 
 // ── Benchmark (stub) ────────────────────────────────────────────────────────
 
-async function benchmarkFlow(prompt, profiles) {
+async function benchmarkFlow() {
   console.log(pc.yellow("Benchmark support coming soon."));
   console.log(pc.dim("This will require the local-llm-visual-benchmark repo."));
   console.log(pc.dim("For now, start a model with offgrid-ai and run benchmarks manually."));
@@ -597,7 +605,7 @@ async function onboardFlow() {
             break;
           }
         }
-      } catch (err) {
+      } catch {
         console.log(pc.red(`✗ Homebrew installation failed.`));
         console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
         return;
@@ -774,8 +782,11 @@ async function onboardFlow() {
 // ── Uninstall ───────────────────────────────────────────────────────────────
 
 async function uninstallCommand(argv) {
-  if (!process.stdin.isTTY) {
-    // Non-interactive: remove everything
+  const { options } = parseOptions(argv);
+  const force = options.force || options.f;
+
+  if (!process.stdin.isTTY || force) {
+    // Non-interactive / forced: remove everything
     await removeDataDir();
     await removeSelf();
     return;

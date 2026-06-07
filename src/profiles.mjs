@@ -113,7 +113,7 @@ export async function deleteProfile(id, options = {}) {
 
 // ── Normalize / auto-detect ────────────────────────────────────────────────
 
-export function normalizeProfile(profile, modelPath, mmprojPath) {
+export function normalizeProfile(profile) {
   const backend = backendFor(profile.backend);
   const flags = {
     host: "127.0.0.1",
@@ -152,7 +152,7 @@ export async function createProfileFromModel(model, backendId = "llama-cpp") {
     preset: null, // no presets — auto-detected
     flags,
     commandArgv: argv,
-  }, model.path, model.mmprojPath);
+  });
 }
 
 // ── State files (for running servers) ──────────────────────────────────────
