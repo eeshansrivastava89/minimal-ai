@@ -280,7 +280,7 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     const backendItems = managedItems.filter((item) => item.backendId === backendId);
     if (backendItems.length === 0) continue;
     const be = BACKENDS[backendId];
-    console.log("\n" + pc.bold(`Available from ${be.label}`));
+    console.log("\n" + pc.bold(`Local models via ${be.label}`));
     for (const { model } of backendItems.slice(0, 10)) {
       const num = itemNumber((item) => item.type === "managed" && item.backendId === backendId && item.model.id === model.id);
       console.log(managedModelCard(num, model, be));
@@ -307,13 +307,13 @@ function downloadedModelCard(num, model, caps) {
     ["Good for", humanCapabilitySummary(caps)],
     ["Size", formatBytes(model.sizeBytes)],
     ["When selected", "offgrid-ai will recommend safe local settings"],
-  ]), { formatBorder: caps.mtp ? pc.blue : pc.yellow });
+  ]), { formatBorder: pc.yellow });
 }
 
 function managedModelCard(num, model, backend) {
   return renderCard(`${num}. ${model.label}`, renderRows([
-    ["Status", statusText("info", "Available from another app")],
-    ["App", backend.label],
+    ["Status", statusText("info", `Local model via ${backend.label}`)],
+    ["Runs with", backend.label],
     ["Model ID", pc.cyan(model.id)],
     ...(model.quant ? [["Size/type", model.quant]] : []),
   ]), { formatBorder: pc.magenta });

@@ -83,8 +83,8 @@ export function humanCapabilitySummary(caps = {}) {
   const parts = [];
   if (caps.thinking) parts.push(pc.magenta("Reasoning"));
   if (caps.vision) parts.push(pc.cyan("Vision"));
-  if (caps.mtp) parts.push(pc.blue("Fast draft mode"));
-  if (caps.qat) parts.push(pc.green("Optimized quantization"));
+  if (caps.mtp) parts.push(pc.blue("MTP"));
+  if (caps.qat) parts.push(pc.green("QAT"));
   return parts.length > 0 ? parts.join(" · ") : "General chat";
 }
 

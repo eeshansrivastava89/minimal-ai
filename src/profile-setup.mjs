@@ -36,14 +36,14 @@ export async function configureLocalProfile(prompt, profile) {
   console.log(pc.dim("You can accept the recommended settings. Bigger conversation memory uses more RAM.\n"));
 
   if (caps.mtp) {
-    console.log(renderSection("Speed boost available", "This model supports fast draft mode. It can make responses feel faster while keeping everything local.\n\nAdvanced: uses llama.cpp MTP on port 8081."));
-    const useMtp = await prompt.yesNo("Use fast draft mode for this model?", true);
+    console.log(renderSection("MTP available", "This model supports multi-token prediction (MTP). offgrid-ai can run it with llama.cpp MTP on port 8081."));
+    const useMtp = await prompt.yesNo("Use MTP for this model?", true);
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
   }
 
   if (caps.qat) {
     console.log("");
-    console.log(renderSection("Optimized model", "This model was trained to work well after compression. No extra runtime settings are needed."));
+    console.log(renderSection("QAT model", "This model is marked as quantization-aware trained (QAT). No extra runtime settings are needed."));
   }
 
   if (caps.thinking) {

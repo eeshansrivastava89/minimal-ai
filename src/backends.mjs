@@ -72,16 +72,18 @@ async function scanOllamaModels() {
     if (!response.ok) return [];
     const body = await response.json();
     if (!Array.isArray(body?.models)) return [];
-    return body.models.map((model) => ({
-      id: model.name,
-      label: ollamaLabel(model.name),
-      aliasSuggestion: model.name,
-      sizeBytes: model.size ?? 0,
-      quant: model.details?.quantization_level,
-      family: model.details?.family,
-      backend: "ollama",
-      source: "ollama",
-    })).sort((a, b) => a.label.localeCompare(b.label));
+    return body.models
+      .filter((model) => isLocalOllamaModel(model))
+      .map((model) => ({
+        id: model.name,
+        label: ollamaLabel(model.name),
+        aliasSuggestion: model.name,
+        sizeBytes: model.size ?? 0,
+        quant: model.details?.quantization_level,
+        family: model.details?.family,
+        backend: "ollama",
+        source: "ollama",
+      })).sort((a, b) => a.label.localeCompare(b.label));
   } catch {
     return [];
   }
@@ -111,6 +113,13 @@ async function scanOmlxModels() {
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────
+
+function isLocalOllamaModel(model) {
+  const name = String(model?.name ?? "");
+  if (/:cloud(?:$|\b)/i.test(name)) return false;
+  if (!Number.isFinite(model?.size) || model.size <= 0) return false;
+  return true;
+}
 
 function ollamaLabel(name) {
   return name.replace(/[-_]/g, " ").replace(/^gemma\b/i, "Gemma").replace(/^qwen/i, "Qwen");
