@@ -1,5 +1,5 @@
 import { homedir, totalmem } from "node:os";
-import { existsSync, statSync, rmSync, readFileSync, appendFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { existsSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
@@ -622,88 +622,29 @@ async function onboardFlow() {
         { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
       ], "lmstudio");
 
-      const lmsAppBundle = "/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms";
-      const lmsBin = join(homedir(), ".lmstudio", "bin");
-
-      const ensureLmsOnPath = () => {
-        const lmsDest = join(lmsBin, "lms");
-        // Bootstrap lms from app bundle if not yet in ~/.lmstudio/bin
-        if (!existsSync(lmsDest) && existsSync(lmsAppBundle)) {
-          mkdirSync(lmsBin, { recursive: true });
-          copyFileSync(lmsAppBundle, lmsDest);
-        }
-        if (!existsSync(lmsDest)) {
-          console.log(pc.yellow("  Note: lms CLI will be available after opening LM Studio once."));
-          return false;
-        }
-        if (process.env.PATH.split(":").includes(lmsBin)) return true;
-        process.env.PATH = `${lmsBin}:${process.env.PATH}`;
-        const profileFiles = [join(homedir(), ".zshrc"), join(homedir(), ".bash_profile")];
-        const line = `export PATH="$PATH:$HOME/.lmstudio/bin"`;
-        for (const f of profileFiles) {
-          if (!existsSync(f)) continue;
-          const content = readFileSync(f, "utf8");
-          if (content.includes(".lmstudio/bin")) continue;
-          appendFileSync(f, `\n${line}\n`);
-        }
-        return true;
-      };
+      const model = recommendedModel();
 
       if (backendChoice === "lmstudio") {
-        const model = recommendedModel();
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
-          const lmsReady = ensureLmsOnPath();
           console.log(pc.green("✓ LM Studio installed"));
-          if (lmsReady) {
-            const download = await prompt.yesNo(`Download a model now? (${model.label})`, true);
-            if (download) {
-              console.log(pc.cyan(`Downloading ${model.lms} via lms...`));
-              try {
-                await run("lms", ["get", model.lms, "-y"], `lms get ${model.lms}`);
-                console.log(pc.green("✓ Model downloaded."));
-              } catch {
-                console.log(pc.yellow(`Model download failed. Run manually: lms get ${model.lms}`));
-              }
-            } else {
-              console.log(pc.yellow("Download a model later:"));
-              console.log(pc.bold(`  lms get ${model.lms}`));
-            }
-          } else {
-            console.log(pc.yellow("\nOpen LM Studio once to finish setup, then download a model:"));
-            console.log(pc.bold(`  lms get ${model.lms}`));
-          }
+          console.log(pc.yellow("\nOpen LM Studio, set up the app, and download a model."));
+          console.log(pc.dim(`Recommended for your machine: ${model.label}`));
+          console.log(pc.bold(`  lms get ${model.lms}`));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch {
           console.log(pc.red("✗ LM Studio installation failed."));
           console.log(pc.dim("Download it manually from https://lmstudio.ai"));
         }
       } else if (backendChoice === "ollama") {
-        const model = recommendedModel();
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
           await run("brew", ["install", "ollama"], "Ollama");
           console.log(pc.green("✓ Ollama installed"));
-          console.log(pc.cyan("\nStarting Ollama..."));
-          try {
-            await run("ollama", ["serve"], "Ollama serve");
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          } catch { /* may already be running */ }
-          console.log(pc.green("Ollama is running."));
-          const download = await prompt.yesNo(`Pull a model now? (${model.label})`, true);
-          if (download) {
-            console.log(pc.cyan(`Pulling ${model.ollama} via Ollama...`));
-            try {
-              await run("ollama", ["pull", model.ollama], `ollama pull ${model.ollama}`);
-              console.log(pc.green("✓ Model pulled."));
-            } catch {
-              console.log(pc.yellow(`Model pull failed. Run manually: ollama pull ${model.ollama}`));
-            }
-          } else {
-            console.log(pc.yellow("Pull a model later:"));
-            console.log(pc.bold(`  ollama pull ${model.ollama}`));
-          }
+          console.log(pc.yellow("\nStart Ollama and pull a model:"));
+          console.log(pc.bold(`  ollama serve \u0026   ollama pull ${model.ollama}`));
+          console.log(pc.dim(`Recommended for your machine: ${model.label}`));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch {
           console.log(pc.red("✗ Ollama installation failed."));
@@ -715,33 +656,29 @@ async function onboardFlow() {
           await run("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
           await run("brew", ["install", "omlx"], "oMLX");
           console.log(pc.green("✓ oMLX installed"));
-          console.log(pc.yellow("\nStart oMLX server:"));
+          console.log(pc.yellow("\nStart oMLX and download a model:"));
           console.log(pc.bold("  omlx start"));
+          console.log(pc.dim(`Recommended for your machine: ${model.label}`));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
-        } catch (err) {
-          console.log(pc.red(`✗ oMLX installation failed.`));
+        } catch {
+          console.log(pc.red("✗ oMLX installation failed."));
           console.log(pc.dim("Install manually: brew tap jundot/omlx && brew install omlx"));
         }
       } else if (backendChoice === "all") {
-        const model = recommendedModel();
         let installed = [];
         // LM Studio
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
-        let lmsReady = false;
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
-          lmsReady = ensureLmsOnPath();
           installed.push("LM Studio");
         } catch {
           console.log(pc.yellow("✗ LM Studio installation failed. Download from https://lmstudio.ai"));
         }
         // Ollama
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
-        let ollamaInstalled = false;
         try {
           await run("brew", ["install", "ollama"], "Ollama");
           installed.push("Ollama");
-          ollamaInstalled = true;
         } catch {
           console.log(pc.yellow("✗ Ollama installation failed. Install manually from https://ollama.com"));
         }
@@ -754,45 +691,18 @@ async function onboardFlow() {
         } catch {
           console.log(pc.yellow("✗ oMLX installation failed. Install manually: brew tap jundot/omlx && brew install omlx"));
         }
-        // Auto-download model with best available backend
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
-          if (lmsReady) {
-            const download = await prompt.yesNo(`Download a model now? (${model.label})`, true);
-            if (download) {
-              console.log(pc.cyan(`Downloading ${model.lms} via lms...`));
-              try {
-                await run("lms", ["get", model.lms, "-y"], `lms get ${model.lms}`);
-                console.log(pc.green("✓ Model downloaded."));
-              } catch {
-                console.log(pc.yellow(`Model download failed. Run manually: lms get ${model.lms}`));
-              }
-            }
-          } else if (ollamaInstalled) {
-            // Start Ollama and offer to pull
-            console.log(pc.cyan("Starting Ollama..."));
-            try { await run("ollama", ["serve"], "Ollama serve"); await new Promise(r => setTimeout(r, 2000)); } catch { /* may already be running */ }
-            const download = await prompt.yesNo(`Pull a model now? (${model.label})`, true);
-            if (download) {
-              console.log(pc.cyan(`Pulling ${model.ollama} via Ollama...`));
-              try {
-                await run("ollama", ["pull", model.ollama], `ollama pull ${model.ollama}`);
-                console.log(pc.green("✓ Model pulled."));
-              } catch {
-                console.log(pc.yellow(`Model pull failed. Run manually: ollama pull ${model.ollama}`));
-              }
-            }
-          } else {
-            console.log(pc.yellow(`Recommended model for your machine (${model.label}):`));
-            if (installed.some(i => i.includes("LM Studio"))) {
-              console.log(pc.bold(lmsReady ? `  lms get ${model.lms}` : `  Open LM Studio once, then: lms get ${model.lms}`));
-            }
-            if (installed.includes("Ollama")) {
-              console.log(pc.bold(`  ollama pull ${model.ollama}`));
-            }
-            if (installed.includes("oMLX")) {
-              console.log(pc.bold("  omlx start"));
-            }
+          console.log(pc.yellow("\nDownload a model to get started:"));
+          console.log(pc.dim(`Recommended for your machine (${(totalmem() / (1024 ** 3)).toFixed(0)}GB RAM): ${model.label}`));
+          if (installed.includes("LM Studio")) {
+            console.log(pc.bold(`  LM Studio → lms get ${model.lms}`));
+          }
+          if (installed.includes("Ollama")) {
+            console.log(pc.bold(`  Ollama   → ollama pull ${model.ollama}`));
+          }
+          if (installed.includes("oMLX")) {
+            console.log(pc.bold("  oMLX     → omlx start"));
           }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         }
