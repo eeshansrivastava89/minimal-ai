@@ -306,7 +306,6 @@ function downloadedModelCard(num, model, caps) {
     ["Status", statusText("warning", "Needs one-time setup")],
     ["Good for", humanCapabilitySummary(caps)],
     ["Size", formatBytes(model.sizeBytes)],
-    ["When selected", "offgrid-ai will recommend safe local settings"],
   ]), { formatBorder: pc.yellow });
 }
 
