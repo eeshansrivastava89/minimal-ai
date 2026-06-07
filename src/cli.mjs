@@ -52,6 +52,8 @@ export async function run(argv) {
 
   if (command === "help" || command === "--help" || command === "-h") return printHelp();
   if (command === "version" || command === "--version" || command === "-v") return printVersion();
+  if (command === "models") return modelsCommand(argv.slice(1));
+  if (command === "run") return runCommand(argv.slice(1));
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
   if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
@@ -214,6 +216,230 @@ export async function mainFlow() {
   } finally {
     prompt.close();
   }
+}
+
+// ── Explicit model/run commands ─────────────────────────────────────────────
+
+async function modelsCommand(argv) {
+  await ensureDirs();
+  if (process.stdin.isTTY) startInteractive("offgrid-ai models");
+  const catalog = await loadModelCatalog();
+
+  if (argv[0]) {
+    const profile = await readProfile(argv[0]);
+    await printProfileDetails(profile);
+    return;
+  }
+
+  await printModelCatalog(catalog);
+  if (!process.stdin.isTTY) return;
+
+  const items = modelCatalogItems(catalog);
+  if (items.length === 0) return;
+
+  const prompt = createPrompt();
+  try {
+    const action = await prompt.choice("Action", [
+      { value: "inspect", label: "Inspect", hint: "View profile/model details" },
+      { value: "setup", label: "Set up / sync", hint: "Create profile or sync Pi" },
+      { value: "run", label: "Run", hint: "Start server and launch Pi" },
+      { value: "remove", label: "Remove", hint: "Delete a saved profile" },
+    ], "inspect");
+    const item = await chooseCatalogItem(prompt, items, action);
+    if (!item) return;
+    return await handleCatalogAction(prompt, action, item);
+  } finally {
+    prompt.close();
+  }
+}
+
+async function runCommand(argv) {
+  await ensureDirs();
+  const { positional } = parseOptions(argv);
+  if (positional[0]) {
+    const profile = await readProfile(positional[0]);
+    return await runProfile(profile);
+  }
+
+  const catalog = await loadModelCatalog();
+  if (!process.stdin.isTTY) throw new Error("Run requires a profile id in non-interactive mode: offgrid-ai run <profile>");
+  startInteractive("offgrid-ai run");
+  await printModelCatalog(catalog);
+  const prompt = createPrompt();
+  try {
+    return await pickAndRun(prompt, catalog.profiles, catalog.newModels, catalog.managedItems);
+  } finally {
+    prompt.close();
+  }
+}
+
+async function loadModelCatalog() {
+  const [profiles, ggufModels, managedModels] = await Promise.all([
+    loadProfiles(),
+    scanGgufModels(),
+    scanManagedModels(),
+  ]);
+  const profiledPaths = new Set(profiles.map((p) => p.modelPath).filter(Boolean));
+  const newModels = ggufModels.filter((m) => !profiledPaths.has(m.path));
+  const managedItems = [];
+  for (const { backendId, models } of managedModels) {
+    const profiledAliases = new Set(
+      profiles.filter((p) => p.backend === backendId).map((p) => backendId === "ollama" ? `ollama:${p.ollamaModel ?? p.modelAlias}` : `omlx:${p.omlxModel ?? p.modelAlias}`)
+    );
+    for (const model of models) {
+      if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
+    }
+  }
+  return { profiles, ggufModels, managedModels, newModels, managedItems };
+}
+
+async function printModelCatalog({ profiles, newModels, managedModels }) {
+  if (profiles.length > 0) {
+    console.log(pc.bold("\nSaved profiles"));
+    for (const profile of profiles) {
+      const backend = backendFor(profile.backend);
+      const colorMap = { "llama-cpp": pc.yellow, "llama-cpp-mtp": pc.blue, "ollama": pc.magenta, "omlx": pc.cyan };
+      const running = await isProfileRunning(profile);
+      const piConfigured = await hasPiModel(profile);
+      const c = colorMap[profile.backend] ?? pc.magenta;
+      console.log(`  ${running ? pc.green("●") : pc.dim("○")} ${pc.bold(profile.label)} ${c(`[${backend.label}]`)} · ${pc.cyan(profile.modelAlias)} ${piConfigured ? pc.green("· Pi synced") : pc.yellow("· Pi not synced")}`);
+    }
+  } else {
+    console.log(pc.bold("\nSaved profiles"));
+    console.log(pc.dim("  None yet."));
+  }
+
+  if (newModels.length > 0) {
+    console.log(pc.bold("\nNew GGUF models"));
+    for (const model of newModels.slice(0, 20)) {
+      console.log(`  ${pc.cyan(model.label)} ${pc.dim(model.quant ?? "")} · ${pc.dim(formatBytes(model.sizeBytes))}`);
+    }
+    if (newModels.length > 20) console.log(pc.dim(`  ... and ${newModels.length - 20} more`));
+  }
+
+  for (const { backendId, models } of managedModels) {
+    if (models.length === 0) continue;
+    const be = BACKENDS[backendId];
+    console.log(pc.bold(`\n${be.label} models`));
+    for (const model of models.slice(0, 10)) console.log(`  ${pc.cyan(model.label)}`);
+    if (models.length > 10) console.log(pc.dim(`  ... and ${models.length - 10} more`));
+  }
+}
+
+function modelCatalogItems({ profiles, newModels, managedItems }) {
+  return [
+    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, hint: `${profile.modelAlias} · ${profile.baseUrl}` })),
+    ...newModels.map((model) => ({ type: "new", model, label: model.label, hint: `${model.quant ?? "GGUF"} · ${formatBytes(model.sizeBytes)}` })),
+    ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label, hint: BACKENDS[backendId].label })),
+  ];
+}
+
+async function chooseCatalogItem(prompt, items, action) {
+  const allowed = action === "remove" ? items.filter((item) => item.type === "profile") : items;
+  if (allowed.length === 0) {
+    console.log(pc.yellow(action === "remove" ? "No saved profiles to remove." : "No models available."));
+    return null;
+  }
+  const selected = await prompt.choice("Select", allowed.map((item, index) => ({
+    value: String(index),
+    label: item.label,
+    hint: item.hint,
+  })), "0");
+  return allowed[Number(selected)];
+}
+
+async function handleCatalogAction(prompt, action, item) {
+  if (action === "inspect") {
+    if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
+    if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
+    return printGgufModelDetails(item.model);
+  }
+
+  if (action === "setup") {
+    if (item.type === "profile") return await syncPiConfig(await readProfile(item.profile.id));
+    if (item.type === "managed") {
+      const profile = createManagedProfile(item.model, item.backendId);
+      await saveProfile(profile);
+      return await syncPiConfig(profile);
+    }
+    const profile = await createProfileFromModel(item.model);
+    const configured = await configureLocalProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured);
+    return await syncPiConfig(configured);
+  }
+
+  if (action === "run") {
+    if (item.type === "profile") return await runProfile(await readProfile(item.profile.id));
+    if (item.type === "managed") {
+      const profile = createManagedProfile(item.model, item.backendId);
+      await saveProfile(profile);
+      await syncPiConfig(profile);
+      return await runProfile(profile);
+    }
+    const profile = await createProfileFromModel(item.model);
+    const configured = await configureLocalProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured);
+    await syncPiConfig(configured);
+    return await runProfile(configured);
+  }
+
+  if (action === "remove" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
+}
+
+async function printProfileDetails(profile) {
+  const backend = backendFor(profile.backend);
+  const isManaged = backend.type === "managed-server";
+  const piConfigured = await hasPiModel(profile);
+  console.log("\n" + renderSection("Profile", renderRows([
+    ["ID", pc.cyan(profile.id)],
+    ["Label", pc.bold(profile.label)],
+    ["Backend", backend.label],
+    ["Endpoint", pc.green(profile.baseUrl)],
+    ...(!isManaged ? [
+      ["Model", profile.modelPath ?? "unknown"],
+      ["MMProj", profile.mmprojPath ?? "none"],
+      ["Memory", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
+    ] : []),
+    ["Alias", pc.cyan(profile.modelAlias)],
+    ["Pi", piConfigured ? pc.green("configured") : pc.yellow("not synced")],
+  ])));
+
+  if (!isManaged && profile.commandArgv) {
+    console.log("\n" + pc.bold("llama-server command"));
+    console.log(pc.dim(buildPrettyCommand(profile)));
+  }
+}
+
+function printGgufModelDetails(model) {
+  console.log("\n" + renderSection("GGUF model", renderRows([
+    ["Label", pc.bold(model.label)],
+    ["Model", model.path],
+    ["MMProj", model.mmprojPath ?? "none"],
+    ["Quant", model.quant ?? "unknown"],
+    ["Size", formatBytes(model.sizeBytes)],
+  ])));
+}
+
+function printManagedModelDetails(model, backend) {
+  console.log("\n" + renderSection(`${backend.label} model`, renderRows([
+    ["Label", pc.bold(model.label)],
+    ["ID", pc.cyan(model.id)],
+    ["Quant", model.quant ?? "unknown"],
+    ["Family", model.family ?? "unknown"],
+  ])));
+}
+
+function createManagedProfile(model, backendId) {
+  return normalizeProfile({
+    id: model.id.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase(),
+    label: model.label,
+    backend: backendId,
+    modelAlias: model.aliasSuggestion,
+    ...(backendId === "ollama" ? { ollamaModel: model.id } : {}),
+    ...(backendId === "omlx" ? { omlxModel: model.id } : {}),
+  });
 }
 
 // ── Pick and run ────────────────────────────────────────────────────────────
@@ -981,7 +1207,9 @@ function printHelp() {
   console.log(`${pc.bold("offgrid-ai")} — privacy-first local LLM runner
 
 Usage:
-  offgrid-ai            Pick a model and run it
+  offgrid-ai            Friendly shortcut: pick a model and run it
+  offgrid-ai models     List, inspect, set up, sync, or remove models
+  offgrid-ai run        Pick and run a model (or: offgrid-ai run <profile>)
   offgrid-ai status     Show running local models
   offgrid-ai stop       Stop a running server (or: offgrid-ai stop <id>)
   offgrid-ai uninstall  Remove offgrid-ai, clean up PATH, optionally keep profiles
