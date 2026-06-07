@@ -407,7 +407,8 @@ function capabilitySummary(caps) {
   if (caps.architecture) parts.push(caps.architecture);
   if (caps.quant) parts.push(caps.quant);
   if (caps.mtp) parts.push("MTP");
-  if (caps.qat) parts.push("QAT/imatrix");
+  if (caps.qat) parts.push("QAT");
+  if (caps.imatrix) parts.push("imatrix");
   if (caps.thinking) parts.push("thinking");
   if (caps.vision) parts.push("vision");
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
@@ -417,6 +418,7 @@ function capabilityBadges(caps) {
   const badges = [];
   if (caps.mtp) badges.push(pc.blue("[MTP]"));
   if (caps.qat) badges.push(pc.green("[QAT]"));
+  if (caps.imatrix) badges.push(pc.dim("[imatrix]"));
   if (caps.thinking) badges.push(pc.magenta("[thinking]"));
   if (caps.vision) badges.push(pc.cyan("[vision]"));
   return badges.join(" ");

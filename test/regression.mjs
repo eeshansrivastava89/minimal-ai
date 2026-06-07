@@ -58,6 +58,23 @@ describe("regressions", () => {
     assert.equal(caps.mtp, true);
   });
 
+  it("does not conflate imatrix with QAT", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "Qwen3.6-35B-A3B-imatrix-GGUF-"));
+    const file = join(dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf");
+    await writeFile(file, "GGUF\0");
+    const caps = detectCapabilities(file, null);
+    assert.equal(caps.imatrix, true);
+    assert.equal(caps.qat, false);
+  });
+
+  it("detects explicit Gemma QAT naming", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "google-gemma-3-4b-it-qat-q4_0-gguf-"));
+    const file = join(dir, "gemma-3-4b-it-qat-Q4_0.gguf");
+    await writeFile(file, "GGUF\0");
+    const caps = detectCapabilities(file, null);
+    assert.equal(caps.qat, true);
+  });
+
   it("updates first-run profile flags and command argv together", () => {
     const profile = {
       flags: { host: "127.0.0.1", port: 8080, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },

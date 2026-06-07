@@ -165,6 +165,7 @@ function summarizeCapabilities(caps) {
     vision: caps.vision,
     mtp: caps.mtp,
     qat: caps.qat,
+    imatrix: caps.imatrix,
     quant: caps.quant,
     metaCtx: caps.metaCtx,
     ctxSize: caps.ctxSize,

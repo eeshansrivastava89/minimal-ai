@@ -17,9 +17,11 @@ export function detectCapabilities(modelPath, mmprojPath) {
   const nameHintsThinking = /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(pathHints);
   const thinking = hasThinkingKwargs || nameHintsThinking;
 
-  // Quantization-aware / imatrix quantization hints. These mostly affect
-  // display and defaults transparency; llama-server does not need a QAT flag.
-  const qat = /qat|imatrix|i-?matrix/i.test(pathHints) || Object.keys(meta).some((key) => key.startsWith("quantize.imatrix."));
+  // QAT is explicit quantization-aware training lineage, mainly seen in
+  // Gemma QAT releases. imatrix is common GGUF quantization metadata and is
+  // intentionally tracked separately so we don't label every imatrix quant as QAT.
+  const qat = /\bqat\b|[-_]qat[-_]|qat[-_]?q\d/i.test(pathHints);
+  const imatrix = /imatrix|i-?matrix/i.test(pathHints) || Object.keys(meta).some((key) => key.startsWith("quantize.imatrix."));
 
   // Vision — mmproj present
   const vision = Boolean(mmprojPath && existsSync(mmprojPath));
@@ -37,7 +39,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
     : undefined;
   const ctxSize = metaCtx ?? (thinking ? 80000 : 32768);
 
-  return { architecture, thinking, vision, mtp, qat, quant, metaCtx, ctxSize, meta };
+  return { architecture, thinking, vision, mtp, qat, imatrix, quant, metaCtx, ctxSize, meta };
 }
 
 // ── Compute llama-server flags from capabilities ───────────────────────────

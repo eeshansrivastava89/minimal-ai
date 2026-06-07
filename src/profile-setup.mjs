@@ -46,14 +46,23 @@ export async function configureLocalProfile(prompt, profile) {
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
   }
 
-  if (caps.thinking || caps.qat) {
+  if (caps.qat || caps.imatrix) {
     console.log("");
-    console.log(renderSection(caps.qat ? "Detected QAT / imatrix-style model" : "Detected thinking model", renderRows([
+    console.log(renderSection("Quantization note", renderRows([
+      ["QAT", caps.qat ? "yes" : "no"],
+      ["imatrix", caps.imatrix ? "yes" : "no"],
+      ["Runtime flags", "none required"],
+    ])));
+  }
+
+  if (caps.thinking) {
+    console.log("");
+    console.log(renderSection("Detected thinking model", renderRows([
       ["Defaults", "thinking / loop-safe"],
       ["Flags", "--top-k 64 --presence-penalty 0 --repeat-penalty 1.1"],
       ["Template", "--chat-template-kwargs { enable_thinking: true }"],
     ])));
-    const useThinking = await prompt.yesNo("Use these thinking/QAT-safe defaults?", true);
+    const useThinking = await prompt.yesNo("Use these thinking/loop-safe defaults?", true);
     configured = useThinking ? applyThinkingDefaults(configured) : removeThinkingDefaults(configured);
   }
 
@@ -176,7 +185,8 @@ function detectionSummary(caps) {
   if (caps.architecture) parts.push(caps.architecture);
   if (caps.quant) parts.push(caps.quant);
   if (caps.mtp) parts.push("MTP");
-  if (caps.qat) parts.push("QAT/imatrix");
+  if (caps.qat) parts.push("QAT");
+  if (caps.imatrix) parts.push("imatrix");
   if (caps.thinking) parts.push("thinking");
   if (caps.vision) parts.push("vision");
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
