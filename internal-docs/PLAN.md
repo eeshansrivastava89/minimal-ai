@@ -17,11 +17,11 @@ The dependency chain, walked top to bottom. Each step: check → if missing, off
 1. **Homebrew** — "Homebrew is required. Install?" (No → "offgrid-ai cannot continue without Homebrew.")
 2. **llama-server** — "llama-server is required. Install via Homebrew?" (No → "offgrid-ai cannot start models without llama-server.")
 3. **Model backend** — at least one is mandatory. One choice:
-   - **LM Studio** (recommended) — "Browse and download models visually"
-   - **Ollama** — "Alternative model runtime"
-   - **oMLX** — "Apple Silicon optimized models"
-   - **All three** — "Install everything"
-4. **Models** — if LM Studio installed but no models found → "You need to download a model in LM Studio first. Open LM Studio and browse models, then come back."
+   - **LM Studio** (recommended) — visual model browser + `lms` CLI, e.g. `lms get qwen/qwen3.5-9b`
+   - **Ollama** — alternative model runtime, e.g. `ollama pull gemma3:4b`
+   - **oMLX** — Apple Silicon optimized models
+   - **All three** — install everything
+4. **Models** — if LM Studio installed but no models found → "You need to download a model first. Run `lms get qwen/qwen3.5-9b`, then come back."
 5. **Done** — proceed to model selection.
 
 Subsequent runs: skip everything that's already installed, go straight to model selection.
@@ -53,7 +53,7 @@ No parameter questions. No preset selection. Auto-detect sets flags from GGUF me
 | Install | `npm install -g offgrid-ai` |
 | Updates | Active prompt on startup via `update-notifier` |
 | Target user | Non-developer first — opinionated, zero config, hide all complexity |
-| Model downloads | Out of scope — LM Studio, Ollama, oMLX handle that |
+| Model downloads | Per-backend: `lms get` for LM Studio, `ollama pull` for Ollama, `omlx start` for oMLX |
 | Backends | llama-server (required), plus at least one of LM Studio / Ollama / oMLX |
 | llama-server | Discovery: `$LLAMA_SERVER_BINARY` → `which` → Homebrew path. Missing → install via Homebrew |
 | Concurrent models | One at a time — laptop users, RAM is scarce |
@@ -110,5 +110,5 @@ No parameter questions. No preset selection. Auto-detect sets flags from GGUF me
 ## Open Questions
 
 - npm namespace: `offgrid-ai` confirmed available.
-- Should onboarding auto-install Homebrew/llama-server or just print the commands and verify after?
-- How to detect oMLX installation — pip package check, binary check, or just try the API?
+- Should onboarding auto-install Homebrew/llama-server or just print the commands and verify after? ✅ Yes — installs via Homebrew.
+- How to detect oMLX installation — pip package check, binary check, or just try the API? ✅ Binary check + API.

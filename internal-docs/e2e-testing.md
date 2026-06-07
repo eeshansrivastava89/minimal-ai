@@ -46,8 +46,10 @@ Next test cycle — go back to step 1. You always start from a clean base.
 - [ ] `offgrid-ai` launches onboarding
 - [ ] Homebrew offer → installs if missing
 - [ ] llama-server offer → installs via brew
-- [ ] Backend choice → Ollama / LM Studio / oMLX / all three / skip
+- [ ] Backend choice → LM Studio (recommended) / Ollama / oMLX / all three / skip
 - [ ] Each backend installs via Homebrew
+- [ ] LM Studio: `lms` CLI added to PATH after install
+- [ ] Next steps show concrete model download command per backend
 - [ ] "Setup complete" message at the end
 
 ### Uninstall

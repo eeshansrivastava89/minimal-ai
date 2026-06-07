@@ -59,6 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 | Backend | Type | Auto-detected |
 |---|---|---|
+| **LM Studio** | Visual model browser + CLI (`lms`) | ✓ models in `~/.lmstudio/models/` |
 | **llama.cpp** | Local server | ✓ GGUF models in `~/.lmstudio/models/` |
 | **llama.cpp MTP** | Local server (speculative decoding) | ✓ MTP detected from model metadata |
 | **Ollama** | Managed server | ✓ via `localhost:11434` |
@@ -70,7 +71,10 @@ When you run `offgrid-ai` for the first time on a fresh machine:
 
 1. **Homebrew** — Required. Offered to install if missing.
 2. **llama-server** — Required for GGUF models. Offered to install via Homebrew.
-3. **Model backend** — At least one is needed: LM Studio, Ollama, or oMLX.
+3. **Model backend** — At least one is needed (LM Studio recommended):
+   - **LM Studio** — visual model browser + `lms` CLI, download models with `lms get qwen/qwen3.5-9b`
+   - **Ollama** — models download on demand with `ollama pull`
+   - **oMLX** — Apple Silicon optimized
 4. **Models** — If no models found, tells you where to get them.
 
 Subsequent runs skip everything that's already installed.

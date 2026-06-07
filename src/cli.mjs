@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { existsSync, statSync, rmSync } from "node:fs";
+import { existsSync, statSync, rmSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
@@ -577,17 +577,45 @@ async function onboardFlow() {
       console.log(pc.dim("You need at least one model backend to use offgrid-ai.\n"));
 
       const backendChoice = await prompt.choice("Install a model backend?", [
+        { value: "lmstudio", label: "LM Studio (recommended)", hint: "brew install --cask lm-studio — visual model browser + CLI" },
         { value: "ollama", label: "Ollama", hint: "brew install ollama — models download on demand" },
-        { value: "lmstudio", label: "LM Studio", hint: "brew install --cask lm-studio — visual model browser" },
         { value: "omlx", label: "oMLX", hint: "brew tap jundot/omlx && brew install omlx — Apple Silicon optimized" },
-        { value: "all", label: "Install all three", hint: "Ollama + LM Studio + oMLX" },
+        { value: "all", label: "Install all three", hint: "LM Studio + Ollama + oMLX" },
         { value: "skip", label: "Skip for now", hint: "I'll set up models myself" },
-      ], "ollama");
+      ], "lmstudio");
 
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
 
-      if (backendChoice === "ollama") {
+      const ensureLmsOnPath = () => {
+        const lmsBin = join(homedir(), ".lmstudio", "bin");
+        if (!existsSync(join(lmsBin, "lms"))) return;
+        if (process.env.PATH.split(":").includes(lmsBin)) return;
+        process.env.PATH = `${lmsBin}:${process.env.PATH}`;
+        const profileFiles = [join(homedir(), ".zshrc"), join(homedir(), ".bash_profile")];
+        const line = `export PATH="$PATH:$HOME/.lmstudio/bin"`;
+        for (const f of profileFiles) {
+          if (!existsSync(f)) continue;
+          const content = readFileSync(f, "utf8");
+          if (content.includes(".lmstudio/bin")) continue;
+          appendFileSync(f, `\n${line}\n`);
+        }
+      };
+
+      if (backendChoice === "lmstudio") {
+        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
+          ensureLmsOnPath();
+          console.log(pc.green("✓ LM Studio installed"));
+          console.log(pc.yellow("\nDownload your first model:"));
+          console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+          console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
+        } catch (err) {
+          console.log(pc.red(`Failed to install LM Studio: ${err.message}`));
+          console.log(pc.dim("Download it manually from https://lmstudio.ai"));
+        }
+      } else if (backendChoice === "ollama") {
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
           await promisify(execFile)("brew", ["install", "ollama"], { stdio: "inherit" });
@@ -605,16 +633,6 @@ async function onboardFlow() {
           console.log(pc.red(`Failed to install Ollama: ${err.message}`));
           console.log(pc.dim("Install it manually from https://ollama.com"));
         }
-      } else if (backendChoice === "lmstudio") {
-        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
-        try {
-          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
-          console.log(pc.green("✓ LM Studio installed"));
-          console.log(pc.yellow("\nOpen LM Studio to browse and download models, then run offgrid-ai again."));
-        } catch (err) {
-          console.log(pc.red(`Failed to install LM Studio: ${err.message}`));
-          console.log(pc.dim("Download it manually from https://lmstudio.ai"));
-        }
       } else if (backendChoice === "omlx") {
         console.log(pc.cyan("Installing oMLX via Homebrew..."));
         try {
@@ -630,6 +648,15 @@ async function onboardFlow() {
         }
       } else if (backendChoice === "all") {
         let installed = [];
+        // LM Studio
+        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
+        try {
+          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
+          ensureLmsOnPath();
+          installed.push("LM Studio");
+        } catch {
+          console.log(pc.yellow("LM Studio installation failed. Download from https://lmstudio.ai"));
+        }
         // Ollama
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
@@ -637,14 +664,6 @@ async function onboardFlow() {
           installed.push("Ollama");
         } catch {
           console.log(pc.yellow("Ollama installation failed. Install manually from https://ollama.com"));
-        }
-        // LM Studio
-        console.log(pc.cyan("Installing LM Studio via Homebrew..."));
-        try {
-          await promisify(execFile)("brew", ["install", "--cask", "lm-studio"], { stdio: "inherit" });
-          installed.push("LM Studio");
-        } catch {
-          console.log(pc.yellow("LM Studio installation failed. Download from https://lmstudio.ai"));
         }
         // oMLX
         console.log(pc.cyan("Installing oMLX via Homebrew..."));
@@ -657,9 +676,17 @@ async function onboardFlow() {
         }
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
-          console.log(pc.yellow("Next steps:"));
-          console.log(pc.bold("  ollama pull gemma3:4b"));
-          console.log(pc.dim("Or open LM Studio to browse models, or run: omlx start"));
+          console.log(pc.yellow("Next steps — download your first model:"));
+          if (installed.includes("LM Studio")) {
+            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+          }
+          if (installed.includes("Ollama")) {
+            console.log(pc.bold("  ollama pull gemma3:4b"));
+          }
+          if (installed.includes("oMLX")) {
+            console.log(pc.bold("  omlx start"));
+          }
+          console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         }
       } else {
         console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
