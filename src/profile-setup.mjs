@@ -1,11 +1,11 @@
 import { estimateMemory } from "./estimate.mjs";
-import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, humanCapabilitySummary } from "./ui.mjs";
 
 const CACHE_CHOICES = [
-  { value: "bf16", label: "bf16", hint: "default: stable, good quality" },
-  { value: "f16", label: "f16", hint: "stable fallback, similar memory to bf16" },
-  { value: "q8_0", label: "q8_0", hint: "lower memory, usually safe" },
-  { value: "q4_0", label: "q4_0", hint: "lowest memory, quality/speed tradeoff" },
+  { value: "bf16", label: "Balanced", hint: "recommended: stable, good quality" },
+  { value: "f16", label: "Compatible", hint: "stable fallback, similar memory use" },
+  { value: "q8_0", label: "Lower memory", hint: "usually safe, uses less memory" },
+  { value: "q4_0", label: "Smallest memory", hint: "maximum savings, quality/speed tradeoff" },
 ];
 
 const GENERAL_DEFAULTS = {
@@ -26,64 +26,49 @@ export async function configureLocalProfile(prompt, profile) {
   const caps = profile.capabilities ?? {};
 
   console.log("");
-  console.log(renderSection("Model setup", renderRows([
+  console.log(renderSection("Let's set up this model", renderRows([
     ["Model", pc.bold(profile.label)],
-    ["Detected", detectionSummary(caps)],
-    ["Context", `${profile.flags.ctxSize.toLocaleString()} tokens`],
-    ["KV cache", `${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV}`],
-    ["Sampling", samplingSummary(profile.flags)],
+    ["Good for", humanCapabilitySummary(caps)],
+    ["Conversation memory", `${profile.flags.ctxSize.toLocaleString()} tokens`],
+    ["Memory mode", `${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV}`],
+    ["Response style", samplingSummary(profile.flags)],
   ])));
-  console.log(pc.dim("Larger context windows use more memory. KV cache precision controls memory used by attention history."));
-  console.log(pc.dim("Sampling defaults are shown for transparency; you can edit command.json later if needed.\n"));
+  console.log(pc.dim("You can accept the recommended settings. Bigger conversation memory uses more RAM.\n"));
 
   if (caps.mtp) {
-    console.log(renderSection("Detected MTP", renderRows([
-      ["Backend", "llama.cpp MTP"],
-      ["Port", "8081"],
-      ["Flags", "--spec-type draft-mtp --spec-draft-n-max 2"],
-    ])));
-    const useMtp = await prompt.yesNo("Use MTP speculative decoding flags?", true);
+    console.log(renderSection("Speed boost available", "This model supports fast draft mode. It can make responses feel faster while keeping everything local.\n\nAdvanced: uses llama.cpp MTP on port 8081."));
+    const useMtp = await prompt.yesNo("Use fast draft mode for this model?", true);
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
   }
 
   if (caps.qat) {
     console.log("");
-    console.log(renderSection("Detected QAT model", renderRows([
-      ["Meaning", "quantization-aware trained"],
-      ["Runtime flags", "none required"],
-    ])));
+    console.log(renderSection("Optimized model", "This model was trained to work well after compression. No extra runtime settings are needed."));
   }
 
   if (caps.thinking) {
     console.log("");
-    console.log(renderSection("Detected thinking model", renderRows([
-      ["Defaults", "thinking / loop-safe"],
-      ["Flags", "--top-k 64 --presence-penalty 0 --repeat-penalty 1.1"],
-      ["Template", "--chat-template-kwargs { enable_thinking: true }"],
-    ])));
-    const useThinking = await prompt.yesNo("Use these thinking/loop-safe defaults?", true);
+    console.log(renderSection("Reasoning mode", "This model can reason step by step. offgrid-ai can use safer defaults that reduce repetitive loops."));
+    const useThinking = await prompt.yesNo("Use reasoning-friendly defaults?", true);
     configured = useThinking ? applyThinkingDefaults(configured) : removeThinkingDefaults(configured);
   }
 
-  const ctxSize = await prompt.number("Context window tokens", configured.flags.ctxSize, 1024, 1048576);
-  const cacheTypeK = await prompt.choice("K cache precision", CACHE_CHOICES, configured.flags.cacheTypeK);
-  const cacheTypeV = await prompt.choice("V cache precision", CACHE_CHOICES, configured.flags.cacheTypeV);
+  const ctxSize = await prompt.number("Conversation memory tokens", configured.flags.ctxSize, 1024, 1048576);
+  const cacheTypeK = await prompt.choice("Memory mode, part 1", CACHE_CHOICES, configured.flags.cacheTypeK);
+  const cacheTypeV = await prompt.choice("Memory mode, part 2", CACHE_CHOICES, configured.flags.cacheTypeV);
   configured = applyRuntimeFlagOverrides(configured, { ctxSize, cacheTypeK, cacheTypeV });
 
   console.log("");
-  console.log(renderSection("Defaults", renderRows([
-    ["Backend", configured.backend],
-    ["Endpoint", configured.baseUrl],
-    ["Temperature", configured.flags.temperature],
-    ["Top-p", configured.flags.topP],
-    ["Top-k", configured.flags.topK],
-    ["Min-p", configured.flags.minP],
-    ["Presence penalty", configured.flags.presencePenalty],
-    ["Repeat penalty", configured.flags.repeatPenalty],
+  console.log(renderSection("Final setup", renderRows([
+    ["Runs with", configured.backend],
+    ["Local address", configured.baseUrl],
+    ["Creativity", configured.flags.temperature],
+    ["Focus", configured.flags.topP],
+    ["Reasoning breadth", configured.flags.topK],
   ])));
 
   console.log("\n" + renderMemoryEstimate(configured));
-  if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
+  if (!(await prompt.yesNo("Save this model setup?", true))) return null;
   return configured;
 }
 
@@ -168,27 +153,15 @@ function removeOption(argv, flag) {
 function renderMemoryEstimate(profile) {
   try {
     const est = estimateMemory(profile.modelPath, profile.mmprojPath, null, profile.flags);
-    return renderSection("Memory", renderRows([
+    return renderSection("Memory estimate", renderRows([
       ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-      ["Model", formatBytes(est.modelBytes)],
-      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${profile.flags.ctxSize.toLocaleString()} ctx, ${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV})` : "unknown"],
+      ["Model file", formatBytes(est.modelBytes)],
+      ["Conversation memory", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${profile.flags.ctxSize.toLocaleString()} tokens, ${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV})` : "unknown"],
       ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
     ]));
   } catch {
-    return renderSection("Memory", pc.dim("Estimate unavailable for this model."));
+    return renderSection("Memory estimate", pc.dim("Estimate unavailable for this model."));
   }
-}
-
-function detectionSummary(caps) {
-  const parts = [];
-  if (caps.architecture) parts.push(caps.architecture);
-  if (caps.quant) parts.push(caps.quant);
-  if (caps.mtp) parts.push("MTP");
-  if (caps.qat) parts.push("QAT");
-
-  if (caps.thinking) parts.push("thinking");
-  if (caps.vision) parts.push("vision");
-  return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
 }
 
 function samplingSummary(flags) {

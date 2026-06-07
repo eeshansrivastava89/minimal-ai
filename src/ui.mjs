@@ -1,4 +1,4 @@
-import { cancel, confirm, intro, isCancel, select, text } from "@clack/prompts";
+import { box, cancel, confirm, intro, isCancel, select, text } from "@clack/prompts";
 import pc from "picocolors";
 import { stripVTControlCharacters } from "node:util";
 
@@ -59,8 +59,51 @@ export function renderRows(rows) {
   }).join("\n");
 }
 
+export function renderCard(title, body, options = {}) {
+  let output = "";
+  box(String(body ?? ""), title, {
+    output: captureOutput((chunk) => { output += chunk; }, options.columns),
+    withGuide: false,
+    width: "auto",
+    contentPadding: options.contentPadding ?? 1,
+    titlePadding: options.titlePadding ?? 1,
+    rounded: options.rounded ?? true,
+    titleAlign: options.titleAlign ?? "left",
+    contentAlign: options.contentAlign ?? "left",
+    formatBorder: options.formatBorder ?? pc.magenta,
+  });
+  return output.trimEnd();
+}
+
 export function renderSection(title, body) {
-  return `${pc.magenta("◆")} ${pc.bold(title)}\n${body}`;
+  return renderCard(title, body, { formatBorder: pc.magenta });
+}
+
+export function humanCapabilitySummary(caps = {}) {
+  const parts = [];
+  if (caps.thinking) parts.push(pc.magenta("Reasoning"));
+  if (caps.vision) parts.push(pc.cyan("Vision"));
+  if (caps.mtp) parts.push(pc.blue("Fast draft mode"));
+  if (caps.qat) parts.push(pc.green("Optimized quantization"));
+  return parts.length > 0 ? parts.join(" · ") : "General chat";
+}
+
+export function statusText(kind, text) {
+  const color = {
+    ready: pc.green,
+    running: pc.green,
+    warning: pc.yellow,
+    info: pc.cyan,
+    muted: pc.dim,
+  }[kind] ?? ((value) => value);
+  return color(text);
+}
+
+function captureOutput(write, columns) {
+  return {
+    columns: Math.min(columns ?? process.stdout.columns ?? 88, 100),
+    write,
+  };
 }
 
 export function parseOptions(argv) {

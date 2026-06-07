@@ -9,7 +9,7 @@ import { startServer, stopProfile, waitForReady, serverReady, isProfileRunning, 
 import { syncPiConfig, removeFromPiConfig, hasPiModel, launchPi, hasPi } from "./harness-pi.mjs";
 import { tailFriendly } from "./logs.mjs";
 import { estimateMemory } from "./estimate.mjs";
-import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, renderCard, humanCapabilitySummary, statusText, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { removeInstallerPathEntries } from "./shell-path.mjs";
 import { configureLocalProfile } from "./profile-setup.mjs";
@@ -185,12 +185,12 @@ async function modelCommandCenter(catalog) {
 
   const prompt = createPrompt();
   try {
-    const action = await prompt.choice("What do you want to do?", [
-      { value: "inspect", label: "Inspect", hint: "View details" },
-      { value: "setup", label: "Set up / sync", hint: "Create profile or sync Pi" },
-      { value: "run", label: "Run", hint: "Start server and launch Pi" },
-      { value: "benchmark", label: "Benchmark", hint: "Coming soon: local benchmark project" },
-      { value: "remove", label: "Remove", hint: "Delete a saved profile" },
+    const action = await prompt.choice("What would you like to do?", [
+      { value: "run", label: "Start chatting", hint: "Start a local model and open Pi" },
+      { value: "setup", label: "Set up a downloaded model", hint: "One-time setup or Pi sync" },
+      { value: "inspect", label: "See model details", hint: "Show advanced paths, ports, and flags" },
+      { value: "benchmark", label: "Benchmark", hint: "Coming soon" },
+      { value: "remove", label: "Remove a saved setup", hint: "Delete a model setup from offgrid-ai" },
     ], "run");
     if (action === "benchmark") return await benchmarkFlow();
     const item = await chooseCatalogItem(prompt, items, action);
@@ -240,33 +240,38 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     const index = items.findIndex(predicate);
     return index === -1 ? "  " : String(index + 1).padStart(2, " ");
   };
+  const runningProfilesNow = [];
+  for (const profile of profiles) {
+    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+  }
 
-  console.log(pc.bold("\nSaved profiles"));
+  console.log("\n" + renderCard("Your local AI workspace", renderRows([
+    ["Ready to chat", pc.green(`${profiles.length} saved setup${profiles.length === 1 ? "" : "s"}`)],
+    ["Need setup", newModels.length > 0 ? pc.yellow(`${newModels.length} downloaded model${newModels.length === 1 ? "" : "s"}`) : pc.green("none")],
+    ["Running now", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
+    ["Next step", profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? "Set up a downloaded model" : "Download a model"],
+  ]), { formatBorder: pc.cyan }));
+
+  console.log("\n" + pc.bold("Ready to chat"));
   if (profiles.length === 0) {
-    console.log(pc.dim("  None yet."));
+    console.log(renderCard("No saved setups yet", "Downloaded models will appear below. Set one up once, then it will be ready from here.", { formatBorder: pc.yellow }));
   } else {
     for (const profile of profiles) {
-      const backend = backendFor(profile.backend);
-      const colorMap = { "llama-cpp": pc.yellow, "llama-cpp-mtp": pc.blue, "ollama": pc.magenta, "omlx": pc.cyan };
-      const running = await isProfileRunning(profile);
+      const running = runningProfilesNow.some((item) => item.id === profile.id);
       const piConfigured = await hasPiModel(profile);
-      const c = colorMap[profile.backend] ?? pc.magenta;
       const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
-      console.log(`${num}. ${running ? pc.green("●") : pc.dim("○")} ${pc.bold(profile.label)} ${c(`[${backend.label}]`)} · ${pc.cyan(profile.modelAlias)} ${piConfigured ? pc.green("· Pi synced") : pc.yellow("· Pi not synced")}`);
+      console.log(profileCatalogCard(num, profile, { running, piConfigured }));
     }
   }
 
-  console.log("");
-  console.log(pc.bold("Downloaded models not set up yet"));
+  console.log("\n" + pc.bold("Downloaded, needs one-time setup"));
   if (newModels.length === 0) {
-    console.log(pc.dim("  None. Every downloaded GGUF has a profile."));
+    console.log(renderCard("All set", "Every downloaded local model already has a saved setup.", { formatBorder: pc.green }));
   } else {
     for (const model of newModels.slice(0, 20)) {
       const caps = detectCapabilities(model.path, model.mmprojPath);
       const num = itemNumber((item) => item.type === "new" && item.model.path === model.path);
-      console.log(`${num}. ${pc.cyan(model.label)} ${capabilityBadges(caps)} ${pc.dim(model.quant ?? "")}`);
-      console.log(`    alias:  ${pc.cyan(model.aliasSuggestion)}`);
-      console.log(`    size:   ${formatBytes(model.sizeBytes)}`);
+      console.log(downloadedModelCard(num, model, caps));
     }
     if (newModels.length > 20) console.log(pc.dim(`  ... and ${newModels.length - 20} more`));
   }
@@ -275,15 +280,43 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     const backendItems = managedItems.filter((item) => item.backendId === backendId);
     if (backendItems.length === 0) continue;
     const be = BACKENDS[backendId];
-    console.log("");
-    console.log(pc.bold(`${be.label} models`));
+    console.log("\n" + pc.bold(`Available from ${be.label}`));
     for (const { model } of backendItems.slice(0, 10)) {
       const num = itemNumber((item) => item.type === "managed" && item.backendId === backendId && item.model.id === model.id);
-      console.log(`${num}. ${pc.cyan(model.label)} ${pc.dim(model.quant ?? "")}`);
-      console.log(`    id: ${pc.cyan(model.id)}`);
+      console.log(managedModelCard(num, model, be));
     }
     if (backendItems.length > 10) console.log(pc.dim(`  ... and ${backendItems.length - 10} more`));
   }
+}
+
+function profileCatalogCard(num, profile, { running, piConfigured }) {
+  const backend = backendFor(profile.backend);
+  const caps = profile.capabilities ?? {};
+  const status = running ? statusText("running", "Running now") : statusText("ready", "Ready to chat");
+  return renderCard(`${num}. ${profile.label}`, renderRows([
+    ["Status", status],
+    ["Good for", humanCapabilitySummary(caps)],
+    ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
+    ["Runs with", backend.label],
+  ]), { formatBorder: running ? pc.green : pc.cyan });
+}
+
+function downloadedModelCard(num, model, caps) {
+  return renderCard(`${num}. ${model.label}`, renderRows([
+    ["Status", statusText("warning", "Needs one-time setup")],
+    ["Good for", humanCapabilitySummary(caps)],
+    ["Size", formatBytes(model.sizeBytes)],
+    ["When selected", "offgrid-ai will recommend safe local settings"],
+  ]), { formatBorder: caps.mtp ? pc.blue : pc.yellow });
+}
+
+function managedModelCard(num, model, backend) {
+  return renderCard(`${num}. ${model.label}`, renderRows([
+    ["Status", statusText("info", "Available from another app")],
+    ["App", backend.label],
+    ["Model ID", pc.cyan(model.id)],
+    ...(model.quant ? [["Size/type", model.quant]] : []),
+  ]), { formatBorder: pc.magenta });
 }
 
 function modelCatalogItems({ profiles, newModels, managedItems }) {
@@ -300,7 +333,7 @@ async function chooseCatalogItem(prompt, items, action) {
     return null;
   }
 
-  const input = await prompt.text("Select a number", "");
+  const input = await prompt.text(action === "remove" ? "Which saved setup should be removed? Enter its number" : "Which model? Enter its number", "");
   if (!input) return null;
   const index = Number(input) - 1;
   if (!Number.isInteger(index) || index < 0 || index >= items.length) {
@@ -360,43 +393,53 @@ async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
   const piConfigured = await hasPiModel(profile);
-  console.log("\n" + renderSection("Profile", renderRows([
-    ["ID", pc.cyan(profile.id)],
-    ["Label", pc.bold(profile.label)],
-    ["Backend", backend.label],
+  const running = await isProfileRunning(profile);
+  console.log("\n" + renderSection("Model overview", renderRows([
+    ["Name", pc.bold(profile.label)],
+    ["Status", running ? pc.green("Running now") : pc.green("Ready to chat")],
+    ["Good for", humanCapabilitySummary(profile.capabilities ?? {})],
+    ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
+    ["Server", pc.green(profile.baseUrl)],
+  ])));
+
+  console.log("\n" + renderSection("Advanced details", renderRows([
+    ["Setup ID", pc.cyan(profile.id)],
+    ["Runs with", backend.label],
+    ["Model alias", pc.cyan(profile.modelAlias)],
     ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
-    ["Endpoint", pc.green(profile.baseUrl)],
     ...(!isManaged ? [
-      ["Model", profile.modelPath ?? "unknown"],
-      ["MMProj", profile.mmprojPath ?? "none"],
-      ["Memory", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
+      ["Local file", profile.modelPath ?? "unknown"],
+      ["Vision file", profile.mmprojPath ?? "none"],
+      ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
     ] : []),
-    ["Alias", pc.cyan(profile.modelAlias)],
-    ["Pi", piConfigured ? pc.green("configured") : pc.yellow("not synced")],
   ])));
 
   if (!isManaged && profile.commandArgv) {
-    console.log("\n" + pc.bold("llama-server command"));
-    console.log(pc.dim(buildPrettyCommand(profile)));
+    console.log("\n" + renderSection("Advanced command", pc.dim(buildPrettyCommand(profile))));
   }
 }
 
 function printGgufModelDetails(model) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
-  console.log("\n" + renderSection("GGUF model", renderRows([
-    ["Label", pc.bold(model.label)],
-    ["Detected", capabilitySummary(caps)],
-    ["Model", model.path],
-    ["MMProj", model.mmprojPath ?? "none"],
-    ["Quant", model.quant ?? "unknown"],
+  console.log("\n" + renderSection("Downloaded model", renderRows([
+    ["Name", pc.bold(model.label)],
+    ["Status", pc.yellow("Needs one-time setup")],
+    ["Good for", humanCapabilitySummary(caps)],
     ["Size", formatBytes(model.sizeBytes)],
+  ])));
+  console.log("\n" + renderSection("Advanced details", renderRows([
+    ["Local file", model.path],
+    ["Vision file", model.mmprojPath ?? "none"],
+    ["Detected", capabilitySummary(caps)],
+    ["Quant", model.quant ?? "unknown"],
   ])));
 }
 
 function printManagedModelDetails(model, backend) {
   console.log("\n" + renderSection(`${backend.label} model`, renderRows([
-    ["Label", pc.bold(model.label)],
-    ["ID", pc.cyan(model.id)],
+    ["Name", pc.bold(model.label)],
+    ["Status", pc.green("Available from another app")],
+    ["Model ID", pc.cyan(model.id)],
     ["Quant", model.quant ?? "unknown"],
     ["Family", model.family ?? "unknown"],
   ])));
@@ -412,16 +455,6 @@ function capabilitySummary(caps) {
   if (caps.thinking) parts.push("thinking");
   if (caps.vision) parts.push("vision");
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
-}
-
-function capabilityBadges(caps) {
-  const badges = [];
-  if (caps.mtp) badges.push(pc.blue("[MTP]"));
-  if (caps.qat) badges.push(pc.green("[QAT]"));
-
-  if (caps.thinking) badges.push(pc.magenta("[thinking]"));
-  if (caps.vision) badges.push(pc.cyan("[vision]"));
-  return badges.join(" ");
 }
 
 function createManagedProfile(model, backendId) {
@@ -487,10 +520,10 @@ async function runProfile(profile, options = {}) {
   if (!isManaged && profile.modelPath && existsSync(profile.modelPath)) {
     try {
       const est = estimateMemory(profile.modelPath, profile.mmprojPath, null, profile.flags);
-      console.log(renderSection("Memory", renderRows([
+      console.log(renderSection("Memory estimate", renderRows([
         ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-        ["Model", formatBytes(est.modelBytes)],
-        ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)}` : "unknown"],
+        ["Model file", formatBytes(est.modelBytes)],
+        ["Conversation memory", est.kvBytes ? `~${formatBytes(est.kvBytes)}` : "unknown"],
       ])));
     } catch { /* estimate failed, skip */ }
   }
@@ -541,9 +574,11 @@ async function removeProfileInteractive(id) {
 // ── Benchmark (stub) ────────────────────────────────────────────────────────
 
 async function benchmarkFlow() {
-  console.log(pc.yellow("Benchmark support coming soon."));
-  console.log(pc.dim("This will require the local-llm-visual-benchmark repo."));
-  console.log(pc.dim("For now, start a model with offgrid-ai and run benchmarks manually."));
+  console.log("\n" + renderCard("Benchmark", renderRows([
+    ["Status", pc.yellow("Coming soon")],
+    ["What it will do", "Compare local models with repeatable prompts"],
+    ["For now", "Start a model with offgrid-ai, then run benchmarks manually"],
+  ]), { formatBorder: pc.yellow }));
 }
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -562,21 +597,27 @@ async function statusCommand() {
   const running = statuses.filter((s) => s.status.running);
 
   if (running.length === 0) {
-    console.log(pc.dim("No offgrid-ai servers are running."));
-    if (profiles.length > 0) {
-      console.log(pc.dim(`\n${profiles.length} profile(s) available. Run offgrid-ai to start one.`));
-    }
+    console.log(renderCard("Status", renderRows([
+      ["Running now", pc.dim("none")],
+      ["Ready setups", profiles.length > 0 ? pc.green(String(profiles.length)) : pc.dim("none")],
+      ["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : "Run offgrid-ai to set up a model"],
+    ]), { formatBorder: profiles.length > 0 ? pc.cyan : pc.yellow }));
     return;
   }
 
-  console.log(pc.bold(`${running.length} server${running.length === 1 ? "" : "s"} running`));
+  console.log(renderCard("Status", renderRows([
+    ["Running now", pc.green(`${running.length} model${running.length === 1 ? "" : "s"}`)],
+    ["Stop", "offgrid-ai stop"],
+  ]), { formatBorder: pc.green }));
   for (const { profile, status } of running) {
     const backend = backendFor(profile.backend);
-    console.log(`  ${pc.green("●")} ${pc.bold(profile.label)} ${pc.dim(`[${backend.label}]`)}`);
-    console.log(`    id: ${pc.cyan(profile.id)} · pid: ${status.pid} · ${status.ready ? pc.green("ready") : pc.yellow("loading")}`);
-    console.log(`    ${profile.baseUrl}`);
+    console.log("\n" + renderCard(profile.label, renderRows([
+      ["Status", status.ready ? pc.green("Ready") : pc.yellow("Starting up")],
+      ["Runs with", backend.label],
+      ["Process", `pid ${status.pid}`],
+      ["Server", profile.baseUrl],
+    ]), { formatBorder: status.ready ? pc.green : pc.yellow }));
   }
-  console.log(pc.dim("\nStop with: offgrid-ai stop"));
 }
 
 // ── Stop ────────────────────────────────────────────────────────────────────
@@ -1062,19 +1103,14 @@ async function printVersion() {
 }
 
 function printHelp() {
-  console.log(`${pc.bold("offgrid-ai")} — privacy-first local LLM runner
-
-Usage:
-  offgrid-ai            Command center: inspect, set up, run, benchmark, or remove models
-  offgrid-ai status     Show running local models
-  offgrid-ai stop       Stop a running server (or: offgrid-ai stop <id>)
-  offgrid-ai uninstall  Remove offgrid-ai, clean up PATH, optionally keep profiles
-  offgrid-ai help       Show this help
-  offgrid-ai version    Show version
-
-Flags:
-  --verbose             Show install output (brew, lms, ollama, etc.)
-
-First run? offgrid-ai walks you through installing everything you need.
-After that, just run it — it finds your models, auto-configures, and launches Pi.`);
+  console.log(renderCard("offgrid-ai", renderRows([
+    ["What it is", "A privacy-first local AI runner"],
+    ["Start", pc.bold("offgrid-ai")],
+    ["Status", "offgrid-ai status"],
+    ["Stop", "offgrid-ai stop"],
+    ["Uninstall", "offgrid-ai uninstall"],
+    ["Version", "offgrid-ai version"],
+  ]), { formatBorder: pc.cyan }));
+  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.", { formatBorder: pc.magenta }));
+  console.log("\n" + pc.dim("Tip: use --verbose only when you want detailed install output."));
 }
