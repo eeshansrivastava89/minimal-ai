@@ -11,76 +11,100 @@ This creates `tahoe-base` — your pristine macOS image. Never modify this one.
 
 ## Test Cycle
 
-Each time you want to test from a completely clean machine:
+```bash
+tart clone tahoe-base tahoe-test    # fresh clone from base
+tart run tahoe-test                 # boot the VM
+# ... run tests ...
+tart stop tahoe-test                # shut down
+tart delete tahoe-test              # clean up
+```
+
+## Install offgrid-ai
 
 ```bash
-# 1. Clone from the pristine base
-tart clone tahoe-base tahoe-test
-
-# 2. Run the VM
-tart run tahoe-test
-
-# 3. In the VM, test the curl installer
+# Via curl installer (primary)
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 
-# 4. Test onboarding
-offgrid-ai
+# Or via npm (if Node already present)
+npm install -g offgrid-ai
 
-# 5. When done, stop and delete the VM
-tart stop tahoe-test
-tart delete tahoe-test
+# Verify
+offgrid-ai version
+offgrid-ai --help
 ```
 
-Next test cycle — go back to step 1. You always start from a clean base.
+## Uninstall offgrid-ai
 
-## What to Test
-
-### Fresh install (curl)
-- [ ] `curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash`
-- [ ] Node installs if missing
-- [ ] offgrid-ai installs globally
-- [ ] `offgrid-ai --version` works
-- [ ] `offgrid-ai --help` works
-
-### First-run onboarding
-- [ ] `offgrid-ai` launches onboarding
-- [ ] Homebrew offer → installs if missing
-- [ ] llama-server offer → installs via brew
-- [ ] Backend choice → LM Studio (recommended) / Ollama / oMLX / all three / skip
-- [ ] Each backend installs via Homebrew
-- [ ] LM Studio: `lms` CLI added to PATH after install
-- [ ] Next steps show concrete model download command per backend
-- [ ] "Setup complete" message at the end
-
-### Uninstall
-- [ ] `offgrid-ai uninstall`
-- [ ] Asks to keep profiles (yes/no)
-- [ ] Removes npm package
-- [ ] `~/.offgrid-ai/` kept or removed per choice
-
-### Full clean reset (inside VM)
 ```bash
-rm -rf ~/.offgrid-ai
+offgrid-ai uninstall
+# Or manually:
 npm uninstall -g offgrid-ai
-# Then stop + delete the VM and re-clone
 ```
 
-## Useful VM Commands
+## Full Reset Inside VM
+
+Remove offgrid-ai config and data (keeps backends installed):
 
 ```bash
-tart list              # see all VMs
-tart run tahoe-test    # start VM (GUI window opens)
-tart stop tahoe-test   # stop VM
-tart delete tahoe-test # delete VM
-tart clone tahoe-base tahoe-test  # fresh clone from base
+npm uninstall -g offgrid-ai
+rm -rf ~/.offgrid-ai
 ```
 
-## Quick Test via Docker (Linux only, no macOS testing)
+Remove Node.js (if installed via nvm by the curl installer):
 
 ```bash
-# Test npm/npx install on clean Linux
-docker run --rm -it node:20-slim bash -c "npx offgrid-ai@latest --version && npx offgrid-ai@latest help"
-
-# Test curl installer on clean Ubuntu
-docker run --rm -it ubuntu:latest bash -c "apt update && apt install -y curl && curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash"
+nvm uninstall node
+rm -rf ~/.nvm
+# Then remove these lines from ~/.zshrc:
+# export NVM_DIR="$HOME/.nvm"
+# [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 ```
+
+Remove Node.js (if installed via Homebrew):
+
+```bash
+brew uninstall node
+```
+
+Remove all backends:
+
+```bash
+brew uninstall ollama
+brew uninstall --cask lm-studio
+brew uninstall omlx
+brew untap jundot/omlx
+brew uninstall llama.cpp
+rm -rf ~/.lmstudio          # LM Studio data + models
+rm -rf ~/.ollama             # Ollama models
+```
+
+Full nuclear reset (everything including Homebrew):
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)"
+rm -rf ~/.offgrid-ai ~/.nvm ~/.lmstudio ~/.ollama
+# Edit ~/.zshrc to remove nvm/homebrew PATH lines
+```
+
+Nuclear reset is overkill for most testing — just `tart stop tahoe-test && tart delete tahoe-test` and re-clone from base instead.
+
+## VM Quick Reference
+
+```bash
+tart list                        # see all VMs
+tart run tahoe-test              # start VM (GUI window opens)
+tart stop tahoe-test             # stop VM
+tart delete tahoe-test           # delete VM
+tart clone tahoe-base tahoe-test # fresh clone from base
+```
+
+## Copy-Paste in VM
+
+Copy-paste in Tart VMs requires `tart-guest-agent`:
+
+```bash
+# Inside the VM:
+brew install tart-guest-agent
+```
+
+Pre-installed on `tahoe-base` if you used the official Tart images.
