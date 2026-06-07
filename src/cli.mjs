@@ -202,21 +202,15 @@ export async function mainFlow() {
     }
 
     // Pick what to do
-    while (true) {
-      const action = await prompt.choice("What next?", [
-        { value: "run", label: "Run a model", hint: "Start server and launch Pi" },
-        ...(profiles.length > 0 ? [{ value: "manage", label: "Manage profiles", hint: "Sync, remove, or inspect" }] : []),
-        { value: "benchmark", label: "Benchmark", hint: "Run a benchmark prompt" },
-      ], "run");
+    const action = await prompt.choice("What next?", [
+      { value: "run", label: "Run a model", hint: "Start server and launch Pi" },
+      ...(profiles.length > 0 ? [{ value: "manage", label: "Manage profiles", hint: "Sync, remove, or inspect" }] : []),
+      { value: "benchmark", label: "Benchmark", hint: "Run a benchmark prompt" },
+    ], "run");
 
-      if (action === "run") return await pickAndRun(prompt, profiles, newModels, managedItems);
-      if (action === "manage") {
-        const result = await manageProfiles(prompt, profiles);
-        if (result === "back") continue;
-        return result;
-      }
-      if (action === "benchmark") return await benchmarkFlow(prompt, profiles);
-    }
+    if (action === "run") return await pickAndRun(prompt, profiles, newModels, managedItems);
+    if (action === "manage") return await manageProfiles(prompt, profiles);
+    if (action === "benchmark") return await benchmarkFlow(prompt, profiles);
   } finally {
     prompt.close();
   }
@@ -391,64 +385,51 @@ async function runProfile(profile, options = {}) {
 // ── Manage profiles ─────────────────────────────────────────────────────────
 
 async function manageProfiles(prompt, profiles) {
-  while (true) {
-    const choices = profiles.map((p) => ({
-      value: p.id,
-      label: p.label,
-      hint: `${p.modelAlias} · ${p.baseUrl}`,
-    }));
-    choices.push({ value: "__back", label: "← Back" });
+  const choices = profiles.map((p) => ({
+    value: p.id,
+    label: p.label,
+    hint: `${p.modelAlias} · ${p.baseUrl}`,
+  }));
 
-    const selected = await prompt.choice("Which profile?", choices, choices[0].value);
-    if (selected === "__back") return "back";
+  const selected = await prompt.choice("Which profile?", choices, choices[0].value);
+  const profile = await readProfile(selected);
+  const backend = backendFor(profile.backend);
+  const isManaged = backend.type === "managed-server";
+  const piConfigured = await hasPiModel(profile);
 
-    const profile = await readProfile(selected);
-    const backend = backendFor(profile.backend);
-    const isManaged = backend.type === "managed-server";
-    const piConfigured = await hasPiModel(profile);
+  // Show profile details
+  console.log("");
+  console.log(renderSection("Profile", renderRows([
+    ["ID", pc.cyan(profile.id)],
+    ["Label", pc.bold(profile.label)],
+    ["Backend", backend.label],
+    ["Endpoint", pc.green(profile.baseUrl)],
+    ...(!isManaged ? [
+      ["Model", profile.modelPath ?? "unknown"],
+      ["MMProj", profile.mmprojPath ?? "none"],
+      ["Memory", existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
+    ] : []),
+    ["Alias", pc.cyan(profile.modelAlias)],
+    ["Pi", piConfigured ? pc.green("configured") : pc.yellow("not synced")],
+  ])));
 
-    // Show profile details
+  if (!isManaged && profile.commandArgv) {
     console.log("");
-    console.log(renderSection("Profile", renderRows([
-      ["ID", pc.cyan(profile.id)],
-      ["Label", pc.bold(profile.label)],
-      ["Backend", backend.label],
-      ["Endpoint", pc.green(profile.baseUrl)],
-      ...(!isManaged ? [
-        ["Model", profile.modelPath ?? "unknown"],
-        ["MMProj", profile.mmprojPath ?? "none"],
-        ["Memory", existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
-      ] : []),
-      ["Alias", pc.cyan(profile.modelAlias)],
-      ["Pi", piConfigured ? pc.green("configured") : pc.yellow("not synced")],
-    ])));
-
-    if (!isManaged && profile.commandArgv) {
-      console.log("");
-      console.log(pc.bold("llama-server command"));
-      console.log(pc.dim(buildPrettyCommand(profile)));
-    }
-
-    const action = await prompt.choice("Action", [
-      { value: "sync", label: piConfigured ? `${pc.green("✓")} Pi config synced` : "Sync Pi config", hint: piConfigured ? "Already in ~/.pi/agent/models.json" : "Update ~/.pi/agent/models.json" },
-      { value: "run", label: "Run", hint: "Start server + Pi" },
-      ...(isManaged ? [] : [{ value: "server", label: "Server only", hint: "Start server, no harness" }]),
-      { value: "remove", label: "Remove", hint: "Delete profile + Pi config" },
-      { value: "__back", label: "← Back", hint: "Choose another profile" },
-    ], "sync");
-
-    if (action === "__back") continue;
-    if (action === "sync") {
-      await syncPiConfig(profile);
-      continue;
-    }
-    if (action === "run") return await runProfile(profile);
-    if (action === "server") return await runProfile(profile, { with: "server" });
-    if (action === "remove") {
-      await removeProfileInteractive(profile.id);
-      return;
-    }
+    console.log(pc.bold("llama-server command"));
+    console.log(pc.dim(buildPrettyCommand(profile)));
   }
+
+  const action = await prompt.choice("Action", [
+    { value: "sync", label: piConfigured ? `${pc.green("✓")} Pi config synced` : "Sync Pi config", hint: piConfigured ? "Already in ~/.pi/agent/models.json" : "Update ~/.pi/agent/models.json" },
+    { value: "run", label: "Run", hint: "Start server + Pi" },
+    ...(isManaged ? [] : [{ value: "server", label: "Server only", hint: "Start server, no harness" }]),
+    { value: "remove", label: "Remove", hint: "Delete profile + Pi config" },
+  ], "sync");
+
+  if (action === "sync") return await syncPiConfig(profile);
+  if (action === "run") return await runProfile(profile);
+  if (action === "server") return await runProfile(profile, { with: "server" });
+  if (action === "remove") return await removeProfileInteractive(profile.id);
 }
 
 async function removeProfileInteractive(id) {
