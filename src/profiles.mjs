@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
