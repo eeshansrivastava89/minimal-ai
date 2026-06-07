@@ -60,14 +60,40 @@ export async function mainFlow() {
     // Fall through — they can still use managed backends
   }
 
-  // 4. No models found at all (but backends exist)
+  // 4. No models found at all (but backends may exist)
   if (!hasAnyModels && profiles.length === 0) {
     if (!process.stdin.isTTY) {
-      throw new Error("No models found. Download one in LM Studio or start Ollama, then run offgrid-ai.");
+      throw new Error("No models found. Download a model, then run offgrid-ai.");
     }
     console.log(pc.yellow("No models found."));
-    console.log(pc.dim("Download a model in LM Studio (https://lmstudio.ai), start Ollama, or install oMLX."));
-    console.log(pc.dim("Then run offgrid-ai again."));
+    console.log(pc.dim("You need to download a model to use offgrid-ai.\n"));
+    // Detect which backends are installed
+    const ollamaInstalled = await hasOllamaInstalled();
+    const omlxInstalled = await hasOmlxInstalled();
+    const lmStudioInstalled = existsSync("/Applications/LM Studio.app");
+    const hasBackends = llamaBinary || ollamaInstalled || omlxInstalled || lmStudioInstalled;
+    if (hasBackends) {
+      console.log(pc.bold("Backend status:"));
+      console.log(`  ${lmStudioInstalled ? pc.green("✓") : pc.red("✗")} LM Studio ${lmStudioInstalled ? "— installed" : "— not installed"}`);
+      console.log(`  ${ollamaInstalled ? pc.green("✓") : pc.red("✗")} Ollama ${ollamaInstalled ? "— installed" : "— not installed"}`);
+      console.log(`  ${omlxInstalled ? pc.green("✓") : pc.red("✗")} oMLX ${omlxInstalled ? "— installed" : "— not installed"}`);
+      console.log(`  ${llamaBinary ? pc.green("✓") : pc.red("✗")} llama-server ${llamaBinary ? "— installed" : "— not installed"}`);
+      console.log();
+      const model = recommendedModel();
+      console.log(pc.bold("Next step — download a model:"));
+      if (lmStudioInstalled) {
+        console.log("  Open LM Studio → browse models → download");
+        console.log(pc.dim(`  Recommended: ${model.label}`));
+      }
+      if (ollamaInstalled) {
+        console.log(pc.bold(`  ollama pull ${model.ollama}`));
+      }
+      if (omlxInstalled) {
+        console.log(pc.bold("  omlx start"));
+      }
+    } else {
+      console.log(pc.dim("Run offgrid-ai to install a backend and download a model."));
+    }
     return;
   }
 
@@ -629,9 +655,8 @@ async function onboardFlow() {
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
           console.log(pc.green("✓ LM Studio installed"));
-          console.log(pc.yellow("\nOpen LM Studio, set up the app, and download a model."));
+          console.log(pc.yellow("\nOpen LM Studio and download a model to get started."));
           console.log(pc.dim(`Recommended for your machine: ${model.label}`));
-          console.log(pc.bold(`  lms get ${model.lms}`));
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch {
           console.log(pc.red("✗ LM Studio installation failed."));
@@ -693,18 +718,7 @@ async function onboardFlow() {
         }
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
-          console.log(pc.yellow("\nDownload a model to get started:"));
           console.log(pc.dim(`Recommended for your machine (${(totalmem() / (1024 ** 3)).toFixed(0)}GB RAM): ${model.label}`));
-          if (installed.includes("LM Studio")) {
-            console.log(pc.bold(`  LM Studio → lms get ${model.lms}`));
-          }
-          if (installed.includes("Ollama")) {
-            console.log(pc.bold(`  Ollama   → ollama pull ${model.ollama}`));
-          }
-          if (installed.includes("oMLX")) {
-            console.log(pc.bold("  oMLX     → omlx start"));
-          }
-          console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         }
       } else {
         console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
@@ -812,6 +826,26 @@ async function removeSelf() {
     console.log(pc.red("\n✗ Could not auto-uninstall. Run this manually:"));
     console.log(pc.bold("  npm uninstall -g offgrid-ai"));
   }
+}
+
+// ── Backend install detection (for status display) ────────────────────────
+
+async function hasOllamaInstalled() {
+  try {
+    const { promisify } = await import("node:util");
+    const { execFile } = await import("node:child_process");
+    await promisify(execFile)("which", ["ollama"]);
+    return true;
+  } catch { return false; }
+}
+
+async function hasOmlxInstalled() {
+  try {
+    const { promisify } = await import("node:util");
+    const { execFile } = await import("node:child_process");
+    await promisify(execFile)("which", ["omlx"]);
+    return true;
+  } catch { return false; }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
