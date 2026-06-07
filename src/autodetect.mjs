@@ -7,20 +7,26 @@ import { readGgufMetadata } from "./gguf.mjs";
 export function detectCapabilities(modelPath, mmprojPath) {
   const meta = safeReadGgufMetadata(modelPath);
   const name = basename(modelPath).toLowerCase();
+  const pathHints = String(modelPath).toLowerCase();
 
   // Architecture
   const architecture = meta["general.architecture"] ?? null;
 
   // Thinking / reasoning mode
   const hasThinkingKwargs = meta["chat_template_kwargs"] !== undefined;
-  const nameHintsThinking = /qwen3|gemma-4|gemma4|deepseek-r[12]/i.test(name);
+  const nameHintsThinking = /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(pathHints);
   const thinking = hasThinkingKwargs || nameHintsThinking;
+
+  // Quantization-aware / imatrix quantization hints. These mostly affect
+  // display and defaults transparency; llama-server does not need a QAT flag.
+  const qat = /qat|imatrix|i-?matrix/i.test(pathHints) || Object.keys(meta).some((key) => key.startsWith("quantize.imatrix."));
 
   // Vision — mmproj present
   const vision = Boolean(mmprojPath && existsSync(mmprojPath));
 
-  // MTP (multi-token prediction) — detect speculative decoding
-  const mtp = /mtp/i.test(name) || architecture === "qwen3";
+  // MTP (multi-token prediction) — detect speculative decoding.
+  // Do not treat all Qwen models as MTP; require an explicit filename or metadata hint.
+  const mtp = /\bmtp\b|draft-mtp|multi-token/i.test(pathHints) || Object.keys(meta).some((key) => /mtp|draft|speculative/i.test(key));
 
   // Quantization
   const quant = name.match(/(Q\d_K_[A-Z]+|UD-[A-Z0-9_]+)/i)?.[1] ?? null;
@@ -31,7 +37,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
     : undefined;
   const ctxSize = metaCtx ?? (thinking ? 80000 : 32768);
 
-  return { architecture, thinking, vision, mtp, quant, metaCtx, ctxSize, meta };
+  return { architecture, thinking, vision, mtp, qat, quant, metaCtx, ctxSize, meta };
 }
 
 // ── Compute llama-server flags from capabilities ───────────────────────────
@@ -42,7 +48,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
 
   const flags = {
     host: "127.0.0.1",
-    port: 8080,
+    port: mtp ? 8081 : 8080,
     ctxSize: capabilities.ctxSize,
     flashAttention: "on",
     cacheTypeK: isLowMem ? "f16" : "bf16",

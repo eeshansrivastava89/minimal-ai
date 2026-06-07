@@ -14,6 +14,7 @@ import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand,
 import { removeInstallerPathEntries } from "./shell-path.mjs";
 import { configureLocalProfile } from "./profile-setup.mjs";
 import { buildPrettyCommand } from "./command.mjs";
+import { detectCapabilities } from "./autodetect.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -176,10 +177,10 @@ async function modelsCommand(argv) {
 
 async function modelCommandCenter(catalog) {
   const normalized = normalizeCatalog(catalog);
-  await printModelCatalog(normalized);
+  const items = modelCatalogItems(normalized);
+  await printModelCatalog(normalized, items);
   if (!process.stdin.isTTY) return;
 
-  const items = modelCatalogItems(normalized);
   if (items.length === 0) return;
 
   const prompt = createPrompt();
@@ -234,36 +235,54 @@ function normalizeCatalog(catalog) {
   return { profiles, ggufModels, managedModels, newModels, managedItems };
 }
 
-async function printModelCatalog({ profiles, newModels, managedModels }) {
-  if (profiles.length > 0) {
-    console.log(pc.bold("\nSaved profiles"));
+async function printModelCatalog({ profiles, newModels, managedItems }, items = modelCatalogItems({ profiles, newModels, managedItems })) {
+  const itemNumber = (predicate) => {
+    const index = items.findIndex(predicate);
+    return index === -1 ? "  " : String(index + 1).padStart(2, " ");
+  };
+
+  console.log(pc.bold("\nSaved profiles"));
+  if (profiles.length === 0) {
+    console.log(pc.dim("  None yet."));
+  } else {
     for (const profile of profiles) {
       const backend = backendFor(profile.backend);
       const colorMap = { "llama-cpp": pc.yellow, "llama-cpp-mtp": pc.blue, "ollama": pc.magenta, "omlx": pc.cyan };
       const running = await isProfileRunning(profile);
       const piConfigured = await hasPiModel(profile);
       const c = colorMap[profile.backend] ?? pc.magenta;
-      console.log(`  ${running ? pc.green("●") : pc.dim("○")} ${pc.bold(profile.label)} ${c(`[${backend.label}]`)} · ${pc.cyan(profile.modelAlias)} ${piConfigured ? pc.green("· Pi synced") : pc.yellow("· Pi not synced")}`);
+      const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
+      console.log(`${num}. ${running ? pc.green("●") : pc.dim("○")} ${pc.bold(profile.label)} ${c(`[${backend.label}]`)} · ${pc.cyan(profile.modelAlias)} ${piConfigured ? pc.green("· Pi synced") : pc.yellow("· Pi not synced")}`);
     }
-  } else {
-    console.log(pc.bold("\nSaved profiles"));
-    console.log(pc.dim("  None yet."));
   }
 
-  if (newModels.length > 0) {
-    console.log(pc.bold("\nNew GGUF models"));
+  console.log("");
+  console.log(pc.bold("Downloaded models not set up yet"));
+  if (newModels.length === 0) {
+    console.log(pc.dim("  None. Every downloaded GGUF has a profile."));
+  } else {
     for (const model of newModels.slice(0, 20)) {
-      console.log(`  ${pc.cyan(model.label)} ${pc.dim(model.quant ?? "")} · ${pc.dim(formatBytes(model.sizeBytes))}`);
+      const caps = detectCapabilities(model.path, model.mmprojPath);
+      const num = itemNumber((item) => item.type === "new" && item.model.path === model.path);
+      console.log(`${num}. ${pc.cyan(model.label)} ${capabilityBadges(caps)} ${pc.dim(model.quant ?? "")}`);
+      console.log(`    alias:  ${pc.cyan(model.aliasSuggestion)}`);
+      console.log(`    size:   ${formatBytes(model.sizeBytes)}`);
     }
     if (newModels.length > 20) console.log(pc.dim(`  ... and ${newModels.length - 20} more`));
   }
 
-  for (const { backendId, models } of managedModels) {
-    if (models.length === 0) continue;
+  for (const backendId of ["ollama", "omlx"]) {
+    const backendItems = managedItems.filter((item) => item.backendId === backendId);
+    if (backendItems.length === 0) continue;
     const be = BACKENDS[backendId];
-    console.log(pc.bold(`\n${be.label} models`));
-    for (const model of models.slice(0, 10)) console.log(`  ${pc.cyan(model.label)}`);
-    if (models.length > 10) console.log(pc.dim(`  ... and ${models.length - 10} more`));
+    console.log("");
+    console.log(pc.bold(`${be.label} models`));
+    for (const { model } of backendItems.slice(0, 10)) {
+      const num = itemNumber((item) => item.type === "managed" && item.backendId === backendId && item.model.id === model.id);
+      console.log(`${num}. ${pc.cyan(model.label)} ${pc.dim(model.quant ?? "")}`);
+      console.log(`    id: ${pc.cyan(model.id)}`);
+    }
+    if (backendItems.length > 10) console.log(pc.dim(`  ... and ${backendItems.length - 10} more`));
   }
 }
 
@@ -276,17 +295,25 @@ function modelCatalogItems({ profiles, newModels, managedItems }) {
 }
 
 async function chooseCatalogItem(prompt, items, action) {
-  const allowed = action === "remove" ? items.filter((item) => item.type === "profile") : items;
-  if (allowed.length === 0) {
-    console.log(pc.yellow(action === "remove" ? "No saved profiles to remove." : "No models available."));
+  if (action === "remove" && !items.some((item) => item.type === "profile")) {
+    console.log(pc.yellow("No saved profiles to remove."));
     return null;
   }
-  const selected = await prompt.choice("Select", allowed.map((item, index) => ({
-    value: String(index),
-    label: item.label,
-    hint: item.hint,
-  })), "0");
-  return allowed[Number(selected)];
+
+  const input = await prompt.text("Select a number", "");
+  if (!input) return null;
+  const index = Number(input) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+    console.log(pc.yellow(`No item ${input}.`));
+    return null;
+  }
+
+  const item = items[index];
+  if (action === "remove" && item.type !== "profile") {
+    console.log(pc.yellow("Only saved profiles can be removed."));
+    return null;
+  }
+  return item;
 }
 
 async function handleCatalogAction(prompt, action, item) {
@@ -337,6 +364,7 @@ async function printProfileDetails(profile) {
     ["ID", pc.cyan(profile.id)],
     ["Label", pc.bold(profile.label)],
     ["Backend", backend.label],
+    ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
     ["Endpoint", pc.green(profile.baseUrl)],
     ...(!isManaged ? [
       ["Model", profile.modelPath ?? "unknown"],
@@ -354,8 +382,10 @@ async function printProfileDetails(profile) {
 }
 
 function printGgufModelDetails(model) {
+  const caps = detectCapabilities(model.path, model.mmprojPath);
   console.log("\n" + renderSection("GGUF model", renderRows([
     ["Label", pc.bold(model.label)],
+    ["Detected", capabilitySummary(caps)],
     ["Model", model.path],
     ["MMProj", model.mmprojPath ?? "none"],
     ["Quant", model.quant ?? "unknown"],
@@ -370,6 +400,26 @@ function printManagedModelDetails(model, backend) {
     ["Quant", model.quant ?? "unknown"],
     ["Family", model.family ?? "unknown"],
   ])));
+}
+
+function capabilitySummary(caps) {
+  const parts = [];
+  if (caps.architecture) parts.push(caps.architecture);
+  if (caps.quant) parts.push(caps.quant);
+  if (caps.mtp) parts.push("MTP");
+  if (caps.qat) parts.push("QAT/imatrix");
+  if (caps.thinking) parts.push("thinking");
+  if (caps.vision) parts.push("vision");
+  return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
+}
+
+function capabilityBadges(caps) {
+  const badges = [];
+  if (caps.mtp) badges.push(pc.blue("[MTP]"));
+  if (caps.qat) badges.push(pc.green("[QAT]"));
+  if (caps.thinking) badges.push(pc.magenta("[thinking]"));
+  if (caps.vision) badges.push(pc.cyan("[vision]"));
+  return badges.join(" ");
 }
 
 function createManagedProfile(model, backendId) {

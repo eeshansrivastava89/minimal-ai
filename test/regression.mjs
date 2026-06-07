@@ -50,6 +50,14 @@ describe("regressions", () => {
     assert.deepEqual(plan.args, ["exec", "--yes", "--", "offgrid-ai@latest", "status"]);
   });
 
+  it("detects MTP from LM Studio parent directory names", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "Qwen3.6-35B-A3B-MTP-GGUF-"));
+    const file = join(dir, "Qwen3.6-35B-A3B-UD-Q4_K_S.gguf");
+    await writeFile(file, "GGUF\0");
+    const caps = detectCapabilities(file, null);
+    assert.equal(caps.mtp, true);
+  });
+
   it("updates first-run profile flags and command argv together", () => {
     const profile = {
       flags: { host: "127.0.0.1", port: 8080, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
@@ -59,7 +67,9 @@ describe("regressions", () => {
     const updated = applyRuntimeFlagOverrides(profile, { ctxSize: 65536, cacheTypeK: "q8_0", cacheTypeV: "q8_0" });
     assert.equal(updated.flags.ctxSize, 65536);
     assert.equal(updated.baseUrl, "http://127.0.0.1:8080/v1");
-    assert.deepEqual(updated.commandArgv.slice(-6), ["--ctx-size", "65536", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0"]);
+    assert.equal(optionValue(updated.commandArgv, "--ctx-size"), "65536");
+    assert.equal(optionValue(updated.commandArgv, "--cache-type-k"), "q8_0");
+    assert.equal(optionValue(updated.commandArgv, "--cache-type-v"), "q8_0");
   });
 
   it("treats corrupt .gguf files as unknown metadata instead of crashing", async () => {
@@ -71,3 +81,8 @@ describe("regressions", () => {
     assert.equal(caps.quant, "q4_k_m");
   });
 });
+
+function optionValue(argv, flag) {
+  const index = argv.indexOf(flag);
+  return index === -1 ? undefined : argv[index + 1];
+}

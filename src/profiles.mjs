@@ -136,23 +136,39 @@ export function normalizeProfile(profile) {
 
 // ── Auto-create profile from a discovered model ────────────────────────────
 
-export async function createProfileFromModel(model, backendId = "llama-cpp") {
+export async function createProfileFromModel(model, backendId) {
   const { detectCapabilities } = await import("./autodetect.mjs");
   const caps = detectCapabilities(model.path, model.mmprojPath);
+  const backend = backendId ?? (caps.mtp ? "llama-cpp-mtp" : "llama-cpp");
   const id = slugFromLabel(model.label);
   const { flags, argv } = computeFlags(caps, model.path, model.mmprojPath, null);
 
   return normalizeProfile({
     id,
     label: model.label,
-    backend: backendId,
+    backend,
+    providerId: backend,
     modelAlias: model.aliasSuggestion,
     modelPath: model.path,
     mmprojPath: model.mmprojPath,
+    capabilities: summarizeCapabilities(caps),
     preset: null, // no presets — auto-detected
     flags,
     commandArgv: argv,
   });
+}
+
+function summarizeCapabilities(caps) {
+  return {
+    architecture: caps.architecture,
+    thinking: caps.thinking,
+    vision: caps.vision,
+    mtp: caps.mtp,
+    qat: caps.qat,
+    quant: caps.quant,
+    metaCtx: caps.metaCtx,
+    ctxSize: caps.ctxSize,
+  };
 }
 
 // ── State files (for running servers) ──────────────────────────────────────
