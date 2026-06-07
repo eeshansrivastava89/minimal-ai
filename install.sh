@@ -123,15 +123,38 @@ if $DRY_RUN; then
   exit 0
 fi
 
+# ── Determine npm global bin directory ──────────────────────────────────────
+# npm bin -g was removed in npm v10+. Fall back to $(npm prefix -g)/bin.
+
+NPM_BIN=""
+if command -v npm &>/dev/null; then
+  # Try the modern way first, then legacy
+  NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+  if [[ -n "$NPM_PREFIX" ]]; then
+    NPM_BIN="${NPM_PREFIX}/bin"
+  fi
+  # Validate: the binary should exist there
+  if [[ ! -d "$NPM_BIN" ]]; then
+    NPM_BIN=""
+  fi
+fi
+
 # ── Add npm global bin to PATH if needed ────────────────────────────────────
 
-NPM_BIN="$(npm bin -g 2>/dev/null)"
+INSTALLED_VERSION=""
 
-if ! command -v offgrid-ai &>/dev/null; then
-  if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
-    # Add to current session
+if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
+  # Get version
+  INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 "$NPM_BIN/offgrid-ai" version 2>/dev/null || echo "")"
+
+  if command -v offgrid-ai &>/dev/null; then
+    # Already on PATH — nothing to do
+    ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed at $(command -v offgrid-ai)"
+  else
+    # Not on PATH — add it
     export PATH="$NPM_BIN:$PATH"
     ok "Added $NPM_BIN to PATH for this session"
+    ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed"
 
     # Add to shell config for future sessions (pick first existing or .zshrc)
     ADDED_TO_RC=false
@@ -152,13 +175,20 @@ if ! command -v offgrid-ai &>/dev/null; then
     if ! $ADDED_TO_RC; then
       warn "$NPM_BIN is already in a shell config file — restart your terminal to use offgrid-ai"
     fi
+  fi
+else
+  # Fallback: try to find it anywhere on PATH after install
+  if command -v offgrid-ai &>/dev/null; then
+    INSTALLED_VERSION="$(offgrid-ai version 2>/dev/null || echo "")"
+    ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed at $(command -v offgrid-ai)"
   else
     echo ""
-    warn "offgrid-ai was installed but the binary wasn't found."
+    warn "offgrid-ai was installed but could not be found."
     echo "  Restart your terminal and run: offgrid-ai"
+    echo "  Or run: npx offgrid-ai"
     echo ""
     printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-    printf "${BOLD}${GREEN}  offgrid-ai is ready!${RESET}\n"
+    printf "${BOLD}${GREEN}  offgrid-ai is installed!${RESET}\n"
     printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
     echo ""
     echo "  Run: offgrid-ai"
@@ -167,13 +197,11 @@ if ! command -v offgrid-ai &>/dev/null; then
   fi
 fi
 
-ok "offgrid-ai installed at $(command -v offgrid-ai)"
-
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
 printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-printf "${BOLD}${GREEN}  offgrid-ai is ready!${RESET}\n"
+printf "${BOLD}${GREEN}  offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }is ready!${RESET}\n"
 printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 echo ""
 echo "  First run will walk you through setting up everything you need"
