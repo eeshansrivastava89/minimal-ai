@@ -13,6 +13,7 @@ import { pc, formatBytes, renderRows, renderSection, startInteractive, createPro
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { removeInstallerPathEntries } from "./shell-path.mjs";
 import { configureLocalProfile } from "./profile-setup.mjs";
+import { buildPrettyCommand } from "./command.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -201,15 +202,21 @@ export async function mainFlow() {
     }
 
     // Pick what to do
-    const action = await prompt.choice("What next?", [
-      { value: "run", label: "Run a model", hint: "Start server and launch Pi" },
-      ...(profiles.length > 0 ? [{ value: "manage", label: "Manage profiles", hint: "Sync, remove, or inspect" }] : []),
-      { value: "benchmark", label: "Benchmark", hint: "Run a benchmark prompt" },
-    ], "run");
+    while (true) {
+      const action = await prompt.choice("What next?", [
+        { value: "run", label: "Run a model", hint: "Start server and launch Pi" },
+        ...(profiles.length > 0 ? [{ value: "manage", label: "Manage profiles", hint: "Sync, remove, or inspect" }] : []),
+        { value: "benchmark", label: "Benchmark", hint: "Run a benchmark prompt" },
+      ], "run");
 
-    if (action === "run") return await pickAndRun(prompt, profiles, newModels, managedItems);
-    if (action === "manage") return await manageProfiles(prompt, profiles);
-    if (action === "benchmark") return await benchmarkFlow(prompt, profiles);
+      if (action === "run") return await pickAndRun(prompt, profiles, newModels, managedItems);
+      if (action === "manage") {
+        const result = await manageProfiles(prompt, profiles);
+        if (result === "back") continue;
+        return result;
+      }
+      if (action === "benchmark") return await benchmarkFlow(prompt, profiles);
+    }
   } finally {
     prompt.close();
   }
@@ -384,58 +391,63 @@ async function runProfile(profile, options = {}) {
 // ── Manage profiles ─────────────────────────────────────────────────────────
 
 async function manageProfiles(prompt, profiles) {
-  const choices = profiles.map((p) => ({
-    value: p.id,
-    label: p.label,
-    hint: `${p.modelAlias} · ${p.baseUrl}`,
-  }));
-  choices.push({ value: "__back", label: "← Back" });
+  while (true) {
+    const choices = profiles.map((p) => ({
+      value: p.id,
+      label: p.label,
+      hint: `${p.modelAlias} · ${p.baseUrl}`,
+    }));
+    choices.push({ value: "__back", label: "← Back" });
 
-  const selected = await prompt.choice("Which profile?", choices, choices[0].value);
-  if (selected === "__back") return;
+    const selected = await prompt.choice("Which profile?", choices, choices[0].value);
+    if (selected === "__back") return "back";
 
-  const profile = await readProfile(selected);
-  const backend = backendFor(profile.backend);
-  const isManaged = backend.type === "managed-server";
+    const profile = await readProfile(selected);
+    const backend = backendFor(profile.backend);
+    const isManaged = backend.type === "managed-server";
+    const piConfigured = await hasPiModel(profile);
 
-  // Show profile details
-  console.log("");
-  console.log(renderSection("Profile", renderRows([
-    ["ID", pc.cyan(profile.id)],
-    ["Label", pc.bold(profile.label)],
-    ["Backend", backend.label],
-    ["Endpoint", pc.green(profile.baseUrl)],
-    ...(!isManaged ? [
-      ["Model", profile.modelPath ?? "unknown"],
-      ["MMProj", profile.mmprojPath ?? "none"],
-      ["Memory", existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
-    ] : []),
-    ["Alias", pc.cyan(profile.modelAlias)],
-    ["Pi", (await hasPiModel(profile)) ? pc.green("configured") : pc.yellow("not synced")],
-  ])));
-
-  if (!isManaged && profile.commandArgv) {
+    // Show profile details
     console.log("");
-    console.log(pc.bold("Auto-detected flags"));
-    console.log(pc.dim(profile.commandArgv.join(" ")));
-  }
+    console.log(renderSection("Profile", renderRows([
+      ["ID", pc.cyan(profile.id)],
+      ["Label", pc.bold(profile.label)],
+      ["Backend", backend.label],
+      ["Endpoint", pc.green(profile.baseUrl)],
+      ...(!isManaged ? [
+        ["Model", profile.modelPath ?? "unknown"],
+        ["MMProj", profile.mmprojPath ?? "none"],
+        ["Memory", existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
+      ] : []),
+      ["Alias", pc.cyan(profile.modelAlias)],
+      ["Pi", piConfigured ? pc.green("configured") : pc.yellow("not synced")],
+    ])));
 
-  const action = await prompt.choice("Action", [
-    { value: "sync", label: "Sync Pi config", hint: "Update ~/.pi/agent/models.json" },
-    { value: "run", label: "Run", hint: "Start server + Pi" },
-    ...(isManaged ? [] : [{ value: "server", label: "Server only", hint: "Start server, no harness" }]),
-    { value: "remove", label: "Remove", hint: "Delete profile + Pi config" },
-    { value: "__back", label: "← Back" },
-  ], "sync");
+    if (!isManaged && profile.commandArgv) {
+      console.log("");
+      console.log(pc.bold("llama-server command"));
+      console.log(pc.dim(buildPrettyCommand(profile)));
+    }
 
-  if (action === "sync") {
-    await syncPiConfig(profile);
-  } else if (action === "run") {
-    return await runProfile(profile);
-  } else if (action === "server") {
-    return await runProfile(profile, { with: "server" });
-  } else if (action === "remove") {
-    await removeProfileInteractive(profile.id);
+    const action = await prompt.choice("Action", [
+      { value: "sync", label: piConfigured ? `${pc.green("✓")} Pi config synced` : "Sync Pi config", hint: piConfigured ? "Already in ~/.pi/agent/models.json" : "Update ~/.pi/agent/models.json" },
+      { value: "run", label: "Run", hint: "Start server + Pi" },
+      ...(isManaged ? [] : [{ value: "server", label: "Server only", hint: "Start server, no harness" }]),
+      { value: "remove", label: "Remove", hint: "Delete profile + Pi config" },
+      { value: "__back", label: "← Back", hint: "Choose another profile" },
+    ], "sync");
+
+    if (action === "__back") continue;
+    if (action === "sync") {
+      await syncPiConfig(profile);
+      continue;
+    }
+    if (action === "run") return await runProfile(profile);
+    if (action === "server") return await runProfile(profile, { with: "server" });
+    if (action === "remove") {
+      await removeProfileInteractive(profile.id);
+      return;
+    }
   }
 }
 
