@@ -789,6 +789,7 @@ async function uninstallCommand(argv) {
     // Non-interactive / forced: remove everything
     await removeDataDir();
     await removeSelf();
+    await removeShellPath();
     return;
   }
 
@@ -825,7 +826,8 @@ async function uninstallCommand(argv) {
     // Remove the npm package
     const confirmUninstall = await prompt.yesNo("Uninstall offgrid-ai npm package?", true);
     if (confirmUninstall) {
-      removeSelf();
+      await removeSelf();
+      await removeShellPath();
     } else {
       console.log(pc.dim("Cancelled."));
     }
@@ -846,6 +848,51 @@ async function removeDataDir() {
     }
   } else {
     console.log(pc.dim(`${dataDir} doesn't exist — already clean.`));
+  }
+}
+
+async function removeShellPath() {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  const { promisify } = await import("node:util");
+  const { execFile } = await import("node:child_process");
+  let npmBin;
+  try {
+    const { stdout } = await promisify(execFile)("npm", ["bin", "-g"]);
+    npmBin = stdout.trim();
+  } catch { return; }
+  if (!npmBin) return;
+
+  const marker = "# Added by offgrid-ai installer";
+  const pathLine = `export PATH="${npmBin}:$PATH"`;
+  const rcFiles = [`${homedir()}/.zshrc`, `${homedir()}/.bashrc`, `${homedir()}/.bash_profile`];
+  let cleaned = false;
+
+  for (const rcFile of rcFiles) {
+    if (!existsSync(rcFile)) continue;
+    let content;
+    try { content = await readFile(rcFile, "utf8"); } catch { continue; }
+    if (!content.includes(npmBin) && !content.includes(marker)) continue;
+
+    const lines = content.split("\n");
+    const filtered = lines.filter((line, i) => {
+      // Remove the marker comment line
+      if (line.trim() === marker) return false;
+      // Remove the PATH export line added by the installer
+      if (line.trim() === pathLine) return false;
+      // Also remove a blank line that immediately precedes the marker (formatter)
+      if (i + 1 < lines.length && lines[i + 1].trim() === marker && line.trim() === "") return false;
+      return true;
+    });
+
+    if (filtered.length !== lines.length) {
+      await writeFile(rcFile, filtered.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf8");
+      console.log(pc.green(`✓ Cleaned PATH from ${rcFile}`));
+      cleaned = true;
+    }
+  }
+  if (!cleaned) {
+    console.log(pc.dim("No offgrid-ai PATH entries found in shell configs."));
   }
 }
 
@@ -932,7 +979,7 @@ Usage:
   offgrid-ai            Pick a model and run it
   offgrid-ai status     Show running local models
   offgrid-ai stop       Stop a running server (or: offgrid-ai stop <id>)
-  offgrid-ai uninstall  Remove offgrid-ai (optionally keep profiles)
+  offgrid-ai uninstall  Remove offgrid-ai, clean up PATH, optionally keep profiles
   offgrid-ai help       Show this help
   offgrid-ai version    Show version
 
