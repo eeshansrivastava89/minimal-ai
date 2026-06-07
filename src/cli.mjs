@@ -10,64 +10,40 @@ import { syncPiConfig, removeFromPiConfig, hasPiModel, launchPi, hasPi } from ".
 import { tailFriendly } from "./logs.mjs";
 import { estimateMemory } from "./estimate.mjs";
 import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
-
-// ── Update check ────────────────────────────────────────────────────────────
-
-const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-
-async function checkForUpdate() {
-  if (process.env.OFFGRID_NO_UPDATE_CHECK) return null;
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const cacheFile = join(DATA_DIR, "update-cache.json");
-
-  // Read cached check
-  let cached;
-  try {
-    cached = JSON.parse(await readFile(cacheFile, "utf8"));
-  } catch { cached = null; }
-
-  // Skip if checked recently
-  if (cached?.lastChecked && Date.now() - cached.lastChecked < UPDATE_CHECK_INTERVAL) {
-    return cached.latestVersion && cached.latestVersion !== cached.currentVersion ? { current: cached.currentVersion, latest: cached.latestVersion } : null;
-  }
-
-  // Fetch latest version from npm registry
-  try {
-    const response = await fetch("https://registry.npmjs.org/offgrid-ai/latest", {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!response.ok) return null;
-    const body = await response.json();
-    const latestVersion = body.version;
-
-    // Get current version
-    const { readFileSync } = await import("node:fs");
-    const { dirname } = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const currentVersion = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
-
-    // Cache the result
-    await writeFile(cacheFile, JSON.stringify({ lastChecked: Date.now(), currentVersion, latestVersion }), "utf8");
-
-    return latestVersion !== currentVersion ? { current: currentVersion, latest: latestVersion } : null;
-  } catch {
-    // Network error or timeout — fail silently
-    return null;
-  }
-}
+import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
+import { removeInstallerPathEntries } from "./shell-path.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
+async function offerUpdate(argv) {
+  const invocation = detectInvocation();
+  const update = await checkForUpdate({ force: invocation === "npx" });
+  if (!update) return false;
+
+  const plan = updateCommand(invocation, argv);
+  console.log(pc.yellow(`\nUpdate available: v${update.latest}. You have v${update.current}.`));
+  console.log(pc.dim(`Run: ${plan.display}`));
+  console.log();
+
+  if (!process.stdin.isTTY) return false;
+
+  const prompt = createPrompt();
+  try {
+    const shouldUpdate = await prompt.yesNo("Update now?", false);
+    if (!shouldUpdate) return false;
+    await runUpdateCommand(plan);
+    if (plan.mode === "install-global") {
+      console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+    }
+    return true;
+  } finally {
+    prompt.close();
+  }
+}
+
 export async function run(argv) {
   if (argv.length === 0) {
-    const update = await checkForUpdate();
-    if (update) {
-      console.log(pc.yellow(`\nUpdate available: ${update.latest}. You have v${update.current}.`));
-      console.log(pc.dim("Run: npm install -g offgrid-ai@latest"));
-      console.log();
-    }
+    if (await offerUpdate(argv)) return;
     return mainFlow();
   }
   const [command] = argv;
@@ -301,7 +277,10 @@ async function pickAndRun(prompt, profiles, newModels, managedItems) {
   }
 
   if (selected.startsWith("managed:")) {
-    const [, backendId, modelId] = selected.split(":");
+    const managedSelection = selected.slice("managed:".length);
+    const separator = managedSelection.indexOf(":");
+    const backendId = separator === -1 ? managedSelection : managedSelection.slice(0, separator);
+    const modelId = separator === -1 ? "" : managedSelection.slice(separator + 1);
     const model = managedItems.find((m) => m.model.id === modelId && m.backendId === backendId)?.model;
     if (!model) throw new Error("Model not found.");
     const profile = normalizeProfile({
@@ -342,10 +321,9 @@ async function runProfile(profile, options = {}) {
     console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
   } else {
     const ready = await serverReady(profile.baseUrl);
-    if (ready && !options["reuse-existing"]) {
-      console.log(pc.green(`[ready] Server already running at ${profile.baseUrl}`));
-      console.log(pc.dim("Use --reuse-existing to reuse this server."));
-    } else if (!ready) {
+    if (ready) {
+      console.log(pc.green(`[ready] Reusing server at ${profile.baseUrl}`));
+    } else {
       console.log(pc.dim(`Starting ${backend.label} for ${profile.label}...`));
       let state;
       try {
@@ -840,11 +818,15 @@ async function uninstallCommand(argv) {
   const { options } = parseOptions(argv);
   const force = options.force || options.f;
 
-  if (!process.stdin.isTTY || force) {
-    // Non-interactive / forced: remove everything
+  if (!process.stdin.isTTY && !force) {
+    throw new Error("Non-interactive uninstall requires --force to avoid accidental data loss.");
+  }
+
+  if (force) {
+    await stopTrackedServers();
     await removeDataDir();
-    await removeSelf();
     await removeShellPath();
+    await removeSelf();
     return;
   }
 
@@ -881,13 +863,21 @@ async function uninstallCommand(argv) {
     // Remove the npm package
     const confirmUninstall = await prompt.yesNo("Uninstall offgrid-ai npm package?", true);
     if (confirmUninstall) {
-      await removeSelf();
       await removeShellPath();
+      await removeSelf();
     } else {
       console.log(pc.dim("Cancelled."));
     }
   } finally {
     prompt.close();
+  }
+}
+
+async function stopTrackedServers() {
+  const running = await runningProfiles();
+  for (const { profile } of running) {
+    const result = await stopProfile(profile);
+    console.log(result.stopped ? pc.green(`✓ ${result.message}`) : pc.dim(result.message));
   }
 }
 
@@ -907,47 +897,13 @@ async function removeDataDir() {
 }
 
 async function removeShellPath() {
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
-  const { promisify } = await import("node:util");
-  const { execFile } = await import("node:child_process");
-  let npmBin;
-  try {
-    const { stdout } = await promisify(execFile)("npm", ["bin", "-g"]);
-    npmBin = stdout.trim();
-  } catch { return; }
-  if (!npmBin) return;
-
-  const marker = "# Added by offgrid-ai installer";
-  const pathLine = `export PATH="${npmBin}:$PATH"`;
-  const rcFiles = [`${homedir()}/.zshrc`, `${homedir()}/.bashrc`, `${homedir()}/.bash_profile`];
-  let cleaned = false;
-
-  for (const rcFile of rcFiles) {
-    if (!existsSync(rcFile)) continue;
-    let content;
-    try { content = await readFile(rcFile, "utf8"); } catch { continue; }
-    if (!content.includes(npmBin) && !content.includes(marker)) continue;
-
-    const lines = content.split("\n");
-    const filtered = lines.filter((line, i) => {
-      // Remove the marker comment line
-      if (line.trim() === marker) return false;
-      // Remove the PATH export line added by the installer
-      if (line.trim() === pathLine) return false;
-      // Also remove a blank line that immediately precedes the marker (formatter)
-      if (i + 1 < lines.length && lines[i + 1].trim() === marker && line.trim() === "") return false;
-      return true;
-    });
-
-    if (filtered.length !== lines.length) {
-      await writeFile(rcFile, filtered.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf8");
-      console.log(pc.green(`✓ Cleaned PATH from ${rcFile}`));
-      cleaned = true;
-    }
-  }
-  if (!cleaned) {
+  const cleaned = await removeInstallerPathEntries();
+  if (cleaned.length === 0) {
     console.log(pc.dim("No offgrid-ai PATH entries found in shell configs."));
+    return;
+  }
+  for (const rcFile of cleaned) {
+    console.log(pc.green(`✓ Cleaned PATH from ${rcFile}`));
   }
 }
 
@@ -1015,19 +971,13 @@ async function scanManagedModels() {
 }
 
 async function printVersion() {
-  const { readFileSync } = await import("node:fs");
-  const { dirname, join } = await import("node:path");
-  const { fileURLToPath } = await import("node:url");
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  try {
-    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
-    console.log(`offgrid-ai v${pkg.version}`);
-    const update = await checkForUpdate();
-    if (update) {
-      console.log(pc.yellow(`Update available: ${update.latest}. Run: npm install -g offgrid-ai@latest`));
-    }
-  } catch {
-    console.log("offgrid-ai v0.1.0");
+  const version = currentPackageVersion();
+  console.log(`offgrid-ai v${version}`);
+  const invocation = detectInvocation();
+  const update = await checkForUpdate({ force: invocation === "npx" });
+  if (update) {
+    const plan = updateCommand(invocation, ["version"]);
+    console.log(pc.yellow(`Update available: v${update.latest}. Run: ${plan.display}`));
   }
 }
 

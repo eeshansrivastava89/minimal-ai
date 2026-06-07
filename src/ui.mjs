@@ -51,6 +51,7 @@ function handleCancel(value) {
 }
 
 export function renderRows(rows) {
+  if (rows.length === 0) return "";
   const width = Math.max(...rows.map(([key]) => stripVTControlCharacters(String(key)).length));
   return rows.map(([key, value]) => {
     const visible = stripVTControlCharacters(String(key)).length;
@@ -67,11 +68,18 @@ export function parseOptions(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i++) {
     const item = argv[i];
+    if (item === "--") {
+      positional.push(...argv.slice(i + 1));
+      break;
+    }
     if (item.startsWith("--")) {
-      const key = item.slice(2);
+      const [key, inlineValue] = item.slice(2).split(/=(.*)/u, 2);
       const next = argv[i + 1];
-      if (next && !next.startsWith("--")) { options[key] = next; i += 1; }
+      if (inlineValue !== undefined) options[key] = inlineValue;
+      else if (next && !next.startsWith("-")) { options[key] = next; i += 1; }
       else options[key] = true;
+    } else if (/^-[A-Za-z]+$/u.test(item)) {
+      for (const key of item.slice(1)) options[key] = true;
     } else {
       positional.push(item);
     }

@@ -5,7 +5,7 @@ import { readGgufMetadata } from "./gguf.mjs";
 // ── Detect model capabilities from GGUF metadata ──────────────────────────
 
 export function detectCapabilities(modelPath, mmprojPath) {
-  const meta = existsSync(modelPath) ? readGgufMetadata(modelPath) : {};
+  const meta = safeReadGgufMetadata(modelPath);
   const name = basename(modelPath).toLowerCase();
 
   // Architecture
@@ -17,7 +17,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
   const thinking = hasThinkingKwargs || nameHintsThinking;
 
   // Vision — mmproj present
-  const vision = mmprojPath && existsSync(mmprojPath);
+  const vision = Boolean(mmprojPath && existsSync(mmprojPath));
 
   // MTP (multi-token prediction) — detect speculative decoding
   const mtp = /mtp/i.test(name) || architecture === "qwen3";
@@ -106,6 +106,15 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
 }
 
 // ── Internal helper ─────────────────────────────────────────────────────
+
+function safeReadGgufMetadata(modelPath) {
+  if (!existsSync(modelPath)) return {};
+  try {
+    return readGgufMetadata(modelPath);
+  } catch {
+    return {};
+  }
+}
 
 function numberMeta(meta, key) {
   const value = key ? meta[key] : undefined;

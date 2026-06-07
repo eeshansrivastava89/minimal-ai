@@ -144,8 +144,8 @@ fi
 INSTALLED_VERSION=""
 
 if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
-  # Get version
-  INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 "$NPM_BIN/offgrid-ai" version 2>/dev/null || echo "")"
+  # Get plain version from `offgrid-ai version` output (`offgrid-ai vX.Y.Z`).
+  INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 "$NPM_BIN/offgrid-ai" version 2>/dev/null | sed -E 's/^offgrid-ai v//' || echo "")"
 
   if command -v offgrid-ai &>/dev/null; then
     # Already on PATH — nothing to do
@@ -179,7 +179,7 @@ if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
 else
   # Fallback: try to find it anywhere on PATH after install
   if command -v offgrid-ai &>/dev/null; then
-    INSTALLED_VERSION="$(offgrid-ai version 2>/dev/null || echo "")"
+    INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 offgrid-ai version 2>/dev/null | sed -E 's/^offgrid-ai v//' || echo "")"
     ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed at $(command -v offgrid-ai)"
   else
     echo ""

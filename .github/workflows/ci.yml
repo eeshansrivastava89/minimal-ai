@@ -25,10 +25,14 @@ jobs:
       - name: Privacy gate
         run: npm run check:privacy
 
+      - name: Test
+        run: npm test
+
       - name: CLI smoke test
         run: |
-          node bin/offgrid-ai.mjs --help
-          node bin/offgrid-ai.mjs --version
+          OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --help
+          OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --version
+          OFFGRID_NO_UPDATE_CHECK=1 OFFGRID_DIR="$(mktemp -d)" node bin/offgrid-ai.mjs status
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')

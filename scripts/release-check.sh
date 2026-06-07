@@ -158,8 +158,10 @@ print_ok "Package file audit passed"
 
 print_step "CLI smoke test"
 
-run_check "offgrid-ai --help" node bin/offgrid-ai.mjs --help
-run_check "offgrid-ai --version" node bin/offgrid-ai.mjs --version
+run_check "npm test" npm test
+run_check "offgrid-ai --help" env OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --help
+run_check "offgrid-ai --version" env OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --version
+run_check "offgrid-ai status" env OFFGRID_NO_UPDATE_CHECK=1 OFFGRID_DIR="$(mktemp -d)" node bin/offgrid-ai.mjs status
 
 # ── 6. Auth & version checks ─────────────────────────────────────────
 
@@ -198,7 +200,9 @@ if [[ "$SKIP_MANUAL" -eq 0 ]] && [[ -t 0 ]]; then
 Manual checks:
   [ ] Run `node bin/offgrid-ai.mjs` — launches onboarding
   [ ] Run `node bin/offgrid-ai.mjs status` — shows status
+  [ ] Run `node bin/offgrid-ai.mjs stop --all` — no crash when nothing is running
   [ ] Run `node bin/offgrid-ai.mjs --help` — shows help
+  [ ] Run `node bin/offgrid-ai.mjs --version` — shows version
   [ ] Verify README.md matches package.json description
   [ ] Verify install.sh raw URL matches current GitHub commit
 
