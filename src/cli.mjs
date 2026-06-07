@@ -438,7 +438,7 @@ function printGgufModelDetails(model) {
 function printManagedModelDetails(model, backend) {
   console.log("\n" + renderSection(`${backend.label} model`, renderRows([
     ["Name", pc.bold(model.label)],
-    ["Status", pc.green("Available from another app")],
+    ["Status", pc.green(`Local model via ${backend.label}`)],
     ["Model ID", pc.cyan(model.id)],
     ["Quant", model.quant ?? "unknown"],
     ["Family", model.family ?? "unknown"],
