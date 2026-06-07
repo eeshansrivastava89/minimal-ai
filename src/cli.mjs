@@ -401,7 +401,7 @@ async function printProfileDetails(profile) {
     ["Server", pc.green(profile.baseUrl)],
   ])));
 
-  console.log("\n" + renderSection("Advanced details", renderRows([
+  console.log("\n" + renderSection("Model details", renderRows([
     ["Setup ID", pc.cyan(profile.id)],
     ["Runs with", backend.label],
     ["Model alias", pc.cyan(profile.modelAlias)],
@@ -411,10 +411,10 @@ async function printProfileDetails(profile) {
       ["Vision file", profile.mmprojPath ?? "none"],
       ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
     ] : []),
-  ])));
+  ]), { columns: 110 }));
 
   if (!isManaged && profile.commandArgv) {
-    console.log("\n" + renderSection("Advanced command", pc.dim(buildPrettyCommand(profile))));
+    console.log("\n" + renderSection("llama-server command", pc.dim(buildPrettyCommand(profile)), { columns: 120 }));
   }
 }
 
@@ -426,12 +426,12 @@ function printGgufModelDetails(model) {
     ["Good for", humanCapabilitySummary(caps)],
     ["Size", formatBytes(model.sizeBytes)],
   ])));
-  console.log("\n" + renderSection("Advanced details", renderRows([
+  console.log("\n" + renderSection("Model details", renderRows([
     ["Local file", model.path],
     ["Vision file", model.mmprojPath ?? "none"],
     ["Detected", capabilitySummary(caps)],
     ["Quant", model.quant ?? "unknown"],
-  ])));
+  ]), { columns: 110 }));
 }
 
 function printManagedModelDetails(model, backend) {

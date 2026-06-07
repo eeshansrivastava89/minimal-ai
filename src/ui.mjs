@@ -75,8 +75,8 @@ export function renderCard(title, body, options = {}) {
   return output.trimEnd();
 }
 
-export function renderSection(title, body) {
-  return renderCard(title, body, { formatBorder: pc.magenta });
+export function renderSection(title, body, options = {}) {
+  return renderCard(title, body, { formatBorder: pc.magenta, ...options });
 }
 
 export function humanCapabilitySummary(caps = {}) {
@@ -101,7 +101,7 @@ export function statusText(kind, text) {
 
 function captureOutput(write, columns) {
   return {
-    columns: Math.min(columns ?? process.stdout.columns ?? 88, 100),
+    columns: Math.min(columns ?? process.stdout.columns ?? 88, 120),
     write,
   };
 }
