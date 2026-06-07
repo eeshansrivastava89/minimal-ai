@@ -619,7 +619,31 @@ async function onboardFlow() {
     }
     console.log(pc.green(`✓ llama-server: ${llamaBinary}`));
 
-    // 3. Model backends — at least one is mandatory
+    // 3. Pi coding agent
+    const piInstalled = await hasPi();
+    if (!piInstalled) {
+      const install = await prompt.yesNo("Pi coding agent is required to chat with models. Install via npm?", true);
+      if (!install) {
+        console.log(pc.red("offgrid-ai needs Pi to run models."));
+        console.log(pc.dim("Install it manually: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"));
+        return;
+      }
+      console.log(pc.cyan("Installing Pi..."));
+      try {
+        await run("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], "Pi");
+      } catch {
+        console.log(pc.red("✗ Failed to install Pi."));
+        console.log(pc.dim("Install it manually: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"));
+        return;
+      }
+      if (!(await hasPi())) {
+        console.log(pc.yellow("Pi was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
+        return;
+      }
+    }
+    console.log(pc.green("✓ Pi found"));
+
+    // 4. Model backends — at least one is mandatory
     const ggufModels = await scanGgufModels();
     const managedModels = await scanManagedModels();
     const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);

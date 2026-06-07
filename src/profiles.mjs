@@ -3,6 +3,7 @@ import { mkdir, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
+import { computeFlags } from "./autodetect.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
 // ── Path helpers ───────────────────────────────────────────────────────────
