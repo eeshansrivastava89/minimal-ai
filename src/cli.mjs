@@ -11,10 +11,65 @@ import { tailFriendly } from "./logs.mjs";
 import { estimateMemory } from "./estimate.mjs";
 import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
 
+// ── Update check ────────────────────────────────────────────────────────────
+
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function checkForUpdate() {
+  if (process.env.OFFGRID_NO_UPDATE_CHECK) return null;
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const cacheFile = join(DATA_DIR, "update-cache.json");
+
+  // Read cached check
+  let cached;
+  try {
+    cached = JSON.parse(await readFile(cacheFile, "utf8"));
+  } catch { cached = null; }
+
+  // Skip if checked recently
+  if (cached?.lastChecked && Date.now() - cached.lastChecked < UPDATE_CHECK_INTERVAL) {
+    return cached.latestVersion && cached.latestVersion !== cached.currentVersion ? { current: cached.currentVersion, latest: cached.latestVersion } : null;
+  }
+
+  // Fetch latest version from npm registry
+  try {
+    const response = await fetch("https://registry.npmjs.org/offgrid-ai/latest", {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const latestVersion = body.version;
+
+    // Get current version
+    const { readFileSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const currentVersion = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
+
+    // Cache the result
+    await writeFile(cacheFile, JSON.stringify({ lastChecked: Date.now(), currentVersion, latestVersion }), "utf8");
+
+    return latestVersion !== currentVersion ? { current: currentVersion, latest: latestVersion } : null;
+  } catch {
+    // Network error or timeout — fail silently
+    return null;
+  }
+}
+
 // ── Entry point ────────────────────────────────────────────────────────────
 
 export async function run(argv) {
-  if (argv.length === 0) return mainFlow();
+  if (argv.length === 0) {
+    const update = await checkForUpdate();
+    if (update) {
+      console.log(pc.yellow(`\nUpdate available: ${update.latest}. You have v${update.current}.`));
+      console.log(pc.dim("Run: npm install -g offgrid-ai@latest"));
+      console.log();
+    }
+    return mainFlow();
+  }
   const [command] = argv;
 
   if (command === "help" || command === "--help" || command === "-h") return printHelp();
@@ -967,6 +1022,10 @@ async function printVersion() {
   try {
     const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
     console.log(`offgrid-ai v${pkg.version}`);
+    const update = await checkForUpdate();
+    if (update) {
+      console.log(pc.yellow(`Update available: ${update.latest}. Run: npm install -g offgrid-ai@latest`));
+    }
   } catch {
     console.log("offgrid-ai v0.1.0");
   }
