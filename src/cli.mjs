@@ -12,6 +12,7 @@ import { estimateMemory } from "./estimate.mjs";
 import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { removeInstallerPathEntries } from "./shell-path.mjs";
+import { configureLocalProfile } from "./profile-setup.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -270,10 +271,12 @@ async function pickAndRun(prompt, profiles, newModels, managedItems) {
     const model = newModels.find((m) => m.path === modelPath);
     if (!model) throw new Error("Model not found.");
     const profile = await createProfileFromModel(model);
-    await saveProfile(profile);
-    console.log(pc.green(`Auto-configured: ${profile.label}`));
-    await syncPiConfig(profile);
-    return await runProfile(profile);
+    const configured = await configureLocalProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured);
+    console.log(pc.green(`Saved profile: ${configured.label}`));
+    await syncPiConfig(configured);
+    return await runProfile(configured);
   }
 
   if (selected.startsWith("managed:")) {

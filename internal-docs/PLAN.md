@@ -40,9 +40,9 @@ Not part of the onboarding chain — the user encounters it naturally when they 
 
 ## Normal Flow
 
-`offgrid-ai` → show available models from all backends → pick one → auto-detect everything → create profile → run server → launch Pi.
+`offgrid-ai` → show available models from all backends → pick one → auto-detect everything → confirm the few memory-impacting profile settings → create profile → run server → launch Pi.
 
-No parameter questions. No preset selection. Auto-detect sets flags from GGUF metadata (QAT, MTP, thinking, vision, memory). Power users edit `~/.offgrid-ai/profiles/<id>/command.json` by hand.
+First profile setup should stay concise, not fully automatic and not a full tuning wizard. Ask for context window size and K/V cache precision because those materially affect memory use. Show sampling defaults (temperature, top-p, top-k, penalties) for transparency, but don't require users to tune them. Power users edit `~/.offgrid-ai/profiles/<id>/command.json` by hand.
 
 ## Decisions
 
@@ -60,7 +60,7 @@ No parameter questions. No preset selection. Auto-detect sets flags from GGUF me
 | Profiles | Per-GGUF file, auto-created on first run of a model |
 | Command files | JSON — kills the shell parser, still editable by power users |
 | Auto-detect | QAT, MTP, thinking mode, vision (mmproj) — all from GGUF metadata and filenames |
-| Sampling / flags | Computed from model metadata. No user questions. Power users edit JSON. |
+| Sampling / flags | Computed from model metadata. Ask only context + K/V cache on first GGUF setup; show sampling defaults; power users edit JSON. |
 | Presets | Gone. Replaced by auto-detect. |
 | Harness | Pi only. Not installed → offer to install. |
 | Benchmark | Conditional on visual-benchmark repo. Absent → offer to clone. Always visible as upsell. |
@@ -94,7 +94,7 @@ No parameter questions. No preset selection. Auto-detect sets flags from GGUF me
 
 - **Drop the shell parser.** ~80 lines of bash parsing (shellSplit, stripShellComment, parseLlamaCommand). JSON command files eliminate all of it.
 - **Drop presets.** `presets.mjs` deleted entirely. Auto-detect replaces it.
-- **Drop guided setup questions.** No sampling param prompts, no cache type choices, no preset selection. Auto-detect everything.
+- **Reduce guided setup questions.** No preset selection and no full sampling wizard. Keep only context window + K/V cache choices, then show memory estimate and defaults before saving.
 - **Drop OpenCode harness.** Half of `harnesses.mjs` gone.
 - **Drop hardcoded paths.** No personal binary paths. Discovery chain + config.
 - **Drop manual backend/server variant choices.** Auto-detected from GGUF metadata.

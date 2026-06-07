@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { compareVersions, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
+import { applyRuntimeFlagOverrides } from "../src/profile-setup.mjs";
 import { parseOptions, renderRows } from "../src/ui.mjs";
 
 describe("regressions", () => {
@@ -47,6 +48,18 @@ describe("regressions", () => {
     const plan = updateCommand(invocation, ["status"]);
     assert.equal(plan.mode, "run-latest");
     assert.deepEqual(plan.args, ["exec", "--yes", "--", "offgrid-ai@latest", "status"]);
+  });
+
+  it("updates first-run profile flags and command argv together", () => {
+    const profile = {
+      flags: { host: "127.0.0.1", port: 8080, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
+      commandArgv: ["--model", "/tmp/model.gguf", "--ctx-size", "32768", "--cache-type-k", "bf16", "--cache-type-v", "bf16"],
+    };
+
+    const updated = applyRuntimeFlagOverrides(profile, { ctxSize: 65536, cacheTypeK: "q8_0", cacheTypeV: "q8_0" });
+    assert.equal(updated.flags.ctxSize, 65536);
+    assert.equal(updated.baseUrl, "http://127.0.0.1:8080/v1");
+    assert.deepEqual(updated.commandArgv.slice(-6), ["--ctx-size", "65536", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0"]);
   });
 
   it("treats corrupt .gguf files as unknown metadata instead of crashing", async () => {

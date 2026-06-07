@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 1. **Auto-detect everything.** Scans for GGUF models in LM Studio, HuggingFace, and Ollama directories. Reads model metadata (quantization, context size, vision, thinking mode) directly from the GGUF file. No presets, no manual configuration.
 
-2. **One command to run.** `offgrid-ai` → pick a model → it figures out the flags, starts llama-server, syncs Pi config, and launches Pi.
+2. **One command to run.** `offgrid-ai` → pick a model → confirm context/KV memory settings on first setup → it starts llama-server, syncs Pi config, and launches Pi.
 
 3. **One model at a time.** Laptops have limited RAM. One server, one model, no confusion.
 
@@ -77,7 +77,7 @@ When you run `offgrid-ai` for the first time on a fresh machine:
    - **oMLX** — Apple Silicon optimized
 4. **Models** — If no models found, tells you where to get them.
 
-Subsequent runs skip everything that's already installed.
+Subsequent runs skip everything that's already installed. When a GGUF model is set up for the first time, offgrid-ai asks only for the memory-impacting choices: context window and KV cache precision. Sampling defaults are shown but not forced into a tuning wizard.
 
 ## Data directory
 

@@ -1,0 +1,82 @@
+import { estimateMemory } from "./estimate.mjs";
+import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+
+const CACHE_CHOICES = [
+  { value: "bf16", label: "bf16", hint: "default: stable, good quality" },
+  { value: "f16", label: "f16", hint: "stable fallback, similar memory to bf16" },
+  { value: "q8_0", label: "q8_0", hint: "lower memory, usually safe" },
+  { value: "q4_0", label: "q4_0", hint: "lowest memory, quality/speed tradeoff" },
+];
+
+export async function configureLocalProfile(prompt, profile) {
+  console.log("");
+  console.log(renderSection("Model setup", renderRows([
+    ["Model", pc.bold(profile.label)],
+    ["Context", `${profile.flags.ctxSize.toLocaleString()} tokens`],
+    ["KV cache", `${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV}`],
+    ["Sampling", samplingSummary(profile.flags)],
+  ])));
+  console.log(pc.dim("Larger context windows use more memory. KV cache precision controls memory used by attention history."));
+  console.log(pc.dim("Sampling defaults are shown for transparency; you can edit command.json later if needed.\n"));
+
+  const ctxSize = await prompt.number("Context window tokens", profile.flags.ctxSize, 1024, 1048576);
+  const cacheTypeK = await prompt.choice("K cache precision", CACHE_CHOICES, profile.flags.cacheTypeK);
+  const cacheTypeV = await prompt.choice("V cache precision", CACHE_CHOICES, profile.flags.cacheTypeV);
+  const configured = applyRuntimeFlagOverrides(profile, { ctxSize, cacheTypeK, cacheTypeV });
+
+  console.log("");
+  console.log(renderSection("Defaults", renderRows([
+    ["Temperature", configured.flags.temperature],
+    ["Top-p", configured.flags.topP],
+    ["Top-k", configured.flags.topK],
+    ["Min-p", configured.flags.minP],
+    ["Presence penalty", configured.flags.presencePenalty],
+    ["Repeat penalty", configured.flags.repeatPenalty],
+  ])));
+
+  console.log("\n" + renderMemoryEstimate(configured));
+  if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
+  return configured;
+}
+
+export function applyRuntimeFlagOverrides(profile, overrides) {
+  const flags = { ...profile.flags, ...overrides };
+  return {
+    ...profile,
+    flags,
+    baseUrl: `http://${flags.host}:${flags.port}/v1`,
+    commandArgv: updateArgv(profile.commandArgv ?? [], {
+      "--ctx-size": flags.ctxSize,
+      "--cache-type-k": flags.cacheTypeK,
+      "--cache-type-v": flags.cacheTypeV,
+    }),
+  };
+}
+
+function updateArgv(argv, values) {
+  const next = [...argv];
+  for (const [flag, value] of Object.entries(values)) {
+    const index = next.indexOf(flag);
+    if (index === -1) next.push(flag, String(value));
+    else next[index + 1] = String(value);
+  }
+  return next;
+}
+
+function renderMemoryEstimate(profile) {
+  try {
+    const est = estimateMemory(profile.modelPath, profile.mmprojPath, null, profile.flags);
+    return renderSection("Memory", renderRows([
+      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
+      ["Model", formatBytes(est.modelBytes)],
+      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${profile.flags.ctxSize.toLocaleString()} ctx, ${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV})` : "unknown"],
+      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
+    ]));
+  } catch {
+    return renderSection("Memory", pc.dim("Estimate unavailable for this model."));
+  }
+}
+
+function samplingSummary(flags) {
+  return `temp ${flags.temperature}, top-p ${flags.topP}, top-k ${flags.topK}`;
+}
