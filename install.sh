@@ -11,7 +11,8 @@
 #   1. Checks for Node.js
 #   2. If not found, installs it via nvm (no sudo needed)
 #   3. Installs offgrid-ai globally via npm
-#   4. Runs offgrid-ai
+#   4. Adds npm global bin to PATH if needed
+#   5. Runs offgrid-ai
 #
 # Flags:
 #   --dry-run    Show what would happen without making changes
@@ -108,7 +109,7 @@ echo ""
 printf "${BOLD}Installing offgrid-ai...${RESET}\n"
 dry npm install -g offgrid-ai
 
-# ── Verify ───────────────────────────────────────────────────────────────────
+# ── Dry-run early exit ──────────────────────────────────────────────────────
 
 if $DRY_RUN; then
   ok "offgrid-ai installed (dry-run)"
@@ -122,22 +123,51 @@ if $DRY_RUN; then
   exit 0
 fi
 
-if command -v offgrid-ai &>/dev/null; then
-  ok "offgrid-ai installed at $(command -v offgrid-ai)"
-else
-  echo ""
-  warn "offgrid-ai was installed but isn't on your PATH yet."
-  echo "  Restart your terminal and run: offgrid-ai"
-  echo "  Or run: source ~/.nvm/nvm.sh && offgrid-ai"
-  echo ""
-  printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  offgrid-ai is ready!${RESET}\n"
-  printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  echo ""
-  echo "  Run: offgrid-ai"
-  echo ""
-  exit 0
+# ── Add npm global bin to PATH if needed ────────────────────────────────────
+
+NPM_BIN="$(npm bin -g 2>/dev/null)"
+
+if ! command -v offgrid-ai &>/dev/null; then
+  if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
+    # Add to current session
+    export PATH="$NPM_BIN:$PATH"
+    ok "Added $NPM_BIN to PATH for this session"
+
+    # Add to shell config for future sessions (pick first existing or .zshrc)
+    ADDED_TO_RC=false
+    for RC_FILE in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+      if [[ -f "$RC_FILE" || "$RC_FILE" == "$HOME/.zshrc" ]]; then
+        if ! grep -qF "$NPM_BIN" "$RC_FILE" 2>/dev/null; then
+          echo '' >> "$RC_FILE"
+          echo '# Added by offgrid-ai installer' >> "$RC_FILE"
+          echo "export PATH=\"$NPM_BIN:\$PATH\"" >> "$RC_FILE"
+          ok "Added $NPM_BIN to $RC_FILE"
+          ADDED_TO_RC=true
+          # Only add to one rc file to avoid duplicates
+          break
+        fi
+      fi
+    done
+
+    if ! $ADDED_TO_RC; then
+      warn "$NPM_BIN is already in a shell config file — restart your terminal to use offgrid-ai"
+    fi
+  else
+    echo ""
+    warn "offgrid-ai was installed but the binary wasn't found."
+    echo "  Restart your terminal and run: offgrid-ai"
+    echo ""
+    printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+    printf "${BOLD}${GREEN}  offgrid-ai is ready!${RESET}\n"
+    printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+    echo ""
+    echo "  Run: offgrid-ai"
+    echo ""
+    exit 0
+  fi
 fi
+
+ok "offgrid-ai installed at $(command -v offgrid-ai)"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
@@ -149,7 +179,12 @@ echo ""
 echo "  First run will walk you through setting up everything you need"
 echo "  (llama-server, model backends, Pi)."
 echo ""
-echo "  Run: offgrid-ai"
+if command -v offgrid-ai &>/dev/null; then
+  echo "  Run: offgrid-ai"
+else
+  echo "  Run: source ~/.zshrc && offgrid-ai"
+  echo "  (or open a new terminal)"
+fi
 echo ""
 
 if [[ -t 0 ]] && ! $SKIP_RUN; then
