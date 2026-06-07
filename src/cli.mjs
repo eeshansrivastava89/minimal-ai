@@ -23,6 +23,7 @@ export async function run(argv) {
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
   if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
+  if (command === "--verbose") return mainFlow(); // verbose flag handled inside onboardFlow
 
   throw new Error(`Unknown command: ${command}. Run offgrid-ai help`);
 }
@@ -491,17 +492,29 @@ async function runningProfiles() {
 async function onboardFlow() {
   startInteractive("offgrid-ai setup");
   const prompt = createPrompt();
+  const verbose = process.argv.includes("--verbose");
 
   const { spawn } = await import("node:child_process");
 
-  /** Run a command, stream output to terminal, throw on failure. */
+  /** Run a command. Verbose: stream output. Quiet: show only label + result. */
   const run = (cmd, args, label) => new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: "inherit" });
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${label || cmd} exited with code ${code}`));
-    });
-    child.on("error", (err) => reject(err));
+    if (verbose) {
+      const child = spawn(cmd, args, { stdio: "inherit" });
+      child.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`${label || cmd} exited with code ${code}`));
+      });
+      child.on("error", (err) => reject(err));
+    } else {
+      const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let stderr = "";
+      child.stderr.on("data", (d) => { stderr += d; });
+      child.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(stderr.split("\n").filter(l => l.trim()).slice(-3).join("\n") || `${label || cmd} exited with code ${code}`));
+      });
+      child.on("error", (err) => reject(err));
+    }
   });
   try {
     console.log(pc.bold("Welcome to offgrid-ai!"));
@@ -626,15 +639,27 @@ async function onboardFlow() {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
           const lmsReady = ensureLmsOnPath();
           console.log(pc.green("✓ LM Studio installed"));
-          console.log(pc.yellow("\nDownload your first model:"));
           if (lmsReady) {
-            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+            const download = await prompt.yesNo("Download a model now? (qwen3.5-9b)", true);
+            if (download) {
+              console.log(pc.cyan("Downloading qwen/qwen3.5-9b via lms..."));
+              try {
+                await run("lms", ["get", "qwen/qwen3.5-9b", "-y"], "lms get qwen/qwen3.5-9b");
+                console.log(pc.green("✓ Model downloaded."));
+              } catch {
+                console.log(pc.yellow("Model download failed. Run manually: lms get qwen/qwen3.5-9b"));
+              }
+            } else {
+              console.log(pc.yellow("Download a model later:"));
+              console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+            }
           } else {
-            console.log(pc.bold("  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
+            console.log(pc.yellow("\nOpen LM Studio once to finish setup, then download a model:"));
+            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
           }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
-        } catch (err) {
-          console.log(pc.red(`✗ LM Studio installation failed.`));
+        } catch {
+          console.log(pc.red("✗ LM Studio installation failed."));
           console.log(pc.dim("Download it manually from https://lmstudio.ai"));
         }
       } else if (backendChoice === "ollama") {
@@ -648,11 +673,22 @@ async function onboardFlow() {
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch { /* may already be running */ }
           console.log(pc.green("Ollama is running."));
-          console.log(pc.yellow("\nPull your first model:"));
-          console.log(pc.bold("  ollama pull gemma3:4b"));
+          const download = await prompt.yesNo("Pull a model now? (gemma3:4b)", true);
+          if (download) {
+            console.log(pc.cyan("Pulling gemma3:4b via Ollama..."));
+            try {
+              await run("ollama", ["pull", "gemma3:4b"], "ollama pull gemma3:4b");
+              console.log(pc.green("✓ Model pulled."));
+            } catch {
+              console.log(pc.yellow("Model pull failed. Run manually: ollama pull gemma3:4b"));
+            }
+          } else {
+            console.log(pc.yellow("Pull a model later:"));
+            console.log(pc.bold("  ollama pull gemma3:4b"));
+          }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
-        } catch (err) {
-          console.log(pc.red(`✗ Ollama installation failed.`));
+        } catch {
+          console.log(pc.red("✗ Ollama installation failed."));
           console.log(pc.dim("Install it manually from https://ollama.com"));
         }
       } else if (backendChoice === "omlx") {
@@ -672,18 +708,21 @@ async function onboardFlow() {
         let installed = [];
         // LM Studio
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
+        let lmsReady = false;
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
-          const lmsReady = ensureLmsOnPath();
-          installed.push(lmsReady ? "LM Studio" : "LM Studio (open app once for lms CLI)");
+          lmsReady = ensureLmsOnPath();
+          installed.push("LM Studio");
         } catch {
           console.log(pc.yellow("✗ LM Studio installation failed. Download from https://lmstudio.ai"));
         }
         // Ollama
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
+        let ollamaInstalled = false;
         try {
           await run("brew", ["install", "ollama"], "Ollama");
           installed.push("Ollama");
+          ollamaInstalled = true;
         } catch {
           console.log(pc.yellow("✗ Ollama installation failed. Install manually from https://ollama.com"));
         }
@@ -696,19 +735,45 @@ async function onboardFlow() {
         } catch {
           console.log(pc.yellow("✗ oMLX installation failed. Install manually: brew tap jundot/omlx && brew install omlx"));
         }
+        // Auto-download model with best available backend
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
-          console.log(pc.yellow("Next steps — download your first model:"));
-          const hasLms = installed.some(i => i.includes("LM Studio"));
-          if (hasLms) {
-            const lmsReady = installed.some(i => i === "LM Studio");
-            console.log(pc.bold(lmsReady ? "  lms get qwen/qwen3.5-9b" : "  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
-          }
-          if (installed.includes("Ollama")) {
-            console.log(pc.bold("  ollama pull gemma3:4b"));
-          }
-          if (installed.includes("oMLX")) {
-            console.log(pc.bold("  omlx start"));
+          if (lmsReady) {
+            const download = await prompt.yesNo("Download a model now? (qwen3.5-9b)", true);
+            if (download) {
+              console.log(pc.cyan("Downloading qwen/qwen3.5-9b via lms..."));
+              try {
+                await run("lms", ["get", "qwen/qwen3.5-9b", "-y"], "lms get qwen/qwen3.5-9b");
+                console.log(pc.green("✓ Model downloaded."));
+              } catch {
+                console.log(pc.yellow("Model download failed. Run manually: lms get qwen/qwen3.5-9b"));
+              }
+            }
+          } else if (ollamaInstalled) {
+            // Start Ollama and offer to pull
+            console.log(pc.cyan("Starting Ollama..."));
+            try { await run("ollama", ["serve"], "Ollama serve"); await new Promise(r => setTimeout(r, 2000)); } catch { /* may already be running */ }
+            const download = await prompt.yesNo("Pull a model now? (gemma3:4b)", true);
+            if (download) {
+              console.log(pc.cyan("Pulling gemma3:4b via Ollama..."));
+              try {
+                await run("ollama", ["pull", "gemma3:4b"], "ollama pull gemma3:4b");
+                console.log(pc.green("✓ Model pulled."));
+              } catch {
+                console.log(pc.yellow("Model pull failed. Run manually: ollama pull gemma3:4b"));
+              }
+            }
+          } else {
+            console.log(pc.yellow("Next steps — download your first model:"));
+            if (installed.some(i => i.includes("LM Studio"))) {
+              console.log(pc.bold(lmsReady ? "  lms get qwen/qwen3.5-9b" : "  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
+            }
+            if (installed.includes("Ollama")) {
+              console.log(pc.bold("  ollama pull gemma3:4b"));
+            }
+            if (installed.includes("oMLX")) {
+              console.log(pc.bold("  omlx start"));
+            }
           }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         }
@@ -794,9 +859,20 @@ async function removeDataDir() {
 async function removeSelf() {
   console.log(pc.cyan("\nUninstalling offgrid-ai..."));
   const { spawn: spawnUninstall } = await import("node:child_process");
+  const verbose = process.argv.includes("--verbose");
   const runCmd = (cmd, args, label) => new Promise((resolve, reject) => {
-    const child = spawnUninstall(cmd, args, { stdio: "inherit" });
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${label || cmd} exited with code ${code}`)));
+    const stdio = verbose ? "inherit" : ["ignore", "pipe", "pipe"];
+    const child = spawnUninstall(cmd, args, { stdio });
+    if (!verbose) {
+      let stderr = "";
+      child.stderr?.on("data", (d) => { stderr += d; });
+      child.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(stderr.split("\n").filter(l => l.trim()).slice(-3).join("\n") || `${label || cmd} exited with code ${code}`));
+      });
+    } else {
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${label || cmd} exited with code ${code}`)));
+    }
     child.on("error", (err) => reject(err));
   });
   try {
@@ -846,6 +922,9 @@ Usage:
   offgrid-ai uninstall  Remove offgrid-ai (optionally keep profiles)
   offgrid-ai help       Show this help
   offgrid-ai version    Show version
+
+Flags:
+  --verbose             Show install output (brew, lms, ollama, etc.)
 
 First run? offgrid-ai walks you through installing everything you need.
 After that, just run it — it finds your models, auto-configures, and launches Pi.`);
