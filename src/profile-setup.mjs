@@ -46,11 +46,10 @@ export async function configureLocalProfile(prompt, profile) {
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
   }
 
-  if (caps.qat || caps.imatrix) {
+  if (caps.qat) {
     console.log("");
-    console.log(renderSection("Quantization note", renderRows([
-      ["QAT", caps.qat ? "yes" : "no"],
-      ["imatrix", caps.imatrix ? "yes" : "no"],
+    console.log(renderSection("Detected QAT model", renderRows([
+      ["Meaning", "quantization-aware trained"],
       ["Runtime flags", "none required"],
     ])));
   }
@@ -186,7 +185,7 @@ function detectionSummary(caps) {
   if (caps.quant) parts.push(caps.quant);
   if (caps.mtp) parts.push("MTP");
   if (caps.qat) parts.push("QAT");
-  if (caps.imatrix) parts.push("imatrix");
+
   if (caps.thinking) parts.push("thinking");
   if (caps.vision) parts.push("vision");
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
