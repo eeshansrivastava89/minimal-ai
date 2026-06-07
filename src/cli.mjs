@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { homedir, totalmem } from "node:os";
 import { existsSync, statSync, rmSync, readFileSync, appendFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
@@ -489,6 +489,22 @@ async function runningProfiles() {
 
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
+// ── Model recommendations by RAM ───────────────────────────────────────
+// Tier → { lms: [...], ollama: string, label }
+// lms entries are tried in order (first staff-pick match wins, or @quant forces it)
+const MODEL_TIERS = [
+  { maxGB: 8,  lms: "google/gemma-4-e2b",                   ollama: "gemma4:e2b",             label: "Gemma 4 E2B (2B effective)" },
+  { maxGB: 16, lms: "google/gemma-4-e4b",                   ollama: "gemma4:e4b",             label: "Gemma 4 E4B (4B effective)" },
+  { maxGB: 32, lms: "qwen/qwen3.5-9b",                     ollama: "qwen3.5:9b-q4_K_M",     label: "Qwen 3.5 9B" },
+  { maxGB: Infinity, lms: "qwen/qwen3.6-35b-a3b",          ollama: "qwen3.6:35b-a3b",        label: "Qwen 3.6 35B-A3B" },
+];
+
+function recommendedModel() {
+  const gb = totalmem() / (1024 ** 3);
+  const tier = MODEL_TIERS.find(t => gb <= t.maxGB) || MODEL_TIERS[MODEL_TIERS.length - 1];
+  return tier;
+}
+
 async function onboardFlow() {
   startInteractive("offgrid-ai setup");
   const prompt = createPrompt();
@@ -634,28 +650,29 @@ async function onboardFlow() {
       };
 
       if (backendChoice === "lmstudio") {
+        const model = recommendedModel();
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
           const lmsReady = ensureLmsOnPath();
           console.log(pc.green("✓ LM Studio installed"));
           if (lmsReady) {
-            const download = await prompt.yesNo("Download a model now? (qwen3.5-9b)", true);
+            const download = await prompt.yesNo(`Download a model now? (${model.label})`, true);
             if (download) {
-              console.log(pc.cyan("Downloading qwen/qwen3.5-9b via lms..."));
+              console.log(pc.cyan(`Downloading ${model.lms} via lms...`));
               try {
-                await run("lms", ["get", "qwen/qwen3.5-9b", "-y"], "lms get qwen/qwen3.5-9b");
+                await run("lms", ["get", model.lms, "-y"], `lms get ${model.lms}`);
                 console.log(pc.green("✓ Model downloaded."));
               } catch {
-                console.log(pc.yellow("Model download failed. Run manually: lms get qwen/qwen3.5-9b"));
+                console.log(pc.yellow(`Model download failed. Run manually: lms get ${model.lms}`));
               }
             } else {
               console.log(pc.yellow("Download a model later:"));
-              console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+              console.log(pc.bold(`  lms get ${model.lms}`));
             }
           } else {
             console.log(pc.yellow("\nOpen LM Studio once to finish setup, then download a model:"));
-            console.log(pc.bold("  lms get qwen/qwen3.5-9b"));
+            console.log(pc.bold(`  lms get ${model.lms}`));
           }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch {
@@ -663,6 +680,7 @@ async function onboardFlow() {
           console.log(pc.dim("Download it manually from https://lmstudio.ai"));
         }
       } else if (backendChoice === "ollama") {
+        const model = recommendedModel();
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
           await run("brew", ["install", "ollama"], "Ollama");
@@ -673,18 +691,18 @@ async function onboardFlow() {
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch { /* may already be running */ }
           console.log(pc.green("Ollama is running."));
-          const download = await prompt.yesNo("Pull a model now? (gemma3:4b)", true);
+          const download = await prompt.yesNo(`Pull a model now? (${model.label})`, true);
           if (download) {
-            console.log(pc.cyan("Pulling gemma3:4b via Ollama..."));
+            console.log(pc.cyan(`Pulling ${model.ollama} via Ollama...`));
             try {
-              await run("ollama", ["pull", "gemma3:4b"], "ollama pull gemma3:4b");
+              await run("ollama", ["pull", model.ollama], `ollama pull ${model.ollama}`);
               console.log(pc.green("✓ Model pulled."));
             } catch {
-              console.log(pc.yellow("Model pull failed. Run manually: ollama pull gemma3:4b"));
+              console.log(pc.yellow(`Model pull failed. Run manually: ollama pull ${model.ollama}`));
             }
           } else {
             console.log(pc.yellow("Pull a model later:"));
-            console.log(pc.bold("  ollama pull gemma3:4b"));
+            console.log(pc.bold(`  ollama pull ${model.ollama}`));
           }
           console.log(pc.dim("Then run offgrid-ai again to pick and run a model."));
         } catch {
@@ -705,6 +723,7 @@ async function onboardFlow() {
           console.log(pc.dim("Install manually: brew tap jundot/omlx && brew install omlx"));
         }
       } else if (backendChoice === "all") {
+        const model = recommendedModel();
         let installed = [];
         // LM Studio
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
@@ -739,37 +758,37 @@ async function onboardFlow() {
         if (installed.length > 0) {
           console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
           if (lmsReady) {
-            const download = await prompt.yesNo("Download a model now? (qwen3.5-9b)", true);
+            const download = await prompt.yesNo(`Download a model now? (${model.label})`, true);
             if (download) {
-              console.log(pc.cyan("Downloading qwen/qwen3.5-9b via lms..."));
+              console.log(pc.cyan(`Downloading ${model.lms} via lms...`));
               try {
-                await run("lms", ["get", "qwen/qwen3.5-9b", "-y"], "lms get qwen/qwen3.5-9b");
+                await run("lms", ["get", model.lms, "-y"], `lms get ${model.lms}`);
                 console.log(pc.green("✓ Model downloaded."));
               } catch {
-                console.log(pc.yellow("Model download failed. Run manually: lms get qwen/qwen3.5-9b"));
+                console.log(pc.yellow(`Model download failed. Run manually: lms get ${model.lms}`));
               }
             }
           } else if (ollamaInstalled) {
             // Start Ollama and offer to pull
             console.log(pc.cyan("Starting Ollama..."));
             try { await run("ollama", ["serve"], "Ollama serve"); await new Promise(r => setTimeout(r, 2000)); } catch { /* may already be running */ }
-            const download = await prompt.yesNo("Pull a model now? (gemma3:4b)", true);
+            const download = await prompt.yesNo(`Pull a model now? (${model.label})`, true);
             if (download) {
-              console.log(pc.cyan("Pulling gemma3:4b via Ollama..."));
+              console.log(pc.cyan(`Pulling ${model.ollama} via Ollama...`));
               try {
-                await run("ollama", ["pull", "gemma3:4b"], "ollama pull gemma3:4b");
+                await run("ollama", ["pull", model.ollama], `ollama pull ${model.ollama}`);
                 console.log(pc.green("✓ Model pulled."));
               } catch {
-                console.log(pc.yellow("Model pull failed. Run manually: ollama pull gemma3:4b"));
+                console.log(pc.yellow(`Model pull failed. Run manually: ollama pull ${model.ollama}`));
               }
             }
           } else {
-            console.log(pc.yellow("Next steps — download your first model:"));
+            console.log(pc.yellow(`Recommended model for your machine (${model.label}):`));
             if (installed.some(i => i.includes("LM Studio"))) {
-              console.log(pc.bold(lmsReady ? "  lms get qwen/qwen3.5-9b" : "  Open LM Studio once, then: lms get qwen/qwen3.5-9b"));
+              console.log(pc.bold(lmsReady ? `  lms get ${model.lms}` : `  Open LM Studio once, then: lms get ${model.lms}`));
             }
             if (installed.includes("Ollama")) {
-              console.log(pc.bold("  ollama pull gemma3:4b"));
+              console.log(pc.bold(`  ollama pull ${model.ollama}`));
             }
             if (installed.includes("oMLX")) {
               console.log(pc.bold("  omlx start"));
