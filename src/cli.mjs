@@ -965,29 +965,23 @@ async function uninstallCommand(argv) {
       console.log(pc.green("All servers stopped."));
     }
 
-    // Ask about data
     const dataDir = DATA_DIR;
-    const keepData = await prompt.yesNo("Keep your profiles and model configurations? (Recommended if you plan to reinstall)", true);
+    const mode = await prompt.choice("Choose uninstall type", [
+      { value: "keep-data", label: "Uninstall app only", hint: `keep profiles and settings in ${dataDir}` },
+      { value: "delete-data", label: "Full uninstall", hint: "delete profiles/settings, then uninstall app" },
+      { value: "cancel", label: "Cancel" },
+    ], "keep-data");
 
-    if (!keepData) {
-      const confirmDelete = await prompt.yesNo(`Delete ${dataDir}? This removes all profiles and settings.`, false);
-      if (confirmDelete) {
-        await removeDataDir();
-      } else {
-        console.log(pc.dim("Keeping data directory."));
-      }
-    } else {
-      console.log(pc.dim(`Keeping ${dataDir} for when you reinstall.`));
-    }
-
-    // Remove the npm package
-    const confirmUninstall = await prompt.yesNo("Uninstall offgrid-ai npm package?", true);
-    if (confirmUninstall) {
-      await removeShellPath();
-      await removeSelf();
-    } else {
+    if (mode === "cancel") {
       console.log(pc.dim("Cancelled."));
+      return;
     }
+
+    if (mode === "delete-data") await removeDataDir();
+    else console.log(pc.dim(`Keeping ${dataDir} for when you reinstall.`));
+
+    await removeShellPath();
+    await removeSelf();
   } finally {
     prompt.close();
   }

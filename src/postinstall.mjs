@@ -8,6 +8,12 @@ if (process.env.npm_config_global !== "true") process.exit(0);
 const prefix = process.env.npm_config_prefix;
 if (!prefix) process.exit(0);
 
+if (isHermesPrefix(prefix, process.env.HOME)) {
+  console.log("offgrid-ai installed with a Hermes-managed npm prefix.");
+  console.log("Not adding Hermes Node to PATH automatically. Use your normal Node/npm, or run the offgrid-ai install script.");
+  process.exit(0);
+}
+
 const npmBin = join(prefix, "bin");
 const marker = "# Added by offgrid-ai installer";
 const pathLine = `export PATH="${npmBin}:$PATH"`;
@@ -38,4 +44,10 @@ if (!content.includes(npmBin)) {
 } else {
   console.log(`offgrid-ai is installed in ${npmBin}`);
   console.log(`Open a new terminal if the command is not found yet.`);
+}
+
+function isHermesPrefix(prefix, home) {
+  const normalized = prefix.replace(/\\/gu, "/");
+  if (normalized.includes("/.hermes/")) return true;
+  return Boolean(home && normalized === `${home.replace(/\\/gu, "/")}/.hermes/node`);
 }
