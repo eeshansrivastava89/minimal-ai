@@ -3,21 +3,30 @@ import { openSync, readSync, closeSync, statSync } from "node:fs";
 export function readGgufMetadata(path) {
   const buffer = readFilePrefix(path, 64 * 1024 * 1024);
   let offset = 0;
-  if (buffer.toString("utf8", 0, 4) !== "GGUF") return {};
+  const meta = {};
+  if (buffer.length < 24 || buffer.toString("utf8", 0, 4) !== "GGUF") return meta;
   offset += 4;
   offset += 4; // version
   offset += 8; // tensor count
+  if (offset + 8 > buffer.length) return meta;
   const kvCount = Number(buffer.readBigUInt64LE(offset));
   offset += 8;
-  const meta = {};
   for (let i = 0; i < kvCount; i++) {
+    if (offset + 8 > buffer.length) return meta;
     const keyLen = Number(buffer.readBigUInt64LE(offset));
     offset += 8;
+    if (offset + keyLen + 4 > buffer.length) return meta;
     const key = buffer.toString("utf8", offset, offset + keyLen);
     offset += keyLen;
     const type = buffer.readUInt32LE(offset);
     offset += 4;
-    const read = readValue(buffer, offset, type);
+    let read;
+    try {
+      read = readValue(buffer, offset, type);
+    } catch {
+      return meta;
+    }
+    if (read.offset > buffer.length) return meta;
     offset = read.offset;
     meta[key] = read.value;
   }

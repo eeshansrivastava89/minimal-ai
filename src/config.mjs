@@ -76,17 +76,22 @@ export async function findLlamaServer() {
     return process.env.LLAMA_SERVER_BINARY;
   }
 
-  // 2. offgrid-ai managed runtime
+  // 2. User config override
+  const config = await loadConfig();
+  const configured = config.binaryOverrides?.llamaServer ?? config.binaryOverrides?.["llama-server"];
+  if (configured && existsSync(configured)) return configured;
+
+  // 3. offgrid-ai managed runtime
   if (existsSync(MANAGED_LLAMA_SERVER)) return MANAGED_LLAMA_SERVER;
 
-  // 3. which/where
+  // 4. PATH
   try {
     const { stdout } = await execFileAsync("which", ["llama-server"]);
     const path = stdout.trim();
     if (path && existsSync(path)) return path;
   } catch { /* not on PATH */ }
 
-  // 4. Homebrew
+  // 5. Homebrew fallback
   try {
     const { stdout } = await execFileAsync("brew", ["--prefix", "llama.cpp"]);
     const prefix = stdout.trim();

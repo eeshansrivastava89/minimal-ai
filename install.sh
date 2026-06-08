@@ -205,7 +205,7 @@ printf "${BOLD}${GREEN}  offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }
 printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 echo ""
 echo "  First run will walk you through setting up everything you need"
-echo "  (llama-server, model backends, Pi)."
+echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
 echo ""
 if command -v offgrid-ai &>/dev/null; then
   echo "  Run: offgrid-ai"

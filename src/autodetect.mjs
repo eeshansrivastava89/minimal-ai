@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { existsSync } from "node:fs";
 import { readGgufMetadata } from "./gguf.mjs";
+import { defaultFlagsForBackend } from "./backends.mjs";
 
 // ── Detect model capabilities from GGUF metadata ──────────────────────────
 
@@ -51,8 +52,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
   const isLowMem = quant && /[Qq]4[_0]/i.test(quant);
 
   const flags = {
-    host: "127.0.0.1",
-    port: mtp ? 8081 : 8080,
+    ...defaultFlagsForBackend(mtp ? "llama-cpp-mtp" : "llama-cpp"),
     ctxSize: capabilities.ctxSize,
     flashAttention: "on",
     cacheTypeK: isLowMem ? "f16" : "bf16",

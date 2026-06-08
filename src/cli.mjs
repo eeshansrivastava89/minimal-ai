@@ -2,10 +2,10 @@ import { totalmem } from "node:os";
 import { existsSync, statSync, rmSync } from "node:fs";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
-import { createProfileFromModel, normalizeProfile } from "./profiles.mjs";
-import { readProfile, saveProfile, deleteProfile, loadProfiles } from "./profiles.mjs";
+import { createProfileFromModel, normalizeProfile, sanitizeProfileId } from "./profiles.mjs";
+import { readProfile, saveProfile, deleteProfile, loadProfiles, readCommandArgv } from "./profiles.mjs";
 import { backendFor, BACKENDS } from "./backends.mjs";
-import { startServer, stopProfile, waitForReady, serverReady, isProfileRunning, profileRuntimeStatus } from "./process.mjs";
+import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, isProfileRunning, profileRuntimeStatus } from "./process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPiModel, launchPi, hasPi } from "./harness-pi.mjs";
 import { tailFriendly } from "./logs.mjs";
 import { estimateMemory } from "./estimate.mjs";
@@ -83,14 +83,12 @@ export async function mainFlow() {
   const profiles = await loadProfiles();
   const hasAnyBackend = llamaBinary || managedModels.some((m) => m.models.length > 0);
   const hasAnyModels = ggufModels.length > 0 || managedModels.some((m) => m.models.length > 0);
-  const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);
 
   // 2. Check mandatory deps — if anything essential is missing, re-offer onboarding
   const piInstalled = await hasPi();
-  const brewInstalled = await hasHomebrew();
+  const needsLlama = ggufModels.length > 0 || profiles.some((profile) => backendFor(profile.backend).type === "local-server");
   const missingDeps = [];
-  if (!brewInstalled) missingDeps.push("Homebrew");
-  if (!llamaBinary) missingDeps.push("llama-server");
+  if (needsLlama && !llamaBinary) missingDeps.push("llama-server");
   if (!piInstalled) missingDeps.push("Pi");
   if (missingDeps.length > 0) {
     if (!process.stdin.isTTY) {
@@ -107,18 +105,6 @@ export async function mainFlow() {
       throw new Error("No local LLM backends found. Run offgrid-ai interactively to set up.");
     }
     return await onboardFlow();
-  }
-
-  // 3. Has models but no llama-server (managed backends only)
-  if (!llamaBinary && ggufModels.length > 0) {
-    // They have GGUF files but can't run them — tell them about llama-server
-    console.log(pc.yellow(`${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"} found, but llama-server is not installed.`));
-    console.log(pc.dim("Install it with: brew install llama.cpp"));
-    console.log(pc.dim("Or use Ollama/oMLX for managed model backends."));
-    if (totalManaged === 0 && profiles.length === 0) {
-      return; // Nothing to do without llama-server
-    }
-    // Fall through — they can still use managed backends
   }
 
   // 4. No models found at all (but backends may exist)
@@ -213,10 +199,10 @@ async function modelCommandCenter(catalog) {
 
 async function runCommand(argv) {
   await ensureDirs();
-  const { positional } = parseOptions(argv);
+  const { positional, options } = parseOptions(argv);
   if (!positional[0]) return await mainFlow();
   const profile = await readProfile(positional[0]);
-  return await runProfile(profile);
+  return await runProfile(profile, options);
 }
 
 async function loadModelCatalog() {
@@ -424,7 +410,8 @@ async function printProfileDetails(profile) {
   ]), { columns: 110 }));
 
   if (!isManaged && profile.commandArgv) {
-    console.log("\n" + renderSection("llama-server command", pc.dim(buildPrettyCommand(profile)), { columns: 120 }));
+    const commandArgv = await readCommandArgv(profile);
+    console.log("\n" + renderSection("llama-server command", pc.dim(buildPrettyCommand({ ...profile, commandArgv })), { columns: 120 }));
   }
 }
 
@@ -495,7 +482,7 @@ function removeCommandOption(argv, flag) {
 
 function createManagedProfile(model, backendId) {
   return normalizeProfile({
-    id: model.id.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase(),
+    id: `${backendId}-${sanitizeProfileId(model.id)}`,
     label: model.label,
     backend: backendId,
     modelAlias: model.aliasSuggestion,
@@ -529,6 +516,10 @@ async function runProfile(profile, options = {}) {
   } else {
     const ready = await serverReady(profile.baseUrl);
     if (ready) {
+      const match = await serverMatchesProfile(profile);
+      if (!match.matches) {
+        throw new Error(`A different server is already responding at ${profile.baseUrl}. ${match.reason}. Stop it with offgrid-ai stop --all, or choose a different port.`);
+      }
       console.log(pc.green(`[ready] Reusing server at ${profile.baseUrl}`));
     } else {
       console.log(pc.dim(`Starting ${backend.label} for ${profile.label}...`));
@@ -551,7 +542,7 @@ async function runProfile(profile, options = {}) {
           console.log(pc.yellow("Vision projector is not supported by this llama.cpp build. Retrying text-only."));
           console.log(pc.dim("Update llama.cpp later to re-enable vision for this model."));
           const textOnly = textOnlyProfile(profile);
-          await saveProfile(textOnly);
+          await saveProfile(textOnly, { writeCommand: true });
           return await runProfile(textOnly, { ...options, textOnlyRetry: true });
         }
         throw err;
@@ -782,19 +773,32 @@ async function onboardFlow() {
     console.log(pc.bold("Welcome to offgrid-ai!"));
     console.log(pc.dim("Let's make sure you have everything you need to run local models.\n"));
 
-    // 1. Homebrew
-    const hasBrew = await hasHomebrew();
-    if (!hasBrew) {
-      const install = await prompt.yesNo("Homebrew is required. Install it now?", true);
+    // 1. llama.cpp runtime for local GGUF models
+    let llamaBinary = await findLlamaServer();
+    if (!llamaBinary) {
+      console.log(renderSection("llama.cpp runtime", renderRows([
+        ["Status", pc.yellow("not installed")],
+        ["Used for", "local GGUF models"],
+        ["Install", "managed by offgrid-ai under ~/.offgrid-ai/runtime"],
+      ]), { formatBorder: pc.cyan }));
+      await offerManagedLlamaRuntimeUpdate(prompt);
+      llamaBinary = await findLlamaServer();
+      if (!llamaBinary) {
+        console.log(pc.yellow("Skipping llama.cpp for now. You can still use Ollama/oMLX, or run offgrid-ai again to install the managed runtime."));
+      }
+    }
+    if (llamaBinary) console.log(pc.green(`✓ llama-server: ${llamaBinary}`));
+
+    const ensureHomebrewFor = async (label) => {
+      if (await hasHomebrew()) return true;
+      const install = await prompt.yesNo(`Homebrew is needed to install ${label}. Install Homebrew now?`, true);
       if (!install) {
-        console.log(pc.red("offgrid-ai needs Homebrew to install dependencies."));
-        console.log(pc.dim("Install it from https://brew.sh, then run offgrid-ai again."));
-        return;
+        console.log(pc.dim(`Install ${label} manually, or install Homebrew from https://brew.sh and run offgrid-ai again.`));
+        return false;
       }
       console.log(pc.cyan("Installing Homebrew..."));
       try {
         await run("/bin/bash", ["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""], "Homebrew");
-        // Add brew to PATH for this session
         const brewPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
         for (const p of brewPaths) {
           if (existsSync(p)) {
@@ -803,43 +807,19 @@ async function onboardFlow() {
           }
         }
       } catch {
-        console.log(pc.red(`✗ Homebrew installation failed.`));
+        console.log(pc.red("✗ Homebrew installation failed."));
         console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
-        return;
+        return false;
       }
       if (!(await hasHomebrew())) {
         console.log(pc.red("Homebrew was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
-        return;
+        return false;
       }
-    }
-    console.log(pc.green("✓ Homebrew found"));
+      console.log(pc.green("✓ Homebrew found"));
+      return true;
+    };
 
-    // 2. llama-server
-    let llamaBinary = await findLlamaServer();
-    if (!llamaBinary) {
-      const install = await prompt.yesNo("llama-server is required to run local models. Install via Homebrew?", true);
-      if (!install) {
-        console.log(pc.red("offgrid-ai needs llama-server to run local models."));
-        console.log(pc.dim("Install it manually: brew install llama.cpp"));
-        return;
-      }
-      console.log(pc.cyan("Installing llama.cpp..."));
-      try {
-        await run("brew", ["install", "llama.cpp"], "llama.cpp");
-        llamaBinary = await findLlamaServer();
-      } catch {
-        console.log(pc.red("✗ Failed to install llama.cpp."));
-        console.log(pc.dim("Install it manually: brew install llama.cpp"));
-        return;
-      }
-      if (!llamaBinary) {
-        console.log(pc.yellow("llama.cpp installed but llama-server not found. You may need to restart your terminal."));
-        return;
-      }
-    }
-    console.log(pc.green(`✓ llama-server: ${llamaBinary}`));
-
-    // 3. Pi coding agent
+    // 2. Pi coding agent
     const piInstalled = await hasPi();
     if (!piInstalled) {
       const install = await prompt.yesNo("Pi coding agent is required to chat with models. Install via npm?", true);
@@ -873,6 +853,7 @@ async function onboardFlow() {
       // They already have models — show what was found
       if (ggufModels.length > 0) {
         console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"}`));
+        if (!llamaBinary) console.log(pc.yellow("Install the managed llama.cpp runtime to run these GGUF models."));
       }
       for (const { backendId, models } of managedModels) {
         if (models.length > 0) {
@@ -895,6 +876,7 @@ async function onboardFlow() {
       const model = recommendedModel();
 
       if (backendChoice === "lmstudio") {
+        if (!(await ensureHomebrewFor("LM Studio"))) return;
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));
         try {
           await run("brew", ["install", "--cask", "lm-studio"], "LM Studio");
@@ -907,6 +889,7 @@ async function onboardFlow() {
           console.log(pc.dim("Download it manually from https://lmstudio.ai"));
         }
       } else if (backendChoice === "ollama") {
+        if (!(await ensureHomebrewFor("Ollama"))) return;
         console.log(pc.cyan("Installing Ollama via Homebrew..."));
         try {
           await run("brew", ["install", "ollama"], "Ollama");
@@ -920,6 +903,7 @@ async function onboardFlow() {
           console.log(pc.dim("Install it manually from https://ollama.com"));
         }
       } else if (backendChoice === "omlx") {
+        if (!(await ensureHomebrewFor("oMLX"))) return;
         console.log(pc.cyan("Installing oMLX via Homebrew..."));
         try {
           await run("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
@@ -934,6 +918,7 @@ async function onboardFlow() {
           console.log(pc.dim("Install manually: brew tap jundot/omlx && brew install omlx"));
         }
       } else if (backendChoice === "all") {
+        if (!(await ensureHomebrewFor("model backends"))) return;
         let installed = [];
         // LM Studio
         console.log(pc.cyan("Installing LM Studio via Homebrew..."));

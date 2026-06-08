@@ -29,7 +29,7 @@ export async function offerManagedLlamaRuntimeUpdate(prompt, { fetchImpl = globa
   const shouldInstall = await prompt.yesNo(installed ? "Update llama.cpp runtime?" : "Install llama.cpp runtime?", true);
   if (!shouldInstall) return false;
 
-  await installLlamaRelease(latest);
+  await installLlamaRelease(latest, { fetchImpl });
   return true;
 }
 
@@ -55,7 +55,7 @@ export async function installedRuntime() {
   }
 }
 
-export async function installLlamaRelease(release) {
+export async function installLlamaRelease(release, { fetchImpl = globalThis.fetch } = {}) {
   const tmp = await mkdtemp(join(tmpdir(), "offgrid-llama-"));
   const archive = join(tmp, release.asset.name);
   const releaseDir = join(RUNTIME_DIR, "llama.cpp", "releases", release.tag);
@@ -63,7 +63,7 @@ export async function installLlamaRelease(release) {
 
   try {
     console.log(pc.dim(`Downloading ${release.asset.name}...`));
-    const response = await fetch(release.asset.url);
+    const response = await fetchImpl(release.asset.url);
     if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
     verifyDigest(bytes, release.asset.digest);

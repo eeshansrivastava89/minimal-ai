@@ -3,8 +3,6 @@ import pc from "picocolors";
 import { stripVTControlCharacters } from "node:util";
 
 export { pc };
-export { pc as colors };
-
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
   const units = ["B", "KB", "MB", "GB", "TB"];

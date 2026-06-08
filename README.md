@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 You run `offgrid-ai`. It finds your local models, auto-configures everything, starts the server, and launches Pi. Zero configuration. No parameter tuning. No presets.
 
-**First run** walks you through installing anything missing (Homebrew, llama-server). After that, just run it.
+**First run** walks you through installing anything missing. For GGUF models, offgrid-ai installs a managed `llama.cpp` runtime under `~/.offgrid-ai/runtime`; Homebrew is only used if you choose Homebrew-installed apps like LM Studio, Ollama, or oMLX.
 
 ```bash
 offgrid-ai          # pick a model and run it
@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 ## How it works
 
-1. **Auto-detect everything.** Scans for GGUF models in LM Studio, HuggingFace, and Ollama directories. Reads model metadata (quantization, context size, vision, thinking mode) directly from the GGUF file. No presets, no manual configuration.
+1. **Auto-detect everything.** Scans for GGUF models in LM Studio and Hugging Face cache directories, and checks managed backends like Ollama/oMLX through their local APIs. Reads model metadata (quantization, context size, vision, thinking mode) directly from GGUF files. No presets, no manual configuration.
 
 2. **One command to run.** `offgrid-ai` → pick a model → confirm context/KV memory settings on first setup → it starts llama-server, syncs Pi config, and launches Pi.
 
@@ -60,8 +60,8 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 | Backend | Type | Auto-detected |
 |---|---|---|
 | **LM Studio** | Visual model browser + CLI (`lms`) | ✓ models in `~/.lmstudio/models/` |
-| **llama.cpp** | Local server | ✓ GGUF models in `~/.lmstudio/models/` |
-| **llama.cpp MTP** | Local server (speculative decoding) | ✓ MTP detected from model metadata |
+| **llama.cpp** | Managed local runtime | ✓ GGUF models in `~/.lmstudio/models/` and Hugging Face cache |
+| **llama.cpp MTP** | Managed local runtime (speculative decoding) | ✓ MTP detected from model metadata |
 | **Ollama** | Managed server | ✓ via `localhost:11434` |
 | **oMLX** | Managed server | ✓ via `127.0.0.1:8000` |
 
@@ -69,15 +69,15 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 When you run `offgrid-ai` for the first time on a fresh machine:
 
-1. **Homebrew** — Required. Offered to install if missing.
-2. **llama-server** — Required for GGUF models. Offered to install via Homebrew.
+1. **llama.cpp runtime** — Required for GGUF models. Offered as an offgrid-ai managed runtime from official `llama.cpp` release binaries.
+2. **Pi** — Required to chat from the Pi coding agent. Offered to install via npm if missing.
 3. **Model backend** — At least one is needed (LM Studio recommended):
    - **LM Studio** — visual model browser + `lms` CLI, download models with `lms get qwen/qwen3.5-9b`
    - **Ollama** — models download on demand with `ollama pull`
    - **oMLX** — Apple Silicon optimized
 4. **Models** — If no models found, tells you where to get them.
 
-Subsequent runs skip everything that's already installed. When a GGUF model is set up for the first time, offgrid-ai asks only for the memory-impacting choices: context window and KV cache precision. Sampling defaults are shown but not forced into a tuning wizard.
+Homebrew is optional and only prompted when you choose a Homebrew-based backend install. Subsequent runs skip everything that's already installed. When a GGUF model is set up for the first time, offgrid-ai asks only for the memory-impacting choices: context window and KV cache precision. Sampling defaults are shown but not forced into a tuning wizard.
 
 ## Data directory
 
@@ -91,6 +91,7 @@ Subsequent runs skip everything that's already installed. When a GGUF model is s
       notes.md         # scratch notes
   logs/
   run/                 # PID state files
+  runtime/             # managed llama.cpp binaries
 ```
 
 ## Benchmark (coming soon)

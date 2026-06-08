@@ -1,10 +1,10 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { openSync } from "node:fs";
+import { closeSync, openSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
-import { writeState, readState } from "./profiles.mjs";
+import { writeState, readState, readCommandArgv } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -22,22 +22,27 @@ export async function startServer(profile) {
 async function startLocalServer(profile) {
   const binary = await backendBinaryFor(profile.backend);
   if (!binary) {
-    throw new Error("llama-server not found. Install it via Homebrew: brew install llama.cpp");
+    throw new Error("llama-server not found. Install the managed llama.cpp runtime by running offgrid-ai interactively.");
   }
 
   const timestamp = timestampForFile();
   const rawLogPath = join(LOG_DIR, `${profile.id}-${timestamp}.raw.log`);
   const friendlyLogPath = join(LOG_DIR, `${profile.id}-${timestamp}.friendly.log`);
-  const commandJson = profile.commandArgv ?? [];
+  const commandArgv = await readCommandArgv(profile);
 
-  await writeFile(rawLogPath, `[offgrid-ai] ${new Date().toISOString()}\n[binary] ${binary}\n[argv]\n${commandJson.join(" ")}\n`, "utf8");
+  await writeFile(rawLogPath, `[offgrid-ai] ${new Date().toISOString()}\n[binary] ${binary}\n[argv]\n${commandArgv.join(" ")}\n`, "utf8");
   await writeFile(friendlyLogPath, `[launch] starting llama-server for ${profile.label}\n`, "utf8");
 
   // Build argv: binary + command.json args
-  const argv = [...commandJson];
+  const argv = [...commandArgv];
 
   const rawFd = openSync(rawLogPath, "a");
-  const child = spawn(binary, argv, { detached: true, stdio: ["ignore", rawFd, rawFd] });
+  let child;
+  try {
+    child = spawn(binary, argv, { detached: true, stdio: ["ignore", rawFd, rawFd] });
+  } finally {
+    closeSync(rawFd);
+  }
   child.unref();
 
   const state = {
@@ -137,6 +142,27 @@ export async function serverReady(baseUrl) {
   }
 }
 
+export async function serverMatchesProfile(profile) {
+  const state = await readState(profile.id);
+  if (state?.pid && pidAlive(state.pid) && state.baseUrl === profile.baseUrl) {
+    return { matches: true, reason: "tracked offgrid-ai server" };
+  }
+
+  const ids = await serverModelIds(profile.baseUrl);
+  const expected = expectedModelIds(profile);
+  const normalizedIds = new Set(ids.map((id) => id.toLowerCase()));
+  if (ids.length > 0 && expected.some((id) => normalizedIds.has(id.toLowerCase()))) {
+    return { matches: true, reason: `server reports ${ids.join(", ")}` };
+  }
+
+  return {
+    matches: false,
+    reason: ids.length > 0
+      ? `server reports ${ids.join(", ")}; expected ${expected.join(" or ")}`
+      : "server is untracked and did not report a recognizable model id",
+  };
+}
+
 export async function waitForReady(profile, pid, rawLogPath) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") return;
@@ -152,6 +178,32 @@ export async function waitForReady(profile, pid, rawLogPath) {
 }
 
 // ── Internals ──────────────────────────────────────────────────────────────
+
+async function serverModelIds(baseUrl) {
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { signal: AbortSignal.timeout(1000) });
+    if (!response.ok) return [];
+    const body = await response.json();
+    return (Array.isArray(body?.data) ? body.data : [])
+      .map((model) => String(model?.id ?? "").trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function expectedModelIds(profile) {
+  const fileName = profile.modelPath ? basename(profile.modelPath) : null;
+  return [
+    profile.modelAlias,
+    profile.label,
+    profile.ollamaModel,
+    profile.omlxModel,
+    profile.modelPath,
+    fileName,
+    fileName ? fileName.replace(/\.gguf$/iu, "") : null,
+  ].filter(Boolean).map(String);
+}
 
 function pidAlive(pid) {
   try { process.kill(pid, 0); return true; }

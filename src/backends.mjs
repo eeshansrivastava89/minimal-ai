@@ -3,16 +3,30 @@ import { scanGgufModels } from "./scan.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
 
+export const LOCAL_HOST = "127.0.0.1";
+export const LLAMA_CPP_PORT = 8080;
+export const LLAMA_CPP_MTP_PORT = 8081;
+export const OLLAMA_PORT = 11434;
+export const OMLX_PORT = 8000;
+
+export function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
+  return `http://${host}:${port}${path}`;
+}
+
+export function baseUrlForFlags(flags) {
+  return baseUrlFor({ host: flags.host, port: flags.port });
+}
+
 export const BACKENDS = {
   "llama-cpp": {
     id: "llama-cpp",
     label: "llama.cpp",
     type: "local-server",
     providerId: "llama-cpp",
-    defaultPort: 8080,
-    defaultBaseUrl: "http://127.0.0.1:8080/v1",
+    defaultHost: LOCAL_HOST,
+    defaultPort: LLAMA_CPP_PORT,
+    defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_PORT }),
     needsCommandFile: true,
-    needsModelFile: true,
     scanModels: () => scanGgufModels(),
   },
   "llama-cpp-mtp": {
@@ -20,11 +34,10 @@ export const BACKENDS = {
     label: "llama.cpp MTP",
     type: "local-server",
     providerId: "llama-cpp-mtp",
-    defaultPort: 8081,
-    defaultBaseUrl: "http://127.0.0.1:8081/v1",
+    defaultHost: LOCAL_HOST,
+    defaultPort: LLAMA_CPP_MTP_PORT,
+    defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_MTP_PORT }),
     needsCommandFile: true,
-    needsModelFile: true,
-    extraArgs: ["--spec-type", "draft-mtp", "--spec-draft-n-max", "2"],
     scanModels: () => scanGgufModels(),
   },
   "ollama": {
@@ -32,10 +45,11 @@ export const BACKENDS = {
     label: "Ollama",
     type: "managed-server",
     providerId: "ollama",
-    defaultPort: 11434,
-    defaultBaseUrl: "http://localhost:11434/v1",
+    defaultHost: "localhost",
+    defaultPort: OLLAMA_PORT,
+    defaultBaseUrl: baseUrlFor({ host: "localhost", port: OLLAMA_PORT }),
+    apiBaseUrl: baseUrlFor({ host: "localhost", port: OLLAMA_PORT, path: "" }),
     needsCommandFile: false,
-    needsModelFile: false,
     scanModels: () => scanOllamaModels(),
   },
   "omlx": {
@@ -43,10 +57,11 @@ export const BACKENDS = {
     label: "oMLX",
     type: "managed-server",
     providerId: "omlx",
-    defaultPort: 8000,
-    defaultBaseUrl: "http://127.0.0.1:8000/v1",
+    defaultHost: LOCAL_HOST,
+    defaultPort: OMLX_PORT,
+    defaultBaseUrl: baseUrlFor({ port: OMLX_PORT }),
+    apiBaseUrl: baseUrlFor({ port: OMLX_PORT, path: "" }),
     needsCommandFile: false,
-    needsModelFile: false,
     scanModels: () => scanOmlxModels(),
   },
 };
@@ -64,11 +79,16 @@ export async function backendBinaryFor(backendId) {
   return discovered; // null means "not found — trigger onboarding"
 }
 
+export function defaultFlagsForBackend(backendId) {
+  const backend = backendFor(backendId);
+  return { host: backend.defaultHost ?? LOCAL_HOST, port: backend.defaultPort };
+}
+
 // ── Ollama model discovery ──────────────────────────────────────────────
 
 async function scanOllamaModels() {
   try {
-    const response = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(3000) });
+    const response = await fetch(`${BACKENDS.ollama.apiBaseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return [];
     const body = await response.json();
     if (!Array.isArray(body?.models)) return [];
@@ -93,7 +113,7 @@ async function scanOllamaModels() {
 
 async function scanOmlxModels() {
   try {
-    const response = await fetch("http://127.0.0.1:8000/v1/models", { signal: AbortSignal.timeout(3000) });
+    const response = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return [];
     const body = await response.json();
     if (!Array.isArray(body?.data)) return [];

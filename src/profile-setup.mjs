@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { estimateMemory } from "./estimate.mjs";
 import { findLlamaServer } from "./config.mjs";
+import { baseUrlForFlags, LLAMA_CPP_PORT, LLAMA_CPP_MTP_PORT } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -44,7 +45,7 @@ export async function configureLocalProfile(prompt, profile) {
   if (caps.mtp) {
     console.log(renderSection("MTP detected", renderRows([
       ["Backend", "llama.cpp MTP"],
-      ["Port", "8081"],
+      ["Port", String(LLAMA_CPP_MTP_PORT)],
       ["Flags", "--spec-type draft-mtp --spec-draft-n-max 2"],
     ])));
     const useMtp = await prompt.yesNo("Use MTP speculative decoding flags?", true);
@@ -111,14 +112,14 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
 }
 
 function applyMtpDefaults(profile) {
-  const flags = { ...profile.flags, port: 8081 };
+  const flags = { ...profile.flags, port: LLAMA_CPP_MTP_PORT };
   return applyProfileFlags({ ...profile, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp" }, flags, {
     values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 2 },
   });
 }
 
 function removeMtpDefaults(profile) {
-  const flags = { ...profile.flags, port: 8080 };
+  const flags = { ...profile.flags, port: LLAMA_CPP_PORT };
   return applyProfileFlags({ ...profile, backend: "llama-cpp", providerId: "llama-cpp" }, flags, {
     remove: ["--spec-type", "--spec-draft-n-max"],
   });
@@ -156,7 +157,7 @@ function applyProfileFlags(profile, flags, edits = {}) {
   const next = {
     ...profile,
     flags,
-    baseUrl: `http://${flags.host}:${flags.port}/v1`,
+    baseUrl: baseUrlForFlags(flags),
     harnesses: {
       ...(profile.harnesses ?? {}),
       pi: { ...(profile.harnesses?.pi ?? {}), enabled: true, model: `${profile.providerId ?? profile.backend}/${profile.modelAlias ?? profile.id}` },

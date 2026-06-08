@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
-import { backendFor } from "./backends.mjs";
+import { backendFor, baseUrlForFlags, defaultFlagsForBackend } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
@@ -26,10 +26,6 @@ export function notesPath(id) {
 
 export function statePath(id) {
   return join(RUN_DIR, `${sanitizeProfileId(id)}.state.json`);
-}
-
-export function profileExists(id) {
-  return existsSync(profileJsonPath(id));
 }
 
 export function sanitizeProfileId(value) {
@@ -57,7 +53,7 @@ export async function readProfile(id) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-export async function saveProfile(profile) {
+export async function saveProfile(profile, options = {}) {
   const id = sanitizeProfileId(profile.id);
   const dir = profileDir(id);
   await mkdir(dir, { recursive: true });
@@ -75,8 +71,8 @@ export async function saveProfile(profile) {
   const backend = backendFor(saved.backend);
   if (backend.needsCommandFile) {
     const cmdPath = commandJsonPath(id);
-    if (!existsSync(cmdPath)) {
-      await writeJson(cmdPath, { argv: saved.commandArgv ?? saved.flags ?? [] });
+    if (options.writeCommand || !existsSync(cmdPath)) {
+      await writeJson(cmdPath, { argv: saved.commandArgv ?? [] });
     }
   }
 
@@ -116,12 +112,11 @@ export async function deleteProfile(id, options = {}) {
 export function normalizeProfile(profile) {
   const backend = backendFor(profile.backend);
   const flags = {
-    host: "127.0.0.1",
-    port: backend.defaultPort,
+    ...defaultFlagsForBackend(backend.id),
     ...profile.flags,
   };
   if (!profile.baseUrl) {
-    profile.baseUrl = `http://${flags.host}:${flags.port}/v1`;
+    profile.baseUrl = baseUrlForFlags(flags);
   }
 
   return {
@@ -174,6 +169,11 @@ function summarizeCapabilities(caps) {
 }
 
 // ── State files (for running servers) ──────────────────────────────────────
+
+export async function readCommandArgv(profile) {
+  const command = await readJson(commandJsonPath(profile.id), null);
+  return Array.isArray(command?.argv) ? command.argv.map(String) : (profile.commandArgv ?? []).map(String);
+}
 
 export async function readState(id) {
   return readJson(statePath(id), null);
