@@ -21,7 +21,7 @@ import { offerManagedLlamaRuntimeUpdate } from "./runtime.mjs";
 
 async function offerUpdate(argv) {
   const invocation = detectInvocation();
-  const update = await checkForUpdate({ force: invocation === "npx" });
+  const update = await checkForUpdate({ force: true });
   if (!update) return false;
 
   const plan = updateCommand(invocation, argv);
@@ -1132,7 +1132,7 @@ async function printVersion() {
   const version = currentPackageVersion();
   console.log(`offgrid-ai v${version}`);
   const invocation = detectInvocation();
-  const update = await checkForUpdate({ force: invocation === "npx" });
+  const update = await checkForUpdate({ force: true });
   if (update) {
     const plan = updateCommand(invocation, ["version"]);
     console.log(pc.yellow(`Update available: v${update.latest}. Run: ${plan.display}`));
