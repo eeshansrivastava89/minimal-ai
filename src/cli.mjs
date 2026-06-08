@@ -15,6 +15,7 @@ import { removeInstallerPathEntries } from "./shell-path.mjs";
 import { configureLocalProfile } from "./profile-setup.mjs";
 import { buildPrettyCommand } from "./command.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
+import { offerManagedLlamaRuntimeUpdate } from "./runtime.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -65,6 +66,15 @@ export async function run(argv) {
 
 export async function mainFlow() {
   await ensureDirs();
+
+  if (process.stdin.isTTY) {
+    const runtimePrompt = createPrompt();
+    try {
+      await offerManagedLlamaRuntimeUpdate(runtimePrompt);
+    } finally {
+      runtimePrompt.close();
+    }
+  }
 
   // 1. Check what backends are available
   const llamaBinary = await findLlamaServer();

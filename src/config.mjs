@@ -10,6 +10,8 @@ export const DATA_DIR = process.env.OFFGRID_DIR || join(homedir(), ".offgrid-ai"
 export const PROFILE_DIR = join(DATA_DIR, "profiles");
 export const LOG_DIR = join(DATA_DIR, "logs");
 export const RUN_DIR = join(DATA_DIR, "run");
+export const RUNTIME_DIR = join(DATA_DIR, "runtime");
+export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
 
 // ── Default scan directories ──────────────────────────────────────────────
 
@@ -74,14 +76,17 @@ export async function findLlamaServer() {
     return process.env.LLAMA_SERVER_BINARY;
   }
 
-  // 2. which/where
+  // 2. offgrid-ai managed runtime
+  if (existsSync(MANAGED_LLAMA_SERVER)) return MANAGED_LLAMA_SERVER;
+
+  // 3. which/where
   try {
     const { stdout } = await execFileAsync("which", ["llama-server"]);
     const path = stdout.trim();
     if (path && existsSync(path)) return path;
   } catch { /* not on PATH */ }
 
-  // 3. Homebrew
+  // 4. Homebrew
   try {
     const { stdout } = await execFileAsync("brew", ["--prefix", "llama.cpp"]);
     const prefix = stdout.trim();
