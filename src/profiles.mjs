@@ -168,6 +168,7 @@ function summarizeCapabilities(caps) {
     imatrix: caps.imatrix,
     quant: caps.quant,
     metaCtx: caps.metaCtx,
+    mmprojProjectorType: caps.mmprojProjectorType,
     ctxSize: caps.ctxSize,
   };
 }

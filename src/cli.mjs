@@ -456,6 +456,33 @@ function capabilitySummary(caps) {
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
 }
 
+function isUnsupportedMmprojError(err, profile) {
+  const message = String(err?.message ?? "");
+  return Boolean(profile.mmprojPath && /unknown projector type|failed to load multimodal model|failed to load CLIP model/i.test(message));
+}
+
+function textOnlyProfile(profile) {
+  return normalizeProfile({
+    ...profile,
+    mmprojPath: null,
+    disabledMmprojPath: profile.disabledMmprojPath ?? profile.mmprojPath,
+    capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: "unsupported-mmproj" },
+    commandArgv: removeCommandOption(profile.commandArgv ?? [], "--mmproj"),
+  });
+}
+
+function removeCommandOption(argv, flag) {
+  const next = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === flag) {
+      if (argv[i + 1] && !argv[i + 1].startsWith("--")) i += 1;
+      continue;
+    }
+    next.push(argv[i]);
+  }
+  return next;
+}
+
 function createManagedProfile(model, backendId) {
   return normalizeProfile({
     id: model.id.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase(),
@@ -509,6 +536,13 @@ async function runProfile(profile, options = {}) {
         // Clean up orphaned server process if startup failed
         if (state?.pid) {
           try { await stopProfile(profile); } catch { /* best effort */ }
+        }
+        if (!options.textOnlyRetry && isUnsupportedMmprojError(err, profile)) {
+          console.log(pc.yellow("Vision projector is not supported by this llama.cpp build. Retrying text-only."));
+          console.log(pc.dim("Update llama.cpp later to re-enable vision for this model."));
+          const textOnly = textOnlyProfile(profile);
+          await saveProfile(textOnly);
+          return await runProfile(textOnly, { ...options, textOnlyRetry: true });
         }
         throw err;
       }

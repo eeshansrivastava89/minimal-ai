@@ -74,5 +74,5 @@ function aliasFromName(name) {
 }
 
 function quantFromName(name) {
-  return name.match(/(Q\d_K_[A-Z]+|UD-[A-Z0-9_]+)/)?.[1];
+  return name.match(/(Q\d_K_[A-Z]+|Q\d_[01]|UD-[A-Z0-9_]+)/)?.[1];
 }

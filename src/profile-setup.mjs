@@ -50,8 +50,20 @@ export async function configureLocalProfile(prompt, profile) {
     console.log("");
     console.log(renderSection("QAT detected", renderRows([
       ["Meaning", "quantization-aware trained"],
-      ["Runtime flags", "none required"],
+      ["Runtime flags", "none QAT-specific"],
     ])));
+  }
+
+  if (caps.vision && profile.mmprojPath) {
+    console.log("");
+    const gemma4Unified = isGemma4UnifiedProjector(caps.mmprojProjectorType);
+    console.log(renderSection("Vision projector detected", renderRows([
+      ["Projector", caps.mmprojProjectorType ?? "unknown"],
+      ["Flag", `--mmproj ${profile.mmprojPath}`],
+      ...(gemma4Unified ? [["Note", pc.yellow("Gemma 4 unified projectors need newer llama.cpp than current Homebrew stable.")]] : []),
+    ])));
+    const useVision = await prompt.yesNo("Enable vision with --mmproj?", !gemma4Unified);
+    configured = useVision ? applyVisionDefaults(configured) : removeVisionDefaults(configured, gemma4Unified ? "gemma4-unified-unsupported" : "user-disabled");
   }
 
   if (caps.thinking) {
@@ -104,6 +116,23 @@ function removeMtpDefaults(profile) {
   return applyProfileFlags({ ...profile, backend: "llama-cpp", providerId: "llama-cpp" }, flags, {
     remove: ["--spec-type", "--spec-draft-n-max"],
   });
+}
+
+function applyVisionDefaults(profile) {
+  if (!profile.mmprojPath) return profile;
+  return applyProfileFlags({
+    ...profile,
+    capabilities: { ...(profile.capabilities ?? {}), vision: true, visionDisabledReason: undefined },
+  }, profile.flags, { values: { "--mmproj": profile.mmprojPath } });
+}
+
+function removeVisionDefaults(profile, reason) {
+  return applyProfileFlags({
+    ...profile,
+    disabledMmprojPath: profile.mmprojPath,
+    mmprojPath: null,
+    capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: reason },
+  }, profile.flags, { remove: ["--mmproj"] });
 }
 
 function applyThinkingDefaults(profile) {
@@ -177,6 +206,10 @@ function renderMemoryEstimate(profile) {
   } catch {
     return renderSection("Memory estimate", pc.dim("Estimate unavailable for this model."));
   }
+}
+
+function isGemma4UnifiedProjector(projectorType) {
+  return /gemma4u[va]/i.test(String(projectorType ?? ""));
 }
 
 function detectionSummary(caps) {

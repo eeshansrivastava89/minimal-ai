@@ -6,6 +6,7 @@ import { readGgufMetadata } from "./gguf.mjs";
 
 export function detectCapabilities(modelPath, mmprojPath) {
   const meta = safeReadGgufMetadata(modelPath);
+  const mmprojMeta = mmprojPath ? safeReadGgufMetadata(mmprojPath) : {};
   const name = basename(modelPath).toLowerCase();
   const pathHints = String(modelPath).toLowerCase();
 
@@ -25,13 +26,14 @@ export function detectCapabilities(modelPath, mmprojPath) {
 
   // Vision — mmproj present
   const vision = Boolean(mmprojPath && existsSync(mmprojPath));
+  const mmprojProjectorType = stringMeta(mmprojMeta, "clip.vision.projector_type") ?? stringMeta(mmprojMeta, "clip.audio.projector_type") ?? null;
 
   // MTP (multi-token prediction) — detect speculative decoding.
   // Do not treat all Qwen models as MTP; require an explicit filename or metadata hint.
   const mtp = /\bmtp\b|draft-mtp|multi-token/i.test(pathHints) || Object.keys(meta).some((key) => /mtp|draft|speculative/i.test(key));
 
   // Quantization
-  const quant = name.match(/(Q\d_K_[A-Z]+|UD-[A-Z0-9_]+)/i)?.[1] ?? null;
+  const quant = name.match(/(Q\d_K_[A-Z]+|Q\d_[01]|UD-[A-Z0-9_]+)/i)?.[1] ?? null;
 
   // Context size from metadata, fallback to name hints
   const metaCtx = architecture
@@ -39,7 +41,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
     : undefined;
   const ctxSize = metaCtx ?? (thinking ? 80000 : 32768);
 
-  return { architecture, thinking, vision, mtp, qat, imatrix, quant, metaCtx, ctxSize, meta };
+  return { architecture, thinking, vision, mtp, qat, imatrix, quant, metaCtx, ctxSize, meta, mmprojProjectorType };
 }
 
 // ── Compute llama-server flags from capabilities ───────────────────────────
@@ -127,4 +129,9 @@ function safeReadGgufMetadata(modelPath) {
 function numberMeta(meta, key) {
   const value = key ? meta[key] : undefined;
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringMeta(meta, key) {
+  const value = key ? meta[key] : undefined;
+  return typeof value === "string" && value ? value : undefined;
 }
