@@ -1,5 +1,10 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { estimateMemory } from "./estimate.mjs";
+import { findLlamaServer } from "./config.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const CACHE_CHOICES = [
   { value: "bf16", label: "bf16", hint: "default: stable, good quality" },
@@ -57,13 +62,14 @@ export async function configureLocalProfile(prompt, profile) {
   if (caps.vision && profile.mmprojPath) {
     console.log("");
     const gemma4Unified = isGemma4UnifiedProjector(caps.mmprojProjectorType);
+    const supported = !gemma4Unified || await runtimeSupportsGemma4Unified();
     console.log(renderSection("Vision projector detected", renderRows([
       ["Projector", caps.mmprojProjectorType ?? "unknown"],
       ["Flag", `--mmproj ${profile.mmprojPath}`],
-      ...(gemma4Unified ? [["Note", pc.yellow("Gemma 4 unified projectors need newer llama.cpp than current Homebrew stable.")]] : []),
+      ...(gemma4Unified && !supported ? [["Note", pc.yellow("Gemma 4 unified projectors need llama.cpp b9549+.")]] : []),
     ])));
-    const useVision = await prompt.yesNo("Enable vision with --mmproj?", !gemma4Unified);
-    configured = useVision ? applyVisionDefaults(configured) : removeVisionDefaults(configured, gemma4Unified ? "gemma4-unified-unsupported" : "user-disabled");
+    const useVision = await prompt.yesNo("Enable vision with --mmproj?", supported);
+    configured = useVision ? applyVisionDefaults(configured) : removeVisionDefaults(configured, gemma4Unified && !supported ? "gemma4-unified-unsupported" : "user-disabled");
   }
 
   if (caps.thinking) {
@@ -210,6 +216,19 @@ function renderMemoryEstimate(profile) {
 
 function isGemma4UnifiedProjector(projectorType) {
   return /gemma4u[va]/i.test(String(projectorType ?? ""));
+}
+
+async function runtimeSupportsGemma4Unified() {
+  try {
+    const binary = await findLlamaServer();
+    if (!binary) return false;
+    const { stdout, stderr } = await execFileAsync(binary, ["--version"]);
+    const output = `${stdout}\n${stderr}`;
+    const version = Number(output.match(/version:\s*(\d+)/i)?.[1]);
+    return Number.isFinite(version) && version >= 9549;
+  } catch {
+    return false;
+  }
 }
 
 function detectionSummary(caps) {
