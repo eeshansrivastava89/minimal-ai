@@ -4,6 +4,9 @@ import { estimateMemory } from "./estimate.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { baseUrlForFlags, LLAMA_CPP_PORT, LLAMA_CPP_MTP_PORT } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+import { detectCapabilities } from "./autodetect.mjs";
+import { matchDrafter } from "./scan.mjs";
+import { scanGgufModels } from "./scan.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -29,7 +32,28 @@ const THINKING_DEFAULTS = {
 
 export async function configureLocalProfile(prompt, profile) {
   let configured = profile;
-  const caps = profile.capabilities ?? {};
+  // Re-detect capabilities from the model file and check for drafters
+  // so that re-setup can pick up MTP availability, vision changes, etc.
+  const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
+  let drafterPath = profile.drafterPath ?? null;
+  if (!drafterPath) {
+    const { drafters } = await scanGgufModels();
+    const drafter = matchDrafter(profile.modelPath, drafters);
+    if (drafter) drafterPath = drafter.path;
+  }
+  const hasMtp = freshCaps.mtp || Boolean(drafterPath);
+  const caps = { ...freshCaps, mtp: hasMtp };
+  // If MTP is newly available, switch backend and add drafter path
+  if (hasMtp && configured.backend !== "llama-cpp-mtp") {
+    configured = { ...configured, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp", drafterPath, capabilities: { ...configured.capabilities, mtp: true } };
+  }
+  if (drafterPath && !configured.drafterPath) {
+    configured = { ...configured, drafterPath };
+  }
+  // If vision was previously disabled but mmproj is back, re-enable
+  if (configured.disabledMmprojPath && configured.mmprojPath === null && freshCaps.vision) {
+    configured = { ...configured, mmprojPath: configured.disabledMmprojPath, disabledMmprojPath: undefined, capabilities: { ...configured.capabilities, vision: true, visionDisabledReason: undefined } };
+  }
 
   console.log("");
   console.log(renderSection("Model setup", renderRows([
