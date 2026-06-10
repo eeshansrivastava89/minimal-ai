@@ -205,8 +205,9 @@ async function modelCommandCenter(initialCatalog) {
       printModelCards(allItems, { runningProfilesNow, drafters: normalized.drafters });
 
       const options = allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters }));
+      options.push({ value: "__exit__", label: pc.dim("Exit"), hint: "Close offgrid-ai" });
       const selected = await prompt.choice("Select a model", options);
-      if (!selected) break;
+      if (!selected || selected === "__exit__") break;
       const item = allItems.find((i) => itemKey(i) === selected);
       if (!item) break;
 
