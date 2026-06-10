@@ -181,41 +181,37 @@ async function modelCommandCenter(initialCatalog) {
     return;
   }
 
+  const catalog = initialCatalog.newModels ? initialCatalog : await loadModelCatalog();
+  const normalized = normalizeCatalog(catalog);
+  const allItems = buildCatalogItems(normalized);
+  if (allItems.length === 0) { console.log(pc.dim("No models found.")); return; }
+  const runningProfilesNow = [];
+  for (const profile of normalized.profiles) {
+    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+  }
+  const fileMissingCount = normalized.profiles.filter((p) => isProfileFileMissing(p)).length;
+  const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
+  console.log("\n" + renderCard("Your local AI workspace", renderRows([
+    ["Setups", `${normalized.profiles.length} saved`],
+    ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
+    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
+    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
+  ]), { formatBorder: summaryBorder }));
+
+  printModelCards(allItems, { runningProfilesNow, drafters: normalized.drafters });
+
   const prompt = createPrompt();
   try {
-    while (true) {
-      const catalog = await loadModelCatalog();
-      const normalized = normalizeCatalog(catalog);
-      const allItems = buildCatalogItems(normalized);
-      if (allItems.length === 0) { console.log(pc.dim("No models found.")); break; }
-      const runningProfilesNow = [];
-      for (const profile of normalized.profiles) {
-        if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
-      }
-      const fileMissingCount = normalized.profiles.filter((p) => isProfileFileMissing(p)).length;
-      const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
-      console.log("\n" + renderCard("Your local AI workspace", renderRows([
-        ["Setups", `${normalized.profiles.length} saved`],
-        ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
-        ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-        ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
-      ]), { formatBorder: summaryBorder }));
+    const options = allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters }));
+    const selected = await prompt.choice("Select a model", options);
+    if (!selected) return;
+    const item = allItems.find((i) => itemKey(i) === selected);
+    if (!item) return;
 
-      // Show model cards for all items
-      printModelCards(allItems, { runningProfilesNow, drafters: normalized.drafters });
-
-      const options = allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters }));
-      options.push({ value: "__exit__", label: pc.dim("Exit"), hint: "Close offgrid-ai" });
-      const selected = await prompt.choice("Select a model", options);
-      if (!selected || selected === "__exit__") break;
-      const item = allItems.find((i) => itemKey(i) === selected);
-      if (!item) break;
-
-      const actions = actionsForItem(item);
-      const action = await prompt.choice(item.label, actions, actions[0].value);
-      if (!action) continue;
-      await performAction(prompt, action, item);
-    }
+    const actions = actionsForItem(item);
+    const action = await prompt.choice(item.label, actions, actions[0].value);
+    if (!action) return;
+    await performAction(prompt, action, item);
   } finally {
     prompt.close();
   }
