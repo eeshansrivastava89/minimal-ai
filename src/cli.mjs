@@ -177,7 +177,6 @@ async function modelCommandCenter(initialCatalog) {
     const normalized = normalizeCatalog(initialCatalog);
     const allItems = buildCatalogItems(normalized);
     if (allItems.length === 0) return;
-    // Non-interactive: just show summary
     for (const item of allItems) console.log(item.label);
     return;
   }
@@ -185,7 +184,6 @@ async function modelCommandCenter(initialCatalog) {
   const prompt = createPrompt();
   try {
     while (true) {
-      // Reload catalog each loop to reflect setup/remove changes
       const catalog = await loadModelCatalog();
       const normalized = normalizeCatalog(catalog);
       const allItems = buildCatalogItems(normalized);
@@ -209,14 +207,14 @@ async function modelCommandCenter(initialCatalog) {
       const item = allItems.find((i) => itemKey(i) === selected);
       if (!item) break;
 
+      // Show detail card before action menu
+      console.log("");
+      printItemCard(item, { runningProfilesNow, drafters: normalized.drafters });
+
       const actions = actionsForItem(item);
-      if (actions.length === 1) {
-        await performAction(prompt, actions[0].value, item);
-      } else {
-        const action = await prompt.choice(item.label, actions, actions[0].value);
-        if (!action) continue;
-        await performAction(prompt, action, item);
-      }
+      const action = await prompt.choice(item.label, actions, actions[0].value);
+      if (!action) continue;
+      await performAction(prompt, action, item);
     }
   } finally {
     prompt.close();
@@ -282,24 +280,27 @@ function modelSelectOption(item, { runningProfilesNow }) {
     const { profile } = item;
     const running = runningProfilesNow.some((r) => r.id === profile.id);
     const fileMissing = item.fileMissing;
-    const caps = profile.capabilities ?? {};
     let status;
-    if (fileMissing) status = pc.red("⚠ File missing");
-    else if (running) status = pc.green("● Running");
-    else status = pc.dim("● Ready");
-    const labelParts = [profile.label, status];
-    if (profile.drafterPath) labelParts.push(pc.green("MTP"));
-    if (profile.flags?.ctxSize) labelParts.push(`${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx`);
-    return { value: itemKey(item), label: labelParts.join(" "), hint: humanCapabilitySummary(caps) || profile.modelAlias };
+    if (fileMissing) status = pc.red("⚠ missing");
+    else if (running) status = pc.green("● running");
+    else status = pc.dim("● ready");
+    // MTP label: enabled vs available vs not available
+    let mtpLabel;
+    if (profile.drafterPath) mtpLabel = pc.green("MTP");
+    else if ((profile.capabilities?.architecture === "gemma4")) mtpLabel = pc.yellow("MTP available");
+    const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k` : null;
+    const label = [profile.label, status, mtpLabel, ctxLabel].filter(Boolean).join(" ");
+    return { value: itemKey(item), label, hint: humanCapabilitySummary(profile.capabilities ?? {}) || profile.modelAlias };
   }
   if (item.type === "new") {
     const { model, drafter } = item;
     const caps = detectCapabilities(model.path, model.mmprojPath);
-    const labelParts = [model.label, pc.yellow("Needs setup")];
-    if (caps.mtp || drafter) labelParts.push(pc.green("MTP ✓"));
-    else if (caps.architecture === "gemma4") labelParts.push(pc.yellow("MTP"));
-    labelParts.push(formatBytes(model.sizeBytes));
-    return { value: itemKey(item), label: labelParts.join(" "), hint: humanCapabilitySummary(caps) || model.quant };
+    const mtpAvailable = caps.mtp || Boolean(drafter);
+    let mtpLabel;
+    if (mtpAvailable) mtpLabel = pc.green("MTP ✓");
+    else if (caps.architecture === "gemma4") mtpLabel = pc.yellow("MTP");
+    const label = [model.label, pc.yellow("needs setup"), mtpLabel, formatBytes(model.sizeBytes)].filter(Boolean).join(" ");
+    return { value: itemKey(item), label, hint: humanCapabilitySummary(caps) || model.quant };
   }
   // managed
   const { model, backendId } = item;
@@ -337,6 +338,68 @@ function isProfileFileMissing(profile) {
   if (backend.type === "managed-server") return false;
   if (!profile.modelPath) return true;
   return !existsSync(profile.modelPath);
+}
+
+function printItemCard(item, { runningProfilesNow, drafters }) {
+  if (item.type === "profile") {
+    const { profile } = item;
+    const backend = backendFor(profile.backend);
+    const isManaged = backend.type === "managed-server";
+    const running = runningProfilesNow.some((r) => r.id === profile.id);
+    const fileMissing = isProfileFileMissing(profile);
+    const caps = profile.capabilities ?? {};
+    let status;
+    if (fileMissing) status = pc.red("File missing");
+    else if (running) status = pc.green("Running now");
+    else status = "Ready";
+    const border = fileMissing ? pc.red : running ? pc.green : pc.dim;
+    // MTP: distinguish enabled vs available
+    let mtpLabel;
+    if (profile.drafterPath) {
+      mtpLabel = pc.green(`enabled (drafter: ${basename(profile.drafterPath)})`);
+    } else if (drafters ? matchDrafter(profile.modelPath, drafters) : null) {
+      mtpLabel = pc.yellow("available — reconfigure to enable");
+    } else if (caps.architecture === "gemma4") {
+      mtpLabel = pc.yellow("drafter not found");
+    }
+    const detailParts = [fileMissing ? pc.red("File not found") : humanCapabilitySummary(caps)];
+    if (mtpLabel) detailParts.push(mtpLabel);
+    const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
+    if (ctxLabel) detailParts.push(ctxLabel);
+    const rows = [
+      ["Status", status],
+      ["Details", detailParts.join(pc.dim(" · "))],
+      ["Runs with", backend.label],
+    ];
+    if (!isManaged && profile.modelPath) {
+      rows.push(["File", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath]);
+    }
+    console.log(renderCard(profile.label, renderRows(rows), { formatBorder: border }));
+  } else if (item.type === "new") {
+    const { model, drafter } = item;
+    const caps = detectCapabilities(model.path, model.mmprojPath);
+    const mtpAvailable = caps.mtp || Boolean(drafter);
+    const mtpLabel = mtpAvailable
+      ? pc.green("MTP ✓")
+      : (caps.architecture === "gemma4")
+        ? pc.yellow("MTP: needs drafter")
+        : null;
+    const detailParts = [humanCapabilitySummary(caps)];
+    if (mtpLabel) detailParts.push(mtpLabel);
+    detailParts.push(formatBytes(model.sizeBytes));
+    console.log(renderCard(model.label, renderRows([
+      ["Status", pc.yellow("Needs setup")],
+      ["Details", detailParts.join(pc.dim(" · "))],
+    ]), { formatBorder: pc.yellow }));
+  } else {
+    // managed
+    const { model, backendId } = item;
+    const backend = BACKENDS[backendId];
+    console.log(renderCard(model.label, renderRows([
+      ["Status", pc.dim(`Via ${backend.label}`)],
+      ["Details", [model.id, model.quant].filter(Boolean).join(pc.dim(" · "))],
+    ]), { formatBorder: pc.dim }));
+  }
 }
 
 async function performAction(prompt, action, item) {
