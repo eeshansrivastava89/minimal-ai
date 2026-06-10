@@ -53,7 +53,7 @@ async function scanOneDir(root) {
     const meta = safeReadGgufMetadata(path);
     const architecture = typeof meta["general.architecture"] === "string" ? meta["general.architecture"] : null;
 
-    if (architecture === "gemma4_assistant") {
+    if (architecture === "gemma4-assistant" || architecture === "gemma4_assistant") {
       // This is an MTP drafter model, not a main model
       drafters.push({
         path,
