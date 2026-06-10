@@ -241,12 +241,15 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
   }
 
+  const fileMissingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
+
   console.log("\n" + renderCard("Your local AI workspace", renderRows([
     ["Ready to chat", pc.green(`${profiles.length} saved setup${profiles.length === 1 ? "" : "s"}`)],
     ["Need setup", newModels.length > 0 ? pc.yellow(`${newModels.length} downloaded model${newModels.length === 1 ? "" : "s"}`) : pc.green("none")],
     ["Running now", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-    ["Next step", profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? "Set up a downloaded model" : "Download a model"],
-  ]), { formatBorder: pc.cyan }));
+    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.green("none")],
+    ["Next step", fileMissingCount > 0 ? pc.red("Remove or fix missing setups") : profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? "Set up a downloaded model" : "Download a model"],
+  ]), { formatBorder: fileMissingCount > 0 ? pc.yellow : pc.cyan }));
 
   console.log("\n" + pc.bold("Ready to chat"));
   if (profiles.length === 0) {
@@ -255,8 +258,9 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     for (const profile of profiles) {
       const running = runningProfilesNow.some((item) => item.id === profile.id);
       const piConfigured = await hasPiModel(profile);
+      const fileMissing = isProfileFileMissing(profile);
       const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
-      console.log(profileCatalogCard(num, profile, { running, piConfigured }));
+      console.log(profileCatalogCard(num, profile, { running, piConfigured, fileMissing }));
     }
   }
 
@@ -285,16 +289,30 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
   }
 }
 
-function profileCatalogCard(num, profile, { running, piConfigured }) {
+function isProfileFileMissing(profile) {
+  const backend = backendFor(profile.backend);
+  if (backend.type === "managed-server") return false;
+  if (!profile.modelPath) return true; // no path recorded means we can't verify
+  return !existsSync(profile.modelPath);
+}
+
+function profileCatalogCard(num, profile, { running, piConfigured, fileMissing }) {
   const backend = backendFor(profile.backend);
   const caps = profile.capabilities ?? {};
-  const status = running ? statusText("running", "Running now") : statusText("ready", "Ready to chat");
+  let status;
+  if (fileMissing) {
+    status = pc.red("File missing");
+  } else if (running) {
+    status = statusText("running", "Running now");
+  } else {
+    status = statusText("ready", "Ready to chat");
+  }
   return renderCard(`${num}. ${profile.label}`, renderRows([
     ["Status", status],
-    ["Good for", humanCapabilitySummary(caps)],
+    ["Good for", fileMissing ? pc.red("Model file not found") : humanCapabilitySummary(caps)],
     ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
     ["Runs with", backend.label],
-  ]), { formatBorder: running ? pc.green : pc.cyan });
+  ]), { formatBorder: fileMissing ? pc.red : running ? pc.green : pc.cyan });
 }
 
 function downloadedModelCard(num, model, caps) {
@@ -316,7 +334,7 @@ function managedModelCard(num, model, backend) {
 
 function modelCatalogItems({ profiles, newModels, managedItems }) {
   return [
-    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, hint: `${profile.modelAlias} · ${profile.baseUrl}` })),
+    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, hint: `${profile.modelAlias} · ${profile.baseUrl}`, fileMissing: isProfileFileMissing(profile) })),
     ...newModels.map((model) => ({ type: "new", model, label: model.label, hint: `${model.quant ?? "GGUF"} · ${formatBytes(model.sizeBytes)}` })),
     ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label, hint: BACKENDS[backendId].label })),
   ];
@@ -389,12 +407,16 @@ async function printProfileDetails(profile) {
   const isManaged = backend.type === "managed-server";
   const piConfigured = await hasPiModel(profile);
   const running = await isProfileRunning(profile);
+  const fileMissing = !isManaged && isProfileFileMissing(profile);
+  const statusRow = fileMissing
+    ? pc.red("File missing")
+    : running ? pc.green("Running now") : pc.green("Ready to chat");
   console.log("\n" + renderSection("Model overview", renderRows([
     ["Name", pc.bold(profile.label)],
-    ["Status", running ? pc.green("Running now") : pc.green("Ready to chat")],
-    ["Good for", humanCapabilitySummary(profile.capabilities ?? {})],
+    ["Status", statusRow],
+    ["Good for", fileMissing ? pc.red("Model file not found — remove or fix this setup") : humanCapabilitySummary(profile.capabilities ?? {})],
     ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
-    ["Server", pc.green(profile.baseUrl)],
+    ["Server", fileMissing ? pc.red(profile.baseUrl) : pc.green(profile.baseUrl)],
   ])));
 
   console.log("\n" + renderSection("Model details", renderRows([
@@ -403,11 +425,15 @@ async function printProfileDetails(profile) {
     ["Model alias", pc.cyan(profile.modelAlias)],
     ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
     ...(!isManaged ? [
-      ["Local file", profile.modelPath ?? "unknown"],
-      ["Vision file", profile.mmprojPath ?? "none"],
+      ["Local file", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath ?? "unknown"],
+      ["Vision file", profile.mmprojPath ? (existsSync(profile.mmprojPath) ? profile.mmprojPath : pc.red(`${profile.mmprojPath} (not found)`)) : "none"],
       ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
     ] : []),
   ]), { columns: 110 }));
+
+  if (fileMissing) {
+    console.log("\n" + pc.red("⚠ This model's file is no longer on disk. Remove this setup or move the file back."));
+  }
 
   if (!isManaged && profile.commandArgv) {
     const commandArgv = await readCommandArgv(profile);
