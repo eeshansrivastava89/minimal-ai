@@ -637,12 +637,15 @@ async function runProfile(profile, options = {}) {
   // Show memory estimate for local models
   if (!isManaged && profile.modelPath && existsSync(profile.modelPath)) {
     try {
-      const est = estimateMemory(profile.modelPath, profile.mmprojPath, null, profile.flags);
-      console.log(renderSection("Memory estimate", renderRows([
+      const est = estimateMemory(profile.modelPath, profile.mmprojPath, profile.drafterPath, profile.flags);
+      const rows = [
         ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
         ["Model file", formatBytes(est.modelBytes)],
-        ["Conversation memory", est.kvBytes ? `~${formatBytes(est.kvBytes)}` : "unknown"],
-      ])));
+      ];
+      if (est.draftBytes) rows.push(["Drafter", formatBytes(est.draftBytes)]);
+      if (est.mmprojBytes) rows.push(["Vision projector", formatBytes(est.mmprojBytes)]);
+      rows.push(["Conversation memory", est.kvBytes ? `~${formatBytes(est.kvBytes)}` : "unknown"]);
+      console.log(renderSection("Memory estimate", renderRows(rows)));
     } catch { /* estimate failed, skip */ }
   }
 

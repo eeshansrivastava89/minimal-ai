@@ -32,6 +32,13 @@ export function tailFriendly(rawLogPath, friendlyLogPath) {
 function friendlyLine(line) {
   const lower = line.toLowerCase();
   const trimmed = line.trim();
+  // Known-harmless errors during MTP memory estimation — llama.cpp tries to measure
+  // the draft model's memory usage before allocating the shared KV cache, which
+  // fails because the assistant architecture needs the trunk context. This is
+  // expected and the server proceeds to load the draft model correctly afterward.
+  if (lower.includes("ctx_other") || lower.includes("failed to measure draft model memory")) {
+    return pc.dim(`[mtp] ${trimmed}`);
+  }
   if (lower.includes("error") || lower.includes("failed")) return pc.red(`[error] ${trimmed}`);
   if (lower.includes("listening") || lower.includes("http server")) return pc.green(`[server] ${trimmed}`);
   if (lower.includes("llm_load") || lower.includes("load_model") || lower.includes("loading model")) return pc.cyan(`[load] ${trimmed}`);
