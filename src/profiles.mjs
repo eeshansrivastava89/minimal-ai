@@ -131,22 +131,29 @@ export function normalizeProfile(profile) {
 
 // ── Auto-create profile from a discovered model ────────────────────────────
 
-export async function createProfileFromModel(model, backendId) {
+export async function createProfileFromModel(model, backendId, drafterPath) {
   const { detectCapabilities } = await import("./autodetect.mjs");
   const caps = detectCapabilities(model.path, model.mmprojPath);
-  const backend = backendId ?? (caps.mtp ? "llama-cpp-mtp" : "llama-cpp");
-  const id = slugFromLabel(model.label);
-  const { flags, argv } = computeFlags(caps, model.path, model.mmprojPath, null);
+  // If a drafter is provided, this model supports MTP regardless of filename
+  const hasMtp = caps.mtp || Boolean(drafterPath);
+  const backend = backendId ?? (hasMtp ? "llama-cpp-mtp" : "llama-cpp");
+  const { flags, argv } = computeFlags(
+    { ...caps, mtp: hasMtp },
+    model.path,
+    model.mmprojPath,
+    drafterPath ?? null,
+  );
 
   return normalizeProfile({
-    id,
+    id: slugFromLabel(model.label),
     label: model.label,
     backend,
     providerId: backend,
     modelAlias: model.aliasSuggestion,
     modelPath: model.path,
     mmprojPath: model.mmprojPath,
-    capabilities: summarizeCapabilities(caps),
+    drafterPath: drafterPath ?? null,
+    capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp }),
     preset: null, // no presets — auto-detected
     flags,
     commandArgv: argv,

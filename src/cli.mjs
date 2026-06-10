@@ -1,7 +1,8 @@
 import { totalmem } from "node:os";
 import { existsSync, statSync, rmSync } from "node:fs";
+import { basename } from "node:path";
 import { ensureDirs, findLlamaServer, hasHomebrew, DATA_DIR } from "./config.mjs";
-import { scanGgufModels } from "./scan.mjs";
+import { scanGgufModels, matchDrafter } from "./scan.mjs";
 import { createProfileFromModel, normalizeProfile, sanitizeProfileId } from "./profiles.mjs";
 import { readProfile, saveProfile, deleteProfile, loadProfiles, readCommandArgv } from "./profiles.mjs";
 import { backendFor, BACKENDS } from "./backends.mjs";
@@ -78,7 +79,7 @@ export async function mainFlow() {
 
   // 1. Check what backends are available
   const llamaBinary = await findLlamaServer();
-  const ggufModels = await scanGgufModels();
+  const { models: ggufModels } = await scanGgufModels();
   const managedModels = await scanManagedModels();
   const profiles = await loadProfiles();
   const hasAnyBackend = llamaBinary || managedModels.some((m) => m.models.length > 0);
@@ -206,17 +207,17 @@ async function runCommand(argv) {
 }
 
 async function loadModelCatalog() {
-  const [profiles, ggufModels, managedModels] = await Promise.all([
+  const [profiles, { models: ggufModels, drafters }, managedModels] = await Promise.all([
     loadProfiles(),
     scanGgufModels(),
     scanManagedModels(),
   ]);
-  return normalizeCatalog({ profiles, ggufModels, managedModels });
+  return normalizeCatalog({ profiles, ggufModels, drafters, managedModels });
 }
 
 function normalizeCatalog(catalog) {
   if (catalog.newModels && catalog.managedItems) return catalog;
-  const { profiles, ggufModels, managedModels } = catalog;
+  const { profiles, ggufModels, drafters, managedModels } = catalog;
   const profiledPaths = new Set(profiles.map((p) => p.modelPath).filter(Boolean));
   const newModels = ggufModels.filter((m) => !profiledPaths.has(m.path));
   const managedItems = [];
@@ -228,10 +229,10 @@ function normalizeCatalog(catalog) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
     }
   }
-  return { profiles, ggufModels, managedModels, newModels, managedItems };
+  return { profiles, ggufModels, drafters, managedModels, newModels, managedItems };
 }
 
-async function printModelCatalog({ profiles, newModels, managedItems }, items = modelCatalogItems({ profiles, newModels, managedItems })) {
+async function printModelCatalog({ profiles, newModels, managedItems, drafters }, items = modelCatalogItems({ profiles, newModels, managedItems })) {
   const itemNumber = (predicate) => {
     const index = items.findIndex(predicate);
     return index === -1 ? "  " : String(index + 1).padStart(2, " ");
@@ -261,7 +262,7 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
       const piConfigured = await hasPiModel(profile);
       const fileMissing = isProfileFileMissing(profile);
       const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
-      console.log(profileCatalogCard(num, profile, { running, piConfigured, fileMissing }));
+      console.log(profileCatalogCard(num, profile, { running, piConfigured, fileMissing, drafters }));
     }
   }
 
@@ -271,8 +272,9 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
   } else {
     for (const model of newModels.slice(0, 20)) {
       const caps = detectCapabilities(model.path, model.mmprojPath);
+      const drafter = matchDrafter(model.path, drafters);
       const num = itemNumber((item) => item.type === "new" && item.model.path === model.path);
-      console.log(downloadedModelCard(num, model, caps));
+      console.log(downloadedModelCard(num, model, caps, { mtpAvailable: caps.mtp || Boolean(drafter), drafter }));
     }
     if (newModels.length > 20) console.log(pc.dim(`  ... and ${newModels.length - 20} more`));
   }
@@ -297,7 +299,7 @@ function isProfileFileMissing(profile) {
   return !existsSync(profile.modelPath);
 }
 
-function profileCatalogCard(num, profile, { running, piConfigured, fileMissing }) {
+function profileCatalogCard(num, profile, { running, piConfigured, fileMissing, drafters }) {
   const backend = backendFor(profile.backend);
   const caps = profile.capabilities ?? {};
   let status;
@@ -309,18 +311,33 @@ function profileCatalogCard(num, profile, { running, piConfigured, fileMissing }
     status = "Ready";
   }
   const border = fileMissing ? pc.red : running ? pc.green : pc.dim;
-  return renderCard(`${num}. ${profile.label}`, renderRows([
+  const mtpDrafter = profile.drafterPath
+    ? pc.green("enabled")
+    : (drafters ? matchDrafter(profile.modelPath, drafters) : null)
+      ? pc.yellow("available — re-setup to enable")
+      : (caps.architecture === "gemma4")
+        ? pc.yellow("drafter not found")
+        : null;
+  const rows = [
     ["Status", status],
     ["Good for", fileMissing ? pc.red("Model file not found") : humanCapabilitySummary(caps)],
-    ["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")],
-    ["Runs with", backend.label],
-  ]), { formatBorder: border });
+  ];
+  if (mtpDrafter) rows.push(["MTP", mtpDrafter]);
+  rows.push(["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")]);
+  rows.push(["Runs with", backend.label]);
+  return renderCard(`${num}. ${profile.label}`, renderRows(rows), { formatBorder: border });
 }
 
-function downloadedModelCard(num, model, caps) {
+function downloadedModelCard(num, model, caps, { mtpAvailable } = {}) {
+  const mtpRow = mtpAvailable
+    ? [["MTP", pc.green("Drafter found — setup will enable 2× speedup")]]
+    : (caps.architecture === "gemma4" || caps.architecture === "gemma4")
+      ? [["MTP", pc.yellow("Drafter not found — download MTP model for 2× speedup")]]
+      : [];
   return renderCard(`${num}. ${model.label}`, renderRows([
     ["Status", pc.yellow("Needs setup")],
     ["Good for", humanCapabilitySummary(caps)],
+    ...mtpRow,
     ["Size", formatBytes(model.sizeBytes)],
   ]), { formatBorder: pc.yellow });
 }
@@ -334,10 +351,13 @@ function managedModelCard(num, model, backend) {
   ]), { formatBorder: pc.dim });
 }
 
-function modelCatalogItems({ profiles, newModels, managedItems }) {
+function modelCatalogItems({ profiles, newModels, managedItems, drafters }) {
   return [
     ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, hint: `${profile.modelAlias} · ${profile.baseUrl}`, fileMissing: isProfileFileMissing(profile) })),
-    ...newModels.map((model) => ({ type: "new", model, label: model.label, hint: `${model.quant ?? "GGUF"} · ${formatBytes(model.sizeBytes)}` })),
+    ...newModels.map((model) => {
+      const drafter = matchDrafter(model.path, drafters);
+      return { type: "new", model, label: model.label, hint: `${model.quant ?? "GGUF"} · ${formatBytes(model.sizeBytes)}`, drafter };
+    }),
     ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label, hint: BACKENDS[backendId].label })),
   ];
 }
@@ -368,7 +388,7 @@ async function handleCatalogAction(prompt, action, item) {
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
-    return printGgufModelDetails(item.model);
+    return printGgufModelDetails(item.model, item.drafter);
   }
 
   if (action === "setup") {
@@ -378,7 +398,7 @@ async function handleCatalogAction(prompt, action, item) {
       await saveProfile(profile);
       return await syncPiConfig(profile);
     }
-    const profile = await createProfileFromModel(item.model);
+    const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
     const configured = await configureLocalProfile(prompt, profile);
     if (!configured) return;
     await saveProfile(configured);
@@ -393,7 +413,7 @@ async function handleCatalogAction(prompt, action, item) {
       await syncPiConfig(profile);
       return await runProfile(profile);
     }
-    const profile = await createProfileFromModel(item.model);
+    const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
     const configured = await configureLocalProfile(prompt, profile);
     if (!configured) return;
     await saveProfile(configured);
@@ -413,25 +433,38 @@ async function printProfileDetails(profile) {
   const statusRow = fileMissing
     ? pc.red("File missing")
     : running ? pc.green("Running now") : "Ready";
-  console.log("\n" + renderSection("Model overview", renderRows([
+  const mtpStatus = profile.drafterPath
+    ? pc.green(`MTP enabled (drafter: ${basename(profile.drafterPath)})`)
+    : (profile.capabilities?.architecture === "gemma4")
+      ? pc.yellow("MTP available — download a drafter model to enable 2× speedup")
+      : null;
+  const overviewRows = [
     ["Name", pc.bold(profile.label)],
     ["Status", statusRow],
     ["Good for", fileMissing ? pc.red("Model file not found — remove or fix this setup") : humanCapabilitySummary(profile.capabilities ?? {})],
     ["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
-  ])));
+  ];
+  if (mtpStatus) overviewRows.push(["MTP", mtpStatus]);
+  console.log("\n" + renderSection("Model overview", renderRows(overviewRows)));
 
-  console.log("\n" + renderSection("Model details", renderRows([
+  const detailRows = [
     ["Setup ID", profile.id],
     ["Runs with", backend.label],
     ["Model alias", profile.modelAlias],
     ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
-    ...(!isManaged ? [
+  ];
+  if (!isManaged) {
+    detailRows.push(
       ["Local file", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath ?? "unknown"],
       ["Vision file", profile.mmprojPath ? (existsSync(profile.mmprojPath) ? profile.mmprojPath : pc.red(`${profile.mmprojPath} (not found)`)) : "none"],
       ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
-    ] : []),
-  ]), { columns: 110 }));
+    );
+    if (profile.drafterPath) {
+      detailRows.push(["Drafter", existsSync(profile.drafterPath) ? profile.drafterPath : pc.red(`${profile.drafterPath} (not found)`)]);
+    }
+  }
+  console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
 
   if (fileMissing) {
     console.log("\n" + pc.red("⚠ This model's file is no longer on disk. Remove this setup or move the file back."));
@@ -443,20 +476,33 @@ async function printProfileDetails(profile) {
   }
 }
 
-function printGgufModelDetails(model) {
+function printGgufModelDetails(model, drafter) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
-  console.log("\n" + renderSection("Downloaded model", renderRows([
+  const mtpAvailable = caps.mtp || Boolean(drafter);
+  const mtpRow = mtpAvailable
+    ? [["MTP", pc.green("Drafter found — setup will enable 2× speedup")]]
+    : (caps.architecture === "gemma4")
+      ? [["MTP", pc.yellow("Drafter not found — download MTP model for 2× speedup")]]
+      : [];
+  const overviewRows = [
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],
     ["Good for", humanCapabilitySummary(caps)],
-    ["Size", formatBytes(model.sizeBytes)],
-  ])));
-  console.log("\n" + renderSection("Model details", renderRows([
+  ];
+  if (mtpRow.length) overviewRows.push(...mtpRow);
+  overviewRows.push(["Size", formatBytes(model.sizeBytes)]);
+  console.log("\n" + renderSection("Downloaded model", renderRows(overviewRows)));
+  const detailRows = [
     ["Local file", model.path],
     ["Vision file", model.mmprojPath ?? "none"],
     ["Detected", capabilitySummary(caps)],
     ["Quant", model.quant ?? "unknown"],
-  ]), { columns: 110 }));
+  ];
+  if (drafter) {
+    detailRows.push(["Drafter", drafter.path]);
+    detailRows.push(["Drafter size", formatBytes(drafter.sizeBytes)]);
+  }
+  console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
 }
 
 function printManagedModelDetails(model, backend) {
@@ -872,7 +918,7 @@ async function onboardFlow() {
     console.log(pc.green("✓ Pi found"));
 
     // 4. Model backends — at least one is mandatory
-    const ggufModels = await scanGgufModels();
+    const { models: ggufModels } = await scanGgufModels();
     const managedModels = await scanManagedModels();
     const totalManaged = managedModels.reduce((sum, m) => sum + m.models.length, 0);
     const hasModels = ggufModels.length > 0 || totalManaged > 0;

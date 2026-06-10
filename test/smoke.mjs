@@ -61,7 +61,8 @@ describe("GGUF model pipeline", { skip: !hasModels }, () => {
   let models;
 
   it("scanGgufModels finds models", async () => {
-    models = await scanGgufModels();
+    const result = await scanGgufModels();
+    models = result.models;
     assert.ok(models.length > 0, "Expected at least one GGUF model");
   });
 

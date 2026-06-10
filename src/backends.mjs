@@ -27,7 +27,7 @@ export const BACKENDS = {
     defaultPort: LLAMA_CPP_PORT,
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_PORT }),
     needsCommandFile: true,
-    scanModels: () => scanGgufModels(),
+    scanModels: async () => (await scanGgufModels()).models,
   },
   "llama-cpp-mtp": {
     id: "llama-cpp-mtp",
@@ -38,7 +38,7 @@ export const BACKENDS = {
     defaultPort: LLAMA_CPP_MTP_PORT,
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_MTP_PORT }),
     needsCommandFile: true,
-    scanModels: () => scanGgufModels(),
+    scanModels: async () => (await scanGgufModels()).models,
   },
   "ollama": {
     id: "ollama",

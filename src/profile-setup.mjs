@@ -43,12 +43,14 @@ export async function configureLocalProfile(prompt, profile) {
   console.log(pc.dim("Sampling defaults are shown for transparency; you can edit command.json later if needed.\n"));
 
   if (caps.mtp) {
+    const drafterInfo = configured.drafterPath ? `\n  Drafter: ${configured.drafterPath}` : "";
     console.log(renderSection("MTP detected", renderRows([
       ["Backend", "llama.cpp MTP"],
       ["Port", String(LLAMA_CPP_MTP_PORT)],
-      ["Flags", "--spec-type draft-mtp --spec-draft-n-max 2"],
+      ["Flags", `--spec-type draft-mtp --spec-draft-n-max 4${configured.drafterPath ? " --spec-draft-model <drafter>" : ""}`],
     ])));
-    const useMtp = await prompt.yesNo("Use MTP speculative decoding flags?", true);
+    if (drafterInfo) console.log(pc.dim(drafterInfo));
+    const useMtp = await prompt.yesNo("Use MTP speculative decoding?", true);
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
   }
 
@@ -113,15 +115,19 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
 
 function applyMtpDefaults(profile) {
   const flags = { ...profile.flags, port: LLAMA_CPP_MTP_PORT };
-  return applyProfileFlags({ ...profile, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp" }, flags, {
-    values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 2 },
-  });
+  const edits = {
+    values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 4 },
+  };
+  if (profile.drafterPath) {
+    edits.values["--spec-draft-model"] = profile.drafterPath;
+  }
+  return applyProfileFlags({ ...profile, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp" }, flags, edits);
 }
 
 function removeMtpDefaults(profile) {
   const flags = { ...profile.flags, port: LLAMA_CPP_PORT };
   return applyProfileFlags({ ...profile, backend: "llama-cpp", providerId: "llama-cpp" }, flags, {
-    remove: ["--spec-type", "--spec-draft-n-max"],
+    remove: ["--spec-type", "--spec-draft-n-max", "--spec-draft-model"],
   });
 }
 

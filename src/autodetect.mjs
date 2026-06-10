@@ -109,7 +109,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
 
   // MTP flags
   if (mtp) {
-    argv.push("--spec-type", "draft-mtp", "--spec-draft-n-max", "2");
+    argv.push("--spec-type", "draft-mtp", "--spec-draft-n-max", "4");
   }
 
   return { flags, argv };
