@@ -172,53 +172,50 @@ async function modelsCommand(argv) {
   return await modelCommandCenter(catalog);
 }
 
-async function modelCommandCenter(catalog) {
-  const normalized = normalizeCatalog(catalog);
-  const { profiles } = normalized;
-  const runningProfilesNow = [];
-  for (const profile of profiles) {
-    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+async function modelCommandCenter(initialCatalog) {
+  if (!process.stdin.isTTY) {
+    const normalized = normalizeCatalog(initialCatalog);
+    const allItems = buildCatalogItems(normalized);
+    if (allItems.length === 0) return;
+    // Non-interactive: just show summary
+    for (const item of allItems) console.log(item.label);
+    return;
   }
-  const fileMissingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
-
-  // Summary card
-  const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
-  console.log("\n" + renderCard("Your local AI workspace", renderRows([
-    ["Setups", `${profiles.length} saved`],
-    ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
-    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
-  ]), { formatBorder: summaryBorder }));
-
-  if (!process.stdin.isTTY) return;
-  const allItems = buildCatalogItems(normalized);
-  if (allItems.length === 0) return;
 
   const prompt = createPrompt();
   try {
     while (true) {
-      // Build model select options
+      // Reload catalog each loop to reflect setup/remove changes
+      const catalog = await loadModelCatalog();
+      const normalized = normalizeCatalog(catalog);
+      const allItems = buildCatalogItems(normalized);
+      if (allItems.length === 0) { console.log(pc.dim("No models found.")); break; }
+      const runningProfilesNow = [];
+      for (const profile of normalized.profiles) {
+        if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+      }
+      const fileMissingCount = normalized.profiles.filter((p) => isProfileFileMissing(p)).length;
+      const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
+      console.log("\n" + renderCard("Your local AI workspace", renderRows([
+        ["Setups", `${normalized.profiles.length} saved`],
+        ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
+        ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
+        ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
+      ]), { formatBorder: summaryBorder }));
+
       const options = allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters }));
       const selected = await prompt.choice("Select a model", options);
       if (!selected) break;
       const item = allItems.find((i) => itemKey(i) === selected);
       if (!item) break;
 
-      // Build contextual actions
       const actions = actionsForItem(item);
       if (actions.length === 1) {
-        // Only one action — just do it
         await performAction(prompt, actions[0].value, item);
       } else {
         const action = await prompt.choice(item.label, actions, actions[0].value);
         if (!action) continue;
-        if (action === "back") continue;
         await performAction(prompt, action, item);
-      }
-      // After action, refresh running state and loop back
-      runningProfilesNow.length = 0;
-      for (const profile of profiles) {
-        if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
       }
     }
   } finally {
@@ -287,29 +284,27 @@ function modelSelectOption(item, { runningProfilesNow }) {
     const fileMissing = item.fileMissing;
     const caps = profile.capabilities ?? {};
     let status;
-    if (fileMissing) status = pc.red("File missing");
-    else if (running) status = pc.green("Running");
-    else status = pc.dim("Ready");
-    const detailParts = [status];
-    if (humanCapabilitySummary(caps)) detailParts.push(humanCapabilitySummary(caps));
-    if (profile.drafterPath) detailParts.push(pc.green("MTP"));
-    if (profile.flags?.ctxSize) detailParts.push(`${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx`);
-    return { value: itemKey(item), label: profile.label, hint: detailParts.join(pc.dim(" · ")) };
+    if (fileMissing) status = pc.red("⚠ File missing");
+    else if (running) status = pc.green("● Running");
+    else status = pc.dim("● Ready");
+    const labelParts = [profile.label, status];
+    if (profile.drafterPath) labelParts.push(pc.green("MTP"));
+    if (profile.flags?.ctxSize) labelParts.push(`${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx`);
+    return { value: itemKey(item), label: labelParts.join(" "), hint: humanCapabilitySummary(caps) || profile.modelAlias };
   }
   if (item.type === "new") {
     const { model, drafter } = item;
     const caps = detectCapabilities(model.path, model.mmprojPath);
-    const detailParts = [pc.yellow("Needs setup")];
-    if (humanCapabilitySummary(caps)) detailParts.push(humanCapabilitySummary(caps));
-    if (caps.mtp || drafter) detailParts.push(pc.green("MTP ✓"));
-    else if (caps.architecture === "gemma4") detailParts.push(pc.yellow("MTP: needs drafter"));
-    detailParts.push(formatBytes(model.sizeBytes));
-    return { value: itemKey(item), label: model.label, hint: detailParts.join(pc.dim(" · ")) };
+    const labelParts = [model.label, pc.yellow("Needs setup")];
+    if (caps.mtp || drafter) labelParts.push(pc.green("MTP ✓"));
+    else if (caps.architecture === "gemma4") labelParts.push(pc.yellow("MTP"));
+    labelParts.push(formatBytes(model.sizeBytes));
+    return { value: itemKey(item), label: labelParts.join(" "), hint: humanCapabilitySummary(caps) || model.quant };
   }
   // managed
   const { model, backendId } = item;
   const backend = BACKENDS[backendId];
-  return { value: itemKey(item), label: model.label, hint: `${backend.label} · ${model.id}` };
+  return { value: itemKey(item), label: `${model.label} ${pc.dim(`via ${backend.label}`)}`, hint: model.id };
 }
 
 function actionsForItem(item) {
