@@ -9,7 +9,7 @@ import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfi
 import { syncPiConfig, removeFromPiConfig, hasPiModel, launchPi, hasPi } from "./harness-pi.mjs";
 import { tailFriendly } from "./logs.mjs";
 import { estimateMemory } from "./estimate.mjs";
-import { pc, formatBytes, renderRows, renderSection, renderCard, humanCapabilitySummary, statusText, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, renderCard, humanCapabilitySummary, startInteractive, createPrompt, parseOptions } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { removeInstallerPathEntries } from "./shell-path.mjs";
 import { configureLocalProfile } from "./profile-setup.mjs";
@@ -243,13 +243,14 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
 
   const fileMissingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
 
+  const summaryBorder = fileMissingCount > 0 ? pc.red : newModels.length > 0 ? pc.yellow : pc.dim;
   console.log("\n" + renderCard("Your local AI workspace", renderRows([
-    ["Ready to chat", pc.green(`${profiles.length} saved setup${profiles.length === 1 ? "" : "s"}`)],
-    ["Need setup", newModels.length > 0 ? pc.yellow(`${newModels.length} downloaded model${newModels.length === 1 ? "" : "s"}`) : pc.green("none")],
-    ["Running now", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.green("none")],
-    ["Next step", fileMissingCount > 0 ? pc.red("Remove or fix missing setups") : profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? "Set up a downloaded model" : "Download a model"],
-  ]), { formatBorder: fileMissingCount > 0 ? pc.yellow : pc.cyan }));
+    ["Setups", `${profiles.length} saved`],
+    ["Need setup", newModels.length > 0 ? pc.yellow(`${newModels.length} model${newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
+    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
+    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
+    ["Next step", fileMissingCount > 0 ? pc.red("Remove or fix missing setups") : profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? pc.yellow("Set up a downloaded model") : "Download a model"],
+  ]), { formatBorder: summaryBorder }));
 
   console.log("\n" + pc.bold("Ready to chat"));
   if (profiles.length === 0) {
@@ -264,9 +265,9 @@ async function printModelCatalog({ profiles, newModels, managedItems }, items = 
     }
   }
 
-  console.log("\n" + pc.bold("Downloaded, needs one-time setup"));
+  console.log("\n" + pc.bold("Needs one-time setup"));
   if (newModels.length === 0) {
-    console.log(renderCard("All set", "Every downloaded local model already has a saved setup.", { formatBorder: pc.green }));
+    console.log(renderCard("All set", "Every downloaded local model already has a saved setup.", { formatBorder: pc.dim }));
   } else {
     for (const model of newModels.slice(0, 20)) {
       const caps = detectCapabilities(model.path, model.mmprojPath);
@@ -303,21 +304,22 @@ function profileCatalogCard(num, profile, { running, piConfigured, fileMissing }
   if (fileMissing) {
     status = pc.red("File missing");
   } else if (running) {
-    status = statusText("running", "Running now");
+    status = pc.green("Running now");
   } else {
-    status = statusText("ready", "Ready to chat");
+    status = "Ready";
   }
+  const border = fileMissing ? pc.red : running ? pc.green : pc.dim;
   return renderCard(`${num}. ${profile.label}`, renderRows([
     ["Status", status],
     ["Good for", fileMissing ? pc.red("Model file not found") : humanCapabilitySummary(caps)],
-    ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
+    ["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")],
     ["Runs with", backend.label],
-  ]), { formatBorder: fileMissing ? pc.red : running ? pc.green : pc.cyan });
+  ]), { formatBorder: border });
 }
 
 function downloadedModelCard(num, model, caps) {
   return renderCard(`${num}. ${model.label}`, renderRows([
-    ["Status", statusText("warning", "Needs one-time setup")],
+    ["Status", pc.yellow("Needs setup")],
     ["Good for", humanCapabilitySummary(caps)],
     ["Size", formatBytes(model.sizeBytes)],
   ]), { formatBorder: pc.yellow });
@@ -325,11 +327,11 @@ function downloadedModelCard(num, model, caps) {
 
 function managedModelCard(num, model, backend) {
   return renderCard(`${num}. ${model.label}`, renderRows([
-    ["Status", statusText("info", `Local model via ${backend.label}`)],
+    ["Status", pc.dim(`Via ${backend.label}`)],
     ["Runs with", backend.label],
-    ["Model ID", pc.cyan(model.id)],
+    ["Model ID", model.id],
     ...(model.quant ? [["Size/type", model.quant]] : []),
-  ]), { formatBorder: pc.magenta });
+  ]), { formatBorder: pc.dim });
 }
 
 function modelCatalogItems({ profiles, newModels, managedItems }) {
@@ -410,19 +412,19 @@ async function printProfileDetails(profile) {
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   const statusRow = fileMissing
     ? pc.red("File missing")
-    : running ? pc.green("Running now") : pc.green("Ready to chat");
+    : running ? pc.green("Running now") : "Ready";
   console.log("\n" + renderSection("Model overview", renderRows([
     ["Name", pc.bold(profile.label)],
     ["Status", statusRow],
     ["Good for", fileMissing ? pc.red("Model file not found — remove or fix this setup") : humanCapabilitySummary(profile.capabilities ?? {})],
-    ["Pi", piConfigured ? pc.green("Synced") : pc.yellow("Needs sync")],
-    ["Server", fileMissing ? pc.red(profile.baseUrl) : pc.green(profile.baseUrl)],
+    ["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")],
+    ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
   ])));
 
   console.log("\n" + renderSection("Model details", renderRows([
-    ["Setup ID", pc.cyan(profile.id)],
+    ["Setup ID", profile.id],
     ["Runs with", backend.label],
-    ["Model alias", pc.cyan(profile.modelAlias)],
+    ["Model alias", profile.modelAlias],
     ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
     ...(!isManaged ? [
       ["Local file", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath ?? "unknown"],
@@ -659,9 +661,9 @@ async function statusCommand() {
   if (running.length === 0) {
     console.log(renderCard("Status", renderRows([
       ["Running now", pc.dim("none")],
-      ["Ready setups", profiles.length > 0 ? pc.green(String(profiles.length)) : pc.dim("none")],
-      ["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : "Run offgrid-ai to set up a model"],
-    ]), { formatBorder: profiles.length > 0 ? pc.cyan : pc.yellow }));
+      ["Ready setups", profiles.length > 0 ? String(profiles.length) : pc.dim("none")],
+      ["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : pc.yellow("Run offgrid-ai to set up a model")],
+    ]), { formatBorder: pc.dim }));
     return;
   }
 
