@@ -79,7 +79,7 @@ export async function mainFlow() {
 
   // 1. Check what backends are available
   const llamaBinary = await findLlamaServer();
-  const { models: ggufModels } = await scanGgufModels();
+  const { models: ggufModels, drafters } = await scanGgufModels();
   const managedModels = await scanManagedModels();
   const profiles = await loadProfiles();
   const hasAnyBackend = llamaBinary || managedModels.some((m) => m.models.length > 0);
@@ -153,7 +153,7 @@ export async function mainFlow() {
 
   // 6. Interactive: one command center after onboarding.
   startInteractive("offgrid-ai");
-  return await modelCommandCenter({ profiles, ggufModels, managedModels });
+  return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
 // ── Model command center ────────────────────────────────────────────────────
@@ -174,25 +174,53 @@ async function modelsCommand(argv) {
 
 async function modelCommandCenter(catalog) {
   const normalized = normalizeCatalog(catalog);
-  const items = modelCatalogItems(normalized);
-  await printModelCatalog(normalized, items);
-  if (!process.stdin.isTTY) return;
+  const { profiles } = normalized;
+  const runningProfilesNow = [];
+  for (const profile of profiles) {
+    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+  }
+  const fileMissingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
 
-  if (items.length === 0) return;
+  // Summary card
+  const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
+  console.log("\n" + renderCard("Your local AI workspace", renderRows([
+    ["Setups", `${profiles.length} saved`],
+    ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
+    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
+    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
+  ]), { formatBorder: summaryBorder }));
+
+  if (!process.stdin.isTTY) return;
+  const allItems = buildCatalogItems(normalized);
+  if (allItems.length === 0) return;
 
   const prompt = createPrompt();
   try {
-    const action = await prompt.choice("What would you like to do?", [
-      { value: "run", label: "Start chatting", hint: "Start a local model and open Pi" },
-      { value: "setup", label: "Set up", hint: "Configure settings, MTP, context window" },
-      { value: "inspect", label: "See model details", hint: "Show advanced paths, ports, and flags" },
-      { value: "benchmark", label: "Benchmark", hint: "Coming soon" },
-      { value: "remove", label: "Remove a saved setup", hint: "Delete a model setup from offgrid-ai" },
-    ], "run");
-    if (action === "benchmark") return await benchmarkFlow();
-    const item = await chooseCatalogItem(prompt, items, action);
-    if (!item) return;
-    return await handleCatalogAction(prompt, action, item);
+    while (true) {
+      // Build model select options
+      const options = allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters }));
+      const selected = await prompt.choice("Select a model", options);
+      if (!selected) break;
+      const item = allItems.find((i) => itemKey(i) === selected);
+      if (!item) break;
+
+      // Build contextual actions
+      const actions = actionsForItem(item);
+      if (actions.length === 1) {
+        // Only one action — just do it
+        await performAction(prompt, actions[0].value, item);
+      } else {
+        const action = await prompt.choice(item.label, actions, actions[0].value);
+        if (!action) continue;
+        if (action === "back") continue;
+        await performAction(prompt, action, item);
+      }
+      // After action, refresh running state and loop back
+      runningProfilesNow.length = 0;
+      for (const profile of profiles) {
+        if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+      }
+    }
   } finally {
     prompt.close();
   }
@@ -232,167 +260,107 @@ function normalizeCatalog(catalog) {
   return { profiles, ggufModels, drafters, managedModels, newModels, managedItems };
 }
 
-async function printModelCatalog({ profiles, newModels, managedItems, drafters }, items = modelCatalogItems({ profiles, newModels, managedItems })) {
-  const itemNumber = (predicate) => {
-    const index = items.findIndex(predicate);
-    return index === -1 ? "  " : String(index + 1).padStart(2, " ");
-  };
-  const runningProfilesNow = [];
-  for (const profile of profiles) {
-    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
-  }
+// ── Catalog item helpers ───────────────────────────────────────────────────
 
-  const fileMissingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
+function itemKey(item) {
+  if (item.type === "profile") return `profile:${item.profile.id}`;
+  if (item.type === "new") return `new:${item.model.path}`;
+  return `managed:${item.backendId}:${item.model.id}`;
+}
 
-  const summaryBorder = fileMissingCount > 0 ? pc.red : newModels.length > 0 ? pc.yellow : pc.dim;
-  console.log("\n" + renderCard("Your local AI workspace", renderRows([
-    ["Setups", `${profiles.length} saved`],
-    ["Need setup", newModels.length > 0 ? pc.yellow(`${newModels.length} model${newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
-    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
-    ["Next step", fileMissingCount > 0 ? pc.red("Remove or fix missing setups") : profiles.length > 0 ? "Start chatting" : newModels.length > 0 ? pc.yellow("Set up a downloaded model") : "Download a model"],
-  ]), { formatBorder: summaryBorder }));
-
-  console.log("\n" + pc.bold("Ready to chat"));
-  if (profiles.length === 0) {
-    console.log(renderCard("No saved setups yet", "Downloaded models will appear below. Set one up once, then it will be ready from here.", { formatBorder: pc.yellow }));
-  } else {
-    for (const profile of profiles) {
-      const running = runningProfilesNow.some((item) => item.id === profile.id);
-      const fileMissing = isProfileFileMissing(profile);
-      const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
-      console.log(profileCatalogCard(num, profile, { running, fileMissing, drafters }));
-    }
-  }
-
-  console.log("\n" + pc.bold("Needs one-time setup"));
-  if (newModels.length === 0) {
-    console.log(renderCard("All set", "Every downloaded local model already has a saved setup.", { formatBorder: pc.dim }));
-  } else {
-    for (const model of newModels.slice(0, 20)) {
-      const caps = detectCapabilities(model.path, model.mmprojPath);
+function buildCatalogItems(normalized) {
+  const { profiles, newModels, managedItems, drafters } = normalized;
+  return [
+    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) })),
+    ...newModels.map((model) => {
       const drafter = matchDrafter(model.path, drafters);
-      const num = itemNumber((item) => item.type === "new" && item.model.path === model.path);
-      console.log(downloadedModelCard(num, model, caps, { mtpAvailable: caps.mtp || Boolean(drafter), drafter }));
-    }
-    if (newModels.length > 20) console.log(pc.dim(`  ... and ${newModels.length - 20} more`));
-  }
+      return { type: "new", model, label: model.label, drafter };
+    }),
+    ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label })),
+  ];
+}
 
-  for (const backendId of ["ollama", "omlx"]) {
-    const backendItems = managedItems.filter((item) => item.backendId === backendId);
-    if (backendItems.length === 0) continue;
-    const be = BACKENDS[backendId];
-    console.log("\n" + pc.bold(`Local models via ${be.label}`));
-    for (const { model } of backendItems.slice(0, 10)) {
-      const num = itemNumber((item) => item.type === "managed" && item.backendId === backendId && item.model.id === model.id);
-      console.log(managedModelCard(num, model, be));
-    }
-    if (backendItems.length > 10) console.log(pc.dim(`  ... and ${backendItems.length - 10} more`));
+function modelSelectOption(item, { runningProfilesNow }) {
+  if (item.type === "profile") {
+    const { profile } = item;
+    const running = runningProfilesNow.some((r) => r.id === profile.id);
+    const fileMissing = item.fileMissing;
+    const caps = profile.capabilities ?? {};
+    let status;
+    if (fileMissing) status = pc.red("File missing");
+    else if (running) status = pc.green("Running");
+    else status = pc.dim("Ready");
+    const detailParts = [status];
+    if (humanCapabilitySummary(caps)) detailParts.push(humanCapabilitySummary(caps));
+    if (profile.drafterPath) detailParts.push(pc.green("MTP"));
+    if (profile.flags?.ctxSize) detailParts.push(`${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx`);
+    return { value: itemKey(item), label: profile.label, hint: detailParts.join(pc.dim(" · ")) };
   }
+  if (item.type === "new") {
+    const { model, drafter } = item;
+    const caps = detectCapabilities(model.path, model.mmprojPath);
+    const detailParts = [pc.yellow("Needs setup")];
+    if (humanCapabilitySummary(caps)) detailParts.push(humanCapabilitySummary(caps));
+    if (caps.mtp || drafter) detailParts.push(pc.green("MTP ✓"));
+    else if (caps.architecture === "gemma4") detailParts.push(pc.yellow("MTP: needs drafter"));
+    detailParts.push(formatBytes(model.sizeBytes));
+    return { value: itemKey(item), label: model.label, hint: detailParts.join(pc.dim(" · ")) };
+  }
+  // managed
+  const { model, backendId } = item;
+  const backend = BACKENDS[backendId];
+  return { value: itemKey(item), label: model.label, hint: `${backend.label} · ${model.id}` };
+}
+
+function actionsForItem(item) {
+  if (item.type === "profile") {
+    const actions = [
+      { value: "run", label: "Start chatting", hint: "Launch and open Pi" },
+      { value: "reconfigure", label: "Reconfigure", hint: "Change context, MTP, settings" },
+      { value: "inspect", label: "Details", hint: "Paths, ports, flags" },
+    ];
+    if (!item.fileMissing) {
+      actions.push({ value: "remove", label: "Remove", hint: "Delete this setup" });
+    }
+    return actions;
+  }
+  if (item.type === "new") {
+    return [
+      { value: "setup", label: "Set up", hint: "Configure and save" },
+      { value: "inspect", label: "Details", hint: "Model info" },
+    ];
+  }
+  // managed
+  return [
+    { value: "setup", label: "Set up", hint: `Connect via ${BACKENDS[item.backendId].label}` },
+    { value: "inspect", label: "Details", hint: "Model info" },
+  ];
 }
 
 function isProfileFileMissing(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") return false;
-  if (!profile.modelPath) return true; // no path recorded means we can't verify
+  if (!profile.modelPath) return true;
   return !existsSync(profile.modelPath);
 }
 
-function profileCatalogCard(num, profile, { running, fileMissing, drafters }) {
-  const backend = backendFor(profile.backend);
-  const caps = profile.capabilities ?? {};
-  let status;
-  if (fileMissing) {
-    status = pc.red("File missing");
-  } else if (running) {
-    status = pc.green("Running now");
-  } else {
-    status = "Ready";
-  }
-  const border = fileMissing ? pc.red : running ? pc.green : pc.dim;
-  const mtpDrafter = profile.drafterPath
-    ? pc.green("MTP")
-    : (drafters ? matchDrafter(profile.modelPath, drafters) : null)
-      ? pc.yellow("MTP available")
-      : (caps.architecture === "gemma4")
-        ? pc.yellow("MTP: needs drafter")
-        : null;
-  const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
-  const capLabel = fileMissing ? pc.red("File not found") : humanCapabilitySummary(caps);
-  const detailParts = [capLabel];
-  if (mtpDrafter) detailParts.push(mtpDrafter);
-  if (ctxLabel) detailParts.push(ctxLabel);
-  const detailLine = detailParts.join(pc.dim(" · "));
-  return renderCard(`${num}. ${profile.label}`, renderRows([
-    ["Status", status],
-    ["Details", detailLine],
-    ["Runs with", backend.label],
-  ]), { formatBorder: border });
-}
-
-function downloadedModelCard(num, model, caps, { mtpAvailable } = {}) {
-  const mtpLabel = mtpAvailable
-    ? pc.green("MTP ✓")
-    : (caps.architecture === "gemma4")
-      ? pc.yellow("MTP: needs drafter")
-      : null;
-  const detailParts = [humanCapabilitySummary(caps)];
-  if (mtpLabel) detailParts.push(mtpLabel);
-  detailParts.push(formatBytes(model.sizeBytes));
-  return renderCard(`${num}. ${model.label}`, renderRows([
-    ["Status", pc.yellow("Needs setup")],
-    ["Details", detailParts.join(pc.dim(" · "))],
-  ]), { formatBorder: pc.yellow });
-}
-
-function managedModelCard(num, model, backend) {
-  return renderCard(`${num}. ${model.label}`, renderRows([
-    ["Status", pc.dim(`Via ${backend.label}`)],
-    ["Details", [model.id, model.quant].filter(Boolean).join(pc.dim(" · "))],
-  ]), { formatBorder: pc.dim });
-}
-
-function modelCatalogItems({ profiles, newModels, managedItems, drafters }) {
-  return [
-    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, hint: `${profile.modelAlias} · ${profile.baseUrl}`, fileMissing: isProfileFileMissing(profile) })),
-    ...newModels.map((model) => {
-      const drafter = matchDrafter(model.path, drafters);
-      return { type: "new", model, label: model.label, hint: `${model.quant ?? "GGUF"} · ${formatBytes(model.sizeBytes)}`, drafter };
-    }),
-    ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label, hint: BACKENDS[backendId].label })),
-  ];
-}
-
-async function chooseCatalogItem(prompt, items, action) {
-  if (action === "remove" && !items.some((item) => item.type === "profile")) {
-    console.log(pc.yellow("No saved profiles to remove."));
-    return null;
-  }
-
-  const input = await prompt.text(action === "remove" ? "Which saved setup should be removed? Enter its number" : "Which model? Enter its number", "");
-  if (!input) return null;
-  const index = Number(input) - 1;
-  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
-    console.log(pc.yellow(`No item ${input}.`));
-    return null;
-  }
-
-  const item = items[index];
-  if (action === "remove" && item.type !== "profile") {
-    console.log(pc.yellow("Only saved profiles can be removed."));
-    return null;
-  }
-  return item;
-}
-
-async function handleCatalogAction(prompt, action, item) {
+async function performAction(prompt, action, item) {
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
     return printGgufModelDetails(item.model, item.drafter);
   }
-
-  if (action === "setup") {
+  if (action === "run") {
+    if (item.type === "profile") return await runProfile(await readProfile(item.profile.id));
+    // Shouldn't reach here for new/managed, but handle gracefully
+    const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
+    const configured = await configureLocalProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured);
+    await syncPiConfig(configured);
+    return await runProfile(configured);
+  }
+  if (action === "reconfigure" || action === "setup") {
     if (item.type === "profile") {
       const profile = await readProfile(item.profile.id);
       const configured = await configureLocalProfile(prompt, profile);
@@ -411,25 +379,9 @@ async function handleCatalogAction(prompt, action, item) {
     await saveProfile(configured);
     return await syncPiConfig(configured);
   }
-
-  if (action === "run") {
-    if (item.type === "profile") return await runProfile(await readProfile(item.profile.id));
-    if (item.type === "managed") {
-      const profile = createManagedProfile(item.model, item.backendId);
-      await saveProfile(profile);
-      await syncPiConfig(profile);
-      return await runProfile(profile);
-    }
-    const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
-    const configured = await configureLocalProfile(prompt, profile);
-    if (!configured) return;
-    await saveProfile(configured);
-    await syncPiConfig(configured);
-    return await runProfile(configured);
-  }
-
   if (action === "remove" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
 }
+
 
 async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
@@ -693,14 +645,6 @@ async function removeProfileInteractive(id) {
 }
 
 // ── Benchmark (stub) ────────────────────────────────────────────────────────
-
-async function benchmarkFlow() {
-  console.log("\n" + renderCard("Benchmark", renderRows([
-    ["Status", pc.yellow("Coming soon")],
-    ["What it will do", "Compare local models with repeatable prompts"],
-    ["For now", "Start a model with offgrid-ai, then run benchmarks manually"],
-  ]), { formatBorder: pc.yellow }));
-}
 
 // ── Status ──────────────────────────────────────────────────────────────────
 
