@@ -184,7 +184,7 @@ async function modelCommandCenter(catalog) {
   try {
     const action = await prompt.choice("What would you like to do?", [
       { value: "run", label: "Start chatting", hint: "Start a local model and open Pi" },
-      { value: "setup", label: "Set up a downloaded model", hint: "One-time setup or Pi sync" },
+      { value: "setup", label: "Set up", hint: "Configure settings, MTP, context window" },
       { value: "inspect", label: "See model details", hint: "Show advanced paths, ports, and flags" },
       { value: "benchmark", label: "Benchmark", hint: "Coming soon" },
       { value: "remove", label: "Remove a saved setup", hint: "Delete a model setup from offgrid-ai" },
@@ -259,10 +259,9 @@ async function printModelCatalog({ profiles, newModels, managedItems, drafters }
   } else {
     for (const profile of profiles) {
       const running = runningProfilesNow.some((item) => item.id === profile.id);
-      const piConfigured = await hasPiModel(profile);
       const fileMissing = isProfileFileMissing(profile);
       const num = itemNumber((item) => item.type === "profile" && item.profile.id === profile.id);
-      console.log(profileCatalogCard(num, profile, { running, piConfigured, fileMissing, drafters }));
+      console.log(profileCatalogCard(num, profile, { running, fileMissing, drafters }));
     }
   }
 
@@ -299,7 +298,7 @@ function isProfileFileMissing(profile) {
   return !existsSync(profile.modelPath);
 }
 
-function profileCatalogCard(num, profile, { running, piConfigured, fileMissing, drafters }) {
+function profileCatalogCard(num, profile, { running, fileMissing, drafters }) {
   const backend = backendFor(profile.backend);
   const caps = profile.capabilities ?? {};
   let status;
@@ -312,42 +311,44 @@ function profileCatalogCard(num, profile, { running, piConfigured, fileMissing, 
   }
   const border = fileMissing ? pc.red : running ? pc.green : pc.dim;
   const mtpDrafter = profile.drafterPath
-    ? pc.green("enabled")
+    ? pc.green("MTP")
     : (drafters ? matchDrafter(profile.modelPath, drafters) : null)
-      ? pc.yellow("available — re-setup to enable")
+      ? pc.yellow("MTP available")
       : (caps.architecture === "gemma4")
-        ? pc.yellow("drafter not found")
+        ? pc.yellow("MTP: needs drafter")
         : null;
-  const rows = [
+  const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
+  const capLabel = fileMissing ? pc.red("File not found") : humanCapabilitySummary(caps);
+  const detailParts = [capLabel];
+  if (mtpDrafter) detailParts.push(mtpDrafter);
+  if (ctxLabel) detailParts.push(ctxLabel);
+  const detailLine = detailParts.join(pc.dim(" · "));
+  return renderCard(`${num}. ${profile.label}`, renderRows([
     ["Status", status],
-    ["Good for", fileMissing ? pc.red("Model file not found") : humanCapabilitySummary(caps)],
-  ];
-  if (mtpDrafter) rows.push(["MTP", mtpDrafter]);
-  rows.push(["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")]);
-  rows.push(["Runs with", backend.label]);
-  return renderCard(`${num}. ${profile.label}`, renderRows(rows), { formatBorder: border });
+    ["Details", detailLine],
+    ["Runs with", backend.label],
+  ]), { formatBorder: border });
 }
 
 function downloadedModelCard(num, model, caps, { mtpAvailable } = {}) {
-  const mtpRow = mtpAvailable
-    ? [["MTP", pc.green("Drafter found — setup will enable 2× speedup")]]
-    : (caps.architecture === "gemma4" || caps.architecture === "gemma4")
-      ? [["MTP", pc.yellow("Drafter not found — download MTP model for 2× speedup")]]
-      : [];
+  const mtpLabel = mtpAvailable
+    ? pc.green("MTP ✓")
+    : (caps.architecture === "gemma4")
+      ? pc.yellow("MTP: needs drafter")
+      : null;
+  const detailParts = [humanCapabilitySummary(caps)];
+  if (mtpLabel) detailParts.push(mtpLabel);
+  detailParts.push(formatBytes(model.sizeBytes));
   return renderCard(`${num}. ${model.label}`, renderRows([
     ["Status", pc.yellow("Needs setup")],
-    ["Good for", humanCapabilitySummary(caps)],
-    ...mtpRow,
-    ["Size", formatBytes(model.sizeBytes)],
+    ["Details", detailParts.join(pc.dim(" · "))],
   ]), { formatBorder: pc.yellow });
 }
 
 function managedModelCard(num, model, backend) {
   return renderCard(`${num}. ${model.label}`, renderRows([
     ["Status", pc.dim(`Via ${backend.label}`)],
-    ["Runs with", backend.label],
-    ["Model ID", model.id],
-    ...(model.quant ? [["Size/type", model.quant]] : []),
+    ["Details", [model.id, model.quant].filter(Boolean).join(pc.dim(" · "))],
   ]), { formatBorder: pc.dim });
 }
 
@@ -392,7 +393,13 @@ async function handleCatalogAction(prompt, action, item) {
   }
 
   if (action === "setup") {
-    if (item.type === "profile") return await syncPiConfig(await readProfile(item.profile.id));
+    if (item.type === "profile") {
+      const profile = await readProfile(item.profile.id);
+      const configured = await configureLocalProfile(prompt, profile);
+      if (!configured) return;
+      await saveProfile(configured);
+      return await syncPiConfig(configured);
+    }
     if (item.type === "managed") {
       const profile = createManagedProfile(item.model, item.backendId);
       await saveProfile(profile);
@@ -427,7 +434,6 @@ async function handleCatalogAction(prompt, action, item) {
 async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
-  const piConfigured = await hasPiModel(profile);
   const running = await isProfileRunning(profile);
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   const statusRow = fileMissing
@@ -438,14 +444,16 @@ async function printProfileDetails(profile) {
     : (profile.capabilities?.architecture === "gemma4")
       ? pc.yellow("MTP available — download a drafter model to enable 2× speedup")
       : null;
+  const detailParts = [fileMissing ? pc.red("File not found") : humanCapabilitySummary(profile.capabilities ?? {})];
+  if (mtpStatus) detailParts.push(mtpStatus);
+  const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
+  if (ctxLabel) detailParts.push(ctxLabel);
   const overviewRows = [
     ["Name", pc.bold(profile.label)],
     ["Status", statusRow],
-    ["Good for", fileMissing ? pc.red("Model file not found — remove or fix this setup") : humanCapabilitySummary(profile.capabilities ?? {})],
-    ["Pi", piConfigured ? pc.dim("synced") : pc.yellow("Needs sync")],
+    ["Details", detailParts.join(pc.dim(" · "))],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
   ];
-  if (mtpStatus) overviewRows.push(["MTP", mtpStatus]);
   console.log("\n" + renderSection("Model overview", renderRows(overviewRows)));
 
   const detailRows = [
@@ -479,18 +487,21 @@ async function printProfileDetails(profile) {
 function printGgufModelDetails(model, drafter) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
   const mtpAvailable = caps.mtp || Boolean(drafter);
-  const mtpRow = mtpAvailable
-    ? [["MTP", pc.green("Drafter found — setup will enable 2× speedup")]]
+  const mtpLabel = mtpAvailable
+    ? pc.green("MTP ✓")
     : (caps.architecture === "gemma4")
-      ? [["MTP", pc.yellow("Drafter not found — download MTP model for 2× speedup")]]
-      : [];
+      ? pc.yellow("MTP: needs drafter")
+      : null;
+  const detailParts = [humanCapabilitySummary(caps)];
+  if (mtpLabel) detailParts.push(mtpLabel);
+  const ctxLabel = caps.ctxSize ? `${(caps.ctxSize / 1000).toFixed(0)}k ctx` : null;
+  if (ctxLabel) detailParts.push(ctxLabel);
+  detailParts.push(formatBytes(model.sizeBytes));
   const overviewRows = [
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],
-    ["Good for", humanCapabilitySummary(caps)],
+    ["Details", detailParts.join(pc.dim(" · "))],
   ];
-  if (mtpRow.length) overviewRows.push(...mtpRow);
-  overviewRows.push(["Size", formatBytes(model.sizeBytes)]);
   console.log("\n" + renderSection("Downloaded model", renderRows(overviewRows)));
   const detailRows = [
     ["Local file", model.path],
@@ -499,8 +510,7 @@ function printGgufModelDetails(model, drafter) {
     ["Quant", model.quant ?? "unknown"],
   ];
   if (drafter) {
-    detailRows.push(["Drafter", drafter.path]);
-    detailRows.push(["Drafter size", formatBytes(drafter.sizeBytes)]);
+    detailRows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);
   }
   console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
 }
