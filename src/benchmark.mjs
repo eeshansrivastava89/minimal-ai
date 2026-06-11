@@ -166,6 +166,8 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
       : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm", rawResponse: "response.raw.txt" },
     runner: {
       mode: modelSource === "cloud" ? "manual" : "external",
+      intendedRunner: profile ? "Pi" : undefined,
+      ...(profile ? { tool: "pi" } : {}),
       ...(modelSource ? { modelSource } : {}),
       ...(backendLabel ? { backendLabel } : {}),
       ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
@@ -190,16 +192,10 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
 
   console.log("");
   console.log(pc.bold("Next steps"));
-  if (profile) {
-    console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
-    console.log(`  2. ${pc.cyan(`offgrid-ai run ${profile.id}`)}`);
-    console.log(`  3. In Pi, paste the prompt from ${pc.cyan("prompt.md")}`);
-    console.log(`  4. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
-  } else {
-    console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
-    console.log(`  2. Copy the prompt from ${pc.cyan("prompt.md")} into your tool of choice`);
-    console.log(`  3. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
-  }
+  console.log(`  1. ${pc.cyan(`offgrid-ai run ${profile ? profile.id : "<profile>"}`)}`);
+  console.log(`  2. ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
+  console.log(`  3. In the gallery, find your run and copy the prompt from the run details`);
+  console.log("  4. In Pi, paste the prompt");
 
   return runDirectory;
 }
