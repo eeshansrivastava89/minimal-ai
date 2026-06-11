@@ -59,6 +59,7 @@ export async function run(argv) {
   if (command === "run") return runCommand(argv.slice(1));
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
+  if (command === "benchmark") return benchmarkCommand();
   if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
   if (command === "--verbose") return mainFlow(); // verbose flag handled inside onboardFlow
 
@@ -311,6 +312,11 @@ function actionsForItem(item) {
       { value: "reconfigure", label: "Reconfigure", hint: "Change context, MTP, settings" },
       { value: "inspect", label: "Details", hint: "Paths, ports, flags" },
     ];
+    // Benchmark is offered if repo is linked and model is local
+    const backend = backendFor(item.profile.backend);
+    if (backend.type === "local-server" || backend.type === "managed-server") {
+      actions.push({ value: "benchmark", label: "Benchmark", hint: "Prepare a benchmark run" });
+    }
     if (!item.fileMissing) {
       actions.push({ value: "remove", label: "Remove", hint: "Delete this setup" });
     }
@@ -411,6 +417,10 @@ async function performAction(prompt, action, item) {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
     return printGgufModelDetails(item.model, item.drafter);
+  }
+  if (action === "benchmark") {
+    const { benchmarkFlow } = await import("./benchmark.mjs");
+    return await benchmarkFlow();
   }
   if (action === "run") {
     if (item.type === "profile") return await runProfile(await readProfile(item.profile.id));
@@ -709,6 +719,11 @@ async function removeProfileInteractive(id) {
 // ── Benchmark (stub) ────────────────────────────────────────────────────────
 
 // ── Status ──────────────────────────────────────────────────────────────────
+
+async function benchmarkCommand() {
+  const { benchmarkFlow } = await import("./benchmark.mjs");
+  return await benchmarkFlow();
+}
 
 async function statusCommand() {
   await ensureDirs();
@@ -1223,9 +1238,10 @@ function printHelp() {
     ["Start", pc.bold("offgrid-ai")],
     ["Status", "offgrid-ai status"],
     ["Stop", "offgrid-ai stop"],
+    ["Benchmark", "offgrid-ai benchmark"],
     ["Uninstall", "offgrid-ai uninstall"],
     ["Version", "offgrid-ai version"],
   ]), { formatBorder: pc.cyan }));
-  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.", { formatBorder: pc.magenta }));
+  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.\n\nFor benchmarks, run offgrid-ai benchmark to prepare a visual or data-science benchmark run.", { formatBorder: pc.magenta }));
   console.log("\n" + pc.dim("Tip: use --verbose only when you want detailed install output."));
 }
