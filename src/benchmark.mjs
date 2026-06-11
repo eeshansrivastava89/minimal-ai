@@ -10,7 +10,7 @@ import { pc, createPrompt, renderRows, renderSection } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
 
-// ── Shared utilities (matches local-llm-visual-benchmark/scripts/local-llm/shared/run-utils.mjs) ──
+// ── Shared utilities (matches local-llm-visual-benchmark) ──────────────────
 
 export function slugModelId(modelId, maxLength = 80) {
   const hash = createHash("sha256").update(modelId).digest("hex").slice(0, 10);
@@ -46,14 +46,12 @@ export async function loadBenchmarks(benchDir) {
   const benchmarks = [];
   for (const filename of markdownFiles) {
     const raw = await readFile(join(benchDir, filename), "utf8");
-    // Simple frontmatter parser (no gray-matter dependency)
     const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     const frontmatter = match ? match[1] : "";
     const content = match ? match[2].trim() : raw.trim();
     let id = filename.replace(/\.md$/u, "");
     let title = id;
     let description = "";
-    let kind = "visual";
     for (const line of frontmatter.split("\n")) {
       const kv = line.match(/^(\w+):\s*(.+)$/);
       if (kv) {
@@ -61,10 +59,9 @@ export async function loadBenchmarks(benchDir) {
         if (key === "id") id = val.trim();
         if (key === "title") title = val.trim();
         if (key === "description") description = val.trim();
-        if (key === "kind") kind = val.trim();
       }
     }
-    if (id === "ab-test-analysis") kind = "data-science";
+    const kind = id === "ab-test-analysis" ? "data-science" : "visual";
     benchmarks.push({ id, title, description, prompt: content, kind });
   }
   return benchmarks;
@@ -86,7 +83,6 @@ export async function linkBenchmarkRepo(prompt) {
   const existing = await findBenchmarkRepo();
   if (existing) return existing;
 
-  // Check common locations
   const candidates = [
     join(homedir(), "dev", "local-llm-visual-benchmark"),
     join(homedir(), "projects", "local-llm-visual-benchmark"),
@@ -125,7 +121,6 @@ export async function linkBenchmarkRepo(prompt) {
     }
   }
 
-  // Manual path
   const path = await prompt.text("Path to local-llm-visual-benchmark", "");
   if (!path) return null;
   const resolved = resolve(path.replace(/^~/, homedir()));
@@ -140,7 +135,113 @@ export async function linkBenchmarkRepo(prompt) {
   return resolved;
 }
 
-// ── Prepare a benchmark run ────────────────────────────────────────────────
+// ── Create a benchmark run directory ──────────────────────────────────────
+
+async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile }) {
+  const toolPrompt = buildToolPrompt(benchmark, kind);
+  const now = new Date();
+  const runId = createRunId(now);
+  const modelSlug = slugModelId(modelId);
+  const runsDir = join(repoPath, "runs");
+  const benchmarkDirectory = join(runsDir, benchmark.id);
+  const modelDirectory = join(benchmarkDirectory, modelSlug);
+  const runDirectory = join(modelDirectory, runId);
+
+  await mkdir(runDirectory, { recursive: true });
+
+  const isDs = kind === "data-science";
+  const metadata = {
+    schemaVersion: 1,
+    kind,
+    runId,
+    benchmark: { id: benchmark.id, title: benchmark.title, description: benchmark.description, prompt: benchmark.prompt },
+    model: { id: modelId, slug: modelSlug },
+    status: "prepared",
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    preparedAt: now.toISOString(),
+    runDirectory,
+    assets: isDs
+      ? { metadata: "metadata.json", prompt: "prompt.md", rawResponse: "response.raw.txt", ds: { notebook: "analysis.ipynb", summary: "summary.json", chartDistribution: "chart-distribution.png", chartTreatmentEffect: "chart-treatment-effect.png", chartCompletionRates: "chart-completion-rates.png" } }
+      : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm", rawResponse: "response.raw.txt" },
+    runner: {
+      mode: modelSource === "cloud" ? "manual" : "external",
+      ...(modelSource ? { modelSource } : {}),
+      ...(backendLabel ? { backendLabel } : {}),
+      ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+      model: modelId,
+      retries: 0,
+      tokenMetrics: { reported: false },
+    },
+  };
+
+  await writeFile(join(runDirectory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n", "utf8");
+  await writeFile(join(runDirectory, "prompt.md"), toolPrompt + "\n", "utf8");
+
+  console.log("");
+  console.log(pc.green("✓ Run slot prepared"));
+  console.log(renderSection("Run", renderRows([
+    ["Directory", pc.cyan(runDirectory)],
+    ["Benchmark", benchmark.title],
+    ["Kind", kind],
+    ["Model", pc.bold(modelId)],
+    ["Source", backendLabel || modelSource],
+  ])));
+
+  console.log("");
+  console.log(pc.bold("Next steps"));
+  if (profile) {
+    console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
+    console.log(`  2. ${pc.cyan(`offgrid-ai run ${profile.id}`)}`);
+    console.log(`  3. In Pi, paste the prompt from ${pc.cyan("prompt.md")}`);
+    console.log(`  4. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
+  } else {
+    console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
+    console.log(`  2. Copy the prompt from ${pc.cyan("prompt.md")} into your tool of choice`);
+    console.log(`  3. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
+  }
+
+  return runDirectory;
+}
+
+// ── Benchmark from a selected profile (from model picker) ────────────────
+
+export async function benchmarkForProfile(profile) {
+  await ensureDirs();
+  const prompt = createPrompt();
+  try {
+    const repoPath = await linkBenchmarkRepo(prompt);
+    if (!repoPath) return;
+
+    const kind = await prompt.choice("Benchmark category", [
+      { value: "visual", label: "Visual Benchmark", hint: "HTML/CSS/JS animation benchmarks" },
+      { value: "data-science", label: "Data Science", hint: "Analysis and charting benchmarks" },
+    ], "visual");
+
+    const benchDir = join(repoPath, "benchmarks");
+    const benchmarks = (await loadBenchmarks(benchDir)).filter((b) => b.kind === kind);
+    if (benchmarks.length === 0) {
+      console.log(pc.yellow(`No ${kind} benchmarks found in ${benchDir}`));
+      return;
+    }
+    const benchmarkId = await prompt.choice("Prompt", benchmarks.map((b) => ({
+      value: b.id, label: b.title, hint: b.description || b.id,
+    })), benchmarks[0].id);
+    const selectedBenchmark = benchmarks.find((b) => b.id === benchmarkId);
+    if (!selectedBenchmark) return;
+
+    const { backendFor } = await import("./backends.mjs");
+    const modelId = profile.modelAlias;
+    const modelSource = profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+    const backendLabel = backendFor(profile.backend).label;
+
+    return await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile });
+  } finally {
+    prompt.close();
+  }
+}
+
+// ── Standalone benchmark flow (offgrid-ai benchmark) ──────────────────────
 
 export async function benchmarkFlow() {
   await ensureDirs();
@@ -150,13 +251,11 @@ export async function benchmarkFlow() {
     const repoPath = await linkBenchmarkRepo(prompt);
     if (!repoPath) return;
 
-    // 1. Pick category
     const kind = await prompt.choice("Benchmark category", [
       { value: "visual", label: "Visual Benchmark", hint: "HTML/CSS/JS animation benchmarks" },
       { value: "data-science", label: "Data Science", hint: "Analysis and charting benchmarks" },
     ], "visual");
 
-    // 2. Pick benchmark prompt
     const benchDir = join(repoPath, "benchmarks");
     const benchmarks = (await loadBenchmarks(benchDir)).filter((b) => b.kind === kind);
     if (benchmarks.length === 0) {
@@ -164,14 +263,11 @@ export async function benchmarkFlow() {
       return;
     }
     const benchmarkId = await prompt.choice("Prompt", benchmarks.map((b) => ({
-      value: b.id,
-      label: b.title,
-      hint: b.description || b.id,
+      value: b.id, label: b.title, hint: b.description || b.id,
     })), benchmarks[0].id);
     const selectedBenchmark = benchmarks.find((b) => b.id === benchmarkId);
     if (!selectedBenchmark) return;
 
-    // 3. Pick model source
     const { loadProfiles } = await import("./profiles.mjs");
     const { backendFor } = await import("./backends.mjs");
 
@@ -181,7 +277,7 @@ export async function benchmarkFlow() {
       { value: "cloud", label: "Custom / cloud", hint: "Free-form model label for cloud runs" },
     ], "profile");
 
-    let modelId, modelSource, backendLabel;
+    let modelId, modelSource, backendLabel, profile;
 
     if (source === "profile") {
       if (profiles.length === 0) {
@@ -189,11 +285,9 @@ export async function benchmarkFlow() {
         return;
       }
       const profileId = await prompt.choice("Profile", profiles.map((p) => ({
-        value: p.id,
-        label: p.label,
-        hint: `${backendFor(p.backend).label} · ${p.modelAlias}`,
+        value: p.id, label: p.label, hint: `${backendFor(p.backend).label} · ${p.modelAlias}`,
       })), profiles[0].id);
-      const profile = profiles.find((p) => p.id === profileId);
+      profile = profiles.find((p) => p.id === profileId);
       if (!profile) return;
       modelId = profile.modelAlias;
       modelSource = profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
@@ -205,72 +299,7 @@ export async function benchmarkFlow() {
       modelSource = "cloud";
     }
 
-    // 4. Create the run directory
-    const toolPrompt = buildToolPrompt(selectedBenchmark, kind);
-    const now = new Date();
-    const runId = createRunId(now);
-    const modelSlug = slugModelId(modelId);
-    const runsDir = join(repoPath, "runs");
-    const benchmarkDirectory = join(runsDir, selectedBenchmark.id);
-    const modelDirectory = join(benchmarkDirectory, modelSlug);
-    const runDirectory = join(modelDirectory, runId);
-
-    await mkdir(runDirectory, { recursive: true });
-
-    const isDs = kind === "data-science";
-    const metadata = {
-      schemaVersion: 1,
-      kind,
-      runId,
-      benchmark: { id: selectedBenchmark.id, title: selectedBenchmark.title, description: selectedBenchmark.description, prompt: selectedBenchmark.prompt },
-      model: { id: modelId, slug: modelSlug },
-      status: "prepared",
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-      preparedAt: now.toISOString(),
-      runDirectory,
-      assets: isDs
-        ? { metadata: "metadata.json", prompt: "prompt.md", rawResponse: "response.raw.txt", ds: { notebook: "analysis.ipynb", summary: "summary.json", chartDistribution: "chart-distribution.png", chartTreatmentEffect: "chart-treatment-effect.png", chartCompletionRates: "chart-completion-rates.png" } }
-        : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm", rawResponse: "response.raw.txt" },
-      runner: {
-        mode: source === "profile" ? "external" : "manual",
-        ...(modelSource ? { modelSource } : {}),
-        ...(backendLabel ? { backendLabel } : {}),
-        model: modelId,
-        retries: 0,
-        tokenMetrics: { reported: false },
-      },
-    };
-
-    // Clean up the baseUrl field — only include if we have a real one
-    if (!metadata.runner.baseUrl) delete metadata.runner.baseUrl;
-
-    await writeFile(join(runDirectory, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n", "utf8");
-    await writeFile(join(runDirectory, "prompt.md"), toolPrompt + "\n", "utf8");
-
-    // 5. Print result
-    console.log("");
-    console.log(pc.green("✓ Run slot prepared"));
-    console.log(renderSection("Run", renderRows([
-      ["Directory", pc.cyan(runDirectory)],
-      ["Benchmark", selectedBenchmark.title],
-      ["Kind", kind],
-      ["Model", pc.bold(modelId)],
-      ["Source", backendLabel || modelSource],
-    ])));
-
-    console.log("");
-    console.log(pc.bold("Next steps"));
-    if (source === "profile") {
-      console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
-      console.log(`  2. ${pc.cyan("offgrid-ai models")} → select the model → Run`);
-      console.log(`  3. In Pi, paste the prompt from ${pc.cyan("prompt.md")}`);
-      console.log(`  4. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
-    } else {
-      console.log(`  1. ${pc.cyan(`cd ${runDirectory}`)}`);
-      console.log(`  2. Copy the prompt from ${pc.cyan("prompt.md")} into your tool of choice`);
-      console.log(`  3. View results: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
-    }
+    return await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile });
   } finally {
     prompt.close();
   }

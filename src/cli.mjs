@@ -419,6 +419,9 @@ async function performAction(prompt, action, item) {
     return printGgufModelDetails(item.model, item.drafter);
   }
   if (action === "benchmark") {
+    const { benchmarkForProfile } = await import("./benchmark.mjs");
+    if (item.type === "profile") return await benchmarkForProfile(await readProfile(item.profile.id));
+    // For new/managed models, go through the full flow
     const { benchmarkFlow } = await import("./benchmark.mjs");
     return await benchmarkFlow();
   }
