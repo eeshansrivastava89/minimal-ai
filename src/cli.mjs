@@ -272,37 +272,88 @@ function buildCatalogItems(normalized) {
   ];
 }
 
-function modelSelectOption(item, { runningProfilesNow }) {
+const OPTION_SEPARATOR = pc.dim("  │  ");
+const OPTION_STATUS_WIDTH = 12;
+const OPTION_SOURCE_WIDTH = 14;
+
+function optionTag(text, color, width) {
+  const padded = String(text).padEnd(width);
+  return color ? color(padded) : padded;
+}
+
+function optionStatusTag(kind) {
+  const statuses = {
+    running: ["RUNNING", pc.green],
+    ready: ["SET UP", pc.green],
+    missing: ["FILE MISSING", pc.red],
+    setup: ["NEEDS SETUP", pc.yellow],
+  };
+  const [text, color] = statuses[kind] ?? [kind, pc.dim];
+  return optionTag(text, color, OPTION_STATUS_WIDTH);
+}
+
+function optionSourceTag(sourceId, label) {
+  const colors = {
+    "llama-cpp": pc.cyan,
+    "llama-cpp-mtp": pc.blue,
+    ollama: pc.green,
+    omlx: pc.magenta,
+    gguf: pc.cyan,
+  };
+  return optionTag(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
+}
+
+function optionLabel({ status, source, name, details = [] }) {
+  return [status, source, pc.bold(name), ...details].filter(Boolean).join(OPTION_SEPARATOR);
+}
+
+function optionHint(parts) {
+  return parts.filter(Boolean).join(" · ");
+}
+
+function modelSelectOption(item, { runningProfilesNow, drafters }) {
   if (item.type === "profile") {
     const { profile } = item;
+    const backend = backendFor(profile.backend);
     const running = runningProfilesNow.some((r) => r.id === profile.id);
     const fileMissing = item.fileMissing;
-    let status;
-    if (fileMissing) status = pc.red("⚠ missing");
-    else if (running) status = pc.green("● running");
-    else status = pc.dim("● ready");
-    // MTP label: enabled vs available vs not available
+    const status = optionStatusTag(fileMissing ? "missing" : running ? "running" : "ready");
+    const source = optionSourceTag(profile.backend, backend.label);
+    const caps = profile.capabilities ?? {};
     let mtpLabel;
-    if (profile.drafterPath) mtpLabel = pc.green("MTP");
-    else if ((profile.capabilities?.architecture === "gemma4")) mtpLabel = pc.yellow("MTP available");
-    const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k` : null;
-    const label = [profile.label, status, mtpLabel, ctxLabel].filter(Boolean).join(" ");
-    return { value: itemKey(item), label, hint: humanCapabilitySummary(profile.capabilities ?? {}) || profile.modelAlias };
+    if (profile.drafterPath) mtpLabel = pc.green("MTP on");
+    else if (drafters ? matchDrafter(profile.modelPath, drafters) : null) mtpLabel = pc.yellow("MTP available");
+    else if (caps.architecture === "gemma4") mtpLabel = pc.yellow("MTP needs drafter");
+    const ctxLabel = profile.flags?.ctxSize ? pc.dim(`${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx`) : null;
+    const label = optionLabel({ status, source, name: profile.label, details: [ctxLabel, mtpLabel] });
+    return { value: itemKey(item), label, hint: optionHint([profile.modelAlias, humanCapabilitySummary(caps), profile.baseUrl]) };
   }
   if (item.type === "new") {
     const { model, drafter } = item;
     const caps = detectCapabilities(model.path, model.mmprojPath);
     const mtpAvailable = caps.mtp || Boolean(drafter);
     let mtpLabel;
-    if (mtpAvailable) mtpLabel = pc.green("MTP ✓");
-    else if (caps.architecture === "gemma4") mtpLabel = pc.yellow("MTP");
-    const label = [model.label, pc.yellow("needs setup"), mtpLabel, formatBytes(model.sizeBytes)].filter(Boolean).join(" ");
-    return { value: itemKey(item), label, hint: humanCapabilitySummary(caps) || model.quant };
+    if (mtpAvailable) mtpLabel = pc.green("MTP available");
+    else if (caps.architecture === "gemma4") mtpLabel = pc.yellow("MTP needs drafter");
+    const label = optionLabel({
+      status: optionStatusTag("setup"),
+      source: optionSourceTag("gguf", "GGUF file"),
+      name: model.label,
+      details: [pc.dim(formatBytes(model.sizeBytes)), mtpLabel],
+    });
+    return { value: itemKey(item), label, hint: optionHint([basename(model.path), humanCapabilitySummary(caps), model.quant]) };
   }
   // managed
   const { model, backendId } = item;
   const backend = BACKENDS[backendId];
-  return { value: itemKey(item), label: `${model.label} ${pc.dim(`via ${backend.label}`)}`, hint: model.id };
+  const details = [model.quant ? pc.dim(model.quant) : null, model.sizeBytes ? pc.dim(formatBytes(model.sizeBytes)) : null];
+  const label = optionLabel({
+    status: optionStatusTag("setup"),
+    source: optionSourceTag(backendId, backend.label),
+    name: model.label,
+    details,
+  });
+  return { value: itemKey(item), label, hint: optionHint([model.id, "available through local backend"]) };
 }
 
 function actionsForItem(item) {

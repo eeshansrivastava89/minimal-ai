@@ -6,6 +6,8 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { ensureDirs, loadConfig, saveConfig } from "./config.mjs";
+import { backendFor } from "./backends.mjs";
+import { serverMatchesProfile, serverReady } from "./process.mjs";
 import { pc, createPrompt, renderRows, renderSection } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -137,11 +139,56 @@ export async function linkBenchmarkRepo(prompt) {
 
 // ── Create a benchmark run directory ──────────────────────────────────────
 
+function harnessDisplayName(id) {
+  if (id === "pi") return "Pi";
+  return String(id).replace(/[-_]+/gu, " ").replace(/\b\w/gu, (char) => char.toUpperCase());
+}
+
+function intendedRunnerForProfile(profile) {
+  if (!profile) return "your tool";
+  const harnessEntries = Object.entries(profile.harnesses ?? {}).filter(([, config]) => config?.enabled !== false);
+  const [id] = harnessEntries.find(([key]) => key === "pi") ?? harnessEntries[0] ?? ["pi"];
+  return harnessDisplayName(id);
+}
+
+async function profileServerStatus(profile) {
+  if (!profile) return null;
+  const ready = await serverReady(profile.baseUrl).catch(() => false);
+  if (!ready) return { running: false };
+  const match = await serverMatchesProfile(profile).catch(() => ({ matches: true, reason: "server responded" }));
+  return { running: match.matches, reason: match.reason };
+}
+
+function printBenchmarkNextSteps({ repoPath, profile, modelId, runnerLabel, serverStatus }) {
+  console.log("");
+  console.log(pc.bold("Next steps"));
+
+  let step = 1;
+  if (profile) {
+    const command = `offgrid-ai run ${profile.id}`;
+    if (serverStatus?.running) {
+      const reason = serverStatus.reason ? pc.dim(` (${serverStatus.reason})`) : "";
+      console.log(`  ${step++}. Model server is already running at ${pc.cyan(profile.baseUrl)}${reason}`);
+      console.log(`     ${pc.dim(`If you still need to open ${runnerLabel}, run: ${command}`)}`);
+    } else {
+      console.log(`  ${step++}. If the model server is not already running, run: ${pc.cyan(command)}`);
+    }
+  } else {
+    console.log(`  ${step++}. Open ${runnerLabel} for ${pc.bold(modelId)}`);
+  }
+
+  console.log(`  ${step++}. ${pc.cyan(`cd ${repoPath}`)}`);
+  console.log(`  ${step++}. ${pc.cyan("npm run dev")}`);
+  console.log(`  ${step}. In the gallery, find this run, copy the prompt, and paste it into ${runnerLabel}`);
+}
+
 async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile }) {
   const toolPrompt = buildToolPrompt(benchmark, kind);
   const now = new Date();
   const runId = createRunId(now);
   const modelSlug = slugModelId(modelId);
+  const runnerLabel = intendedRunnerForProfile(profile);
+  const serverStatus = await profileServerStatus(profile);
   const runsDir = join(repoPath, "runs");
   const benchmarkDirectory = join(runsDir, benchmark.id);
   const modelDirectory = join(benchmarkDirectory, modelSlug);
@@ -166,8 +213,8 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
       : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm", rawResponse: "response.raw.txt" },
     runner: {
       mode: modelSource === "cloud" ? "manual" : "external",
-      intendedRunner: profile ? "Pi" : undefined,
-      ...(profile ? { tool: "pi" } : {}),
+      intendedRunner: profile ? runnerLabel : undefined,
+      ...(profile?.harnesses?.pi || runnerLabel === "Pi" ? { tool: "pi" } : {}),
       ...(modelSource ? { modelSource } : {}),
       ...(backendLabel ? { backendLabel } : {}),
       ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
@@ -190,12 +237,7 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
     ["Source", backendLabel || modelSource],
   ])));
 
-  console.log("");
-  console.log(pc.bold("Next steps"));
-  console.log(`  1. ${pc.cyan(`offgrid-ai run ${profile ? profile.id : "<profile>"}`)}`);
-  console.log(`  2. ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
-  console.log(`  3. In the gallery, find your run and copy the prompt from the run details`);
-  console.log("  4. In Pi, paste the prompt");
+  printBenchmarkNextSteps({ repoPath, profile, modelId, runnerLabel, serverStatus });
 
   return runDirectory;
 }
@@ -226,7 +268,6 @@ export async function benchmarkForProfile(profile) {
     const selectedBenchmark = benchmarks.find((b) => b.id === benchmarkId);
     if (!selectedBenchmark) return;
 
-    const { backendFor } = await import("./backends.mjs");
     const modelId = profile.modelAlias;
     const modelSource = profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
     const backendLabel = backendFor(profile.backend).label;
@@ -265,7 +306,6 @@ export async function benchmarkFlow() {
     if (!selectedBenchmark) return;
 
     const { loadProfiles } = await import("./profiles.mjs");
-    const { backendFor } = await import("./backends.mjs");
 
     const profiles = await loadProfiles();
     const source = await prompt.choice("Model source", [
