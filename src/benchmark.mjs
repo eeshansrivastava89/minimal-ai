@@ -7,7 +7,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { ensureDirs, loadConfig, saveConfig } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
-import { serverMatchesProfile, serverReady } from "./process.mjs";
 import { pc, createPrompt, renderRows, renderSection } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -151,35 +150,15 @@ function intendedRunnerForProfile(profile) {
   return harnessDisplayName(id);
 }
 
-async function profileServerStatus(profile) {
-  if (!profile) return null;
-  const ready = await serverReady(profile.baseUrl).catch(() => false);
-  if (!ready) return { running: false };
-  const match = await serverMatchesProfile(profile).catch(() => ({ matches: true, reason: "server responded" }));
-  return { running: match.matches, reason: match.reason };
-}
+function printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, runnerLabel }) {
+  const runCommand = profile ? `offgrid-ai run ${profile.id}` : null;
+  const runnerCommand = runCommand ?? `Open ${runnerLabel} for ${modelId}`;
 
-function printBenchmarkNextSteps({ repoPath, profile, modelId, runnerLabel, serverStatus }) {
   console.log("");
   console.log(pc.bold("Next steps"));
-
-  let step = 1;
-  if (profile) {
-    const command = `offgrid-ai run ${profile.id}`;
-    if (serverStatus?.running) {
-      const reason = serverStatus.reason ? pc.dim(` (${serverStatus.reason})`) : "";
-      console.log(`  ${step++}. Model server is already running at ${pc.cyan(profile.baseUrl)}${reason}`);
-      console.log(`     ${pc.dim(`If you still need to open ${runnerLabel}, run: ${command}`)}`);
-    } else {
-      console.log(`  ${step++}. If the model server is not already running, run: ${pc.cyan(command)}`);
-    }
-  } else {
-    console.log(`  ${step++}. Open ${runnerLabel} for ${pc.bold(modelId)}`);
-  }
-
-  console.log(`  ${step++}. ${pc.cyan(`cd ${repoPath}`)}`);
-  console.log(`  ${step++}. ${pc.cyan("npm run dev")}`);
-  console.log(`  ${step}. In the gallery, find this run, copy the prompt, and paste it into ${runnerLabel}`);
+  console.log(`  1. Open the gallery. If it is not running: ${pc.cyan(`cd ${repoPath} && npm run dev`)}`);
+  console.log(`  2. ${pc.cyan(`cd ${runDirectory}`)}`);
+  console.log(`  3. ${pc.cyan(runnerCommand)}, then copy this run's prompt from the gallery and paste it into ${runnerLabel}`);
 }
 
 async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile }) {
@@ -188,7 +167,6 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
   const runId = createRunId(now);
   const modelSlug = slugModelId(modelId);
   const runnerLabel = intendedRunnerForProfile(profile);
-  const serverStatus = await profileServerStatus(profile);
   const runsDir = join(repoPath, "runs");
   const benchmarkDirectory = join(runsDir, benchmark.id);
   const modelDirectory = join(benchmarkDirectory, modelSlug);
@@ -237,7 +215,7 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
     ["Source", backendLabel || modelSource],
   ])));
 
-  printBenchmarkNextSteps({ repoPath, profile, modelId, runnerLabel, serverStatus });
+  printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, runnerLabel });
 
   return runDirectory;
 }
