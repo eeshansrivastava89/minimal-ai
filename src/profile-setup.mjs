@@ -34,14 +34,16 @@ export async function configureLocalProfile(prompt, profile) {
   let configured = profile;
   // Re-detect capabilities from the model file and check for drafters
   // so that re-setup can pick up MTP availability, vision changes, etc.
-  const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
+  const hfSource = profile.hfRepo ? { hfRepo: profile.hfRepo, hfVariant: profile.hfVariant } : {};
+  const freshCaps = { ...detectCapabilities(profile.modelPath, profile.mmprojPath), ...hfSource };
   let drafterPath = profile.drafterPath ?? null;
-  if (!drafterPath) {
+  if (!drafterPath && !profile.hfRepo) {
     const { drafters } = await scanGgufModels();
     const drafter = matchDrafter(profile.modelPath, drafters);
     if (drafter) drafterPath = drafter.path;
   }
-  const hasMtp = freshCaps.mtp || Boolean(drafterPath);
+  const hfGemma4Mtp = Boolean(profile.hfRepo && /gemma-?4/i.test(`${profile.hfRepo} ${profile.label}`));
+  const hasMtp = freshCaps.mtp || Boolean(drafterPath) || hfGemma4Mtp;
   const caps = { ...freshCaps, mtp: hasMtp };
   // If MTP is newly available, switch backend and add drafter path
   if (hasMtp && configured.backend !== "llama-cpp-mtp") {
@@ -71,7 +73,7 @@ export async function configureLocalProfile(prompt, profile) {
     console.log(renderSection("MTP detected", renderRows([
       ["Backend", "llama.cpp MTP"],
       ["Port", String(LLAMA_CPP_MTP_PORT)],
-      ["Flags", `--spec-type draft-mtp --spec-draft-n-max 4${configured.drafterPath ? " --spec-draft-model <drafter>" : ""}`],
+      ["Flags", `--spec-type draft-mtp --spec-draft-n-max 4${configured.drafterPath && !configured.hfRepo ? " --spec-draft-model <drafter>" : ""}`],
     ])));
     if (drafterInfo) console.log(pc.dim(drafterInfo));
     const useMtp = await prompt.yesNo("Use MTP speculative decoding?", true);
@@ -142,7 +144,7 @@ function applyMtpDefaults(profile) {
   const edits = {
     values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 4 },
   };
-  if (profile.drafterPath) {
+  if (profile.drafterPath && !profile.hfRepo) {
     edits.values["--spec-draft-model"] = profile.drafterPath;
   }
   return applyProfileFlags({ ...profile, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp" }, flags, edits);

@@ -299,6 +299,7 @@ function optionSourceTag(sourceId, label) {
     ollama: pc.green,
     omlx: pc.magenta,
     gguf: pc.cyan,
+    hf: pc.cyan,
   };
   return optionTag(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
 }
@@ -331,13 +332,13 @@ function modelSelectOption(item, { runningProfilesNow, drafters }) {
   if (item.type === "new") {
     const { model, drafter } = item;
     const caps = detectCapabilities(model.path, model.mmprojPath);
-    const mtpAvailable = caps.mtp || Boolean(drafter);
+    const mtpAvailable = caps.mtp || Boolean(drafter) || Boolean(model.hfRepo && /gemma-?4/i.test(`${model.hfRepo} ${model.label}`));
     let mtpLabel;
     if (mtpAvailable) mtpLabel = pc.green("MTP available");
     else if (caps.architecture === "gemma4") mtpLabel = pc.yellow("MTP needs drafter");
     const label = optionLabel({
       status: optionStatusTag("setup"),
-      source: optionSourceTag("gguf", "GGUF file"),
+      source: optionSourceTag(model.hfRepo ? "hf" : "gguf", model.hfRepo ? "Hugging Face" : "GGUF file"),
       name: model.label,
       details: [pc.dim(formatBytes(model.sizeBytes)), mtpLabel],
     });
@@ -434,7 +435,7 @@ function printModelCards(items, { runningProfilesNow, drafters }) {
     for (const item of newModels) {
       const { model, drafter } = item;
       const caps = detectCapabilities(model.path, model.mmprojPath);
-      const mtpAvailable = caps.mtp || Boolean(drafter);
+      const mtpAvailable = caps.mtp || Boolean(drafter) || Boolean(model.hfRepo && /gemma-?4/i.test(`${model.hfRepo} ${model.label}`));
       const mtpLabel = mtpAvailable
         ? pc.green("MTP ✓")
         : (caps.architecture === "gemma4")
@@ -542,6 +543,7 @@ async function printProfileDetails(profile) {
   ];
   if (!isManaged) {
     detailRows.push(
+      ...(profile.hfRepo ? [["Hugging Face", `${profile.hfRepo}${profile.hfVariant ? `:${profile.hfVariant}` : ""}`]] : []),
       ["Local file", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath ?? "unknown"],
       ["Vision file", profile.mmprojPath ? (existsSync(profile.mmprojPath) ? profile.mmprojPath : pc.red(`${profile.mmprojPath} (not found)`)) : "none"],
       ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
@@ -564,7 +566,7 @@ async function printProfileDetails(profile) {
 
 function printGgufModelDetails(model, drafter) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
-  const mtpAvailable = caps.mtp || Boolean(drafter);
+  const mtpAvailable = caps.mtp || Boolean(drafter) || Boolean(model.hfRepo && /gemma-?4/i.test(`${model.hfRepo} ${model.label}`));
   const mtpLabel = mtpAvailable
     ? pc.green("MTP ✓")
     : (caps.architecture === "gemma4")
@@ -582,6 +584,7 @@ function printGgufModelDetails(model, drafter) {
   ];
   console.log("\n" + renderSection("Downloaded model", renderRows(overviewRows)));
   const detailRows = [
+    ...(model.hfRepo ? [["Hugging Face", `${model.hfRepo}${model.hfVariant ? `:${model.hfVariant}` : ""}`]] : []),
     ["Local file", model.path],
     ["Vision file", model.mmprojPath ?? "none"],
     ["Detected", capabilitySummary(caps)],
