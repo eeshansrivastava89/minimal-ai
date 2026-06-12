@@ -4,12 +4,11 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { computeFlags, detectCapabilities } from "../src/autodetect.mjs";
+import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { compareVersions, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
 import { applyRuntimeFlagOverrides } from "../src/profile-setup.mjs";
 import { parseOptions, renderRows } from "../src/ui.mjs";
-import { inferHfRef } from "../src/scan.mjs";
 
 describe("regressions", () => {
   it("parseOptions handles short booleans and --key=value", () => {
@@ -76,28 +75,6 @@ describe("regressions", () => {
     assert.equal(caps.qat, true);
   });
 
-  it("infers Hugging Face refs from cached GGUF paths", () => {
-    const path = join(tmpdir(), "hub", "models--unsloth--gemma-4-26B-A4B-it-qat-GGUF", "snapshots", "abc", "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf");
-    assert.deepEqual(inferHfRef(path), {
-      repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
-      variant: "UD-Q4_K_XL",
-    });
-  });
-
-  it("infers Hugging Face refs from LM Studio model paths", () => {
-    const path = join(tmpdir(), ".lmstudio", "models", "unsloth", "gemma-4-26B-A4B-it-qat-GGUF", "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf");
-    assert.deepEqual(inferHfRef(path), {
-      repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
-      variant: "UD-Q4_K_XL",
-    });
-  });
-
-  it("uses llama.cpp Hugging Face refs instead of local draft paths when available", () => {
-    const { argv } = computeFlags({ mtp: true, thinking: true, hfRepo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF", hfVariant: "UD-Q4_K_XL" }, "/tmp/model.gguf", "/tmp/mmproj.gguf", "/tmp/mtp.gguf");
-    assert.deepEqual(argv.slice(0, 2), ["-hf", "unsloth/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL"]);
-    assert.equal(argv.includes("--spec-draft-model"), false);
-    assert.equal(optionValue(argv, "--spec-type"), "draft-mtp");
-  });
 
   it("updates first-run profile flags and command argv together", () => {
     const profile = {

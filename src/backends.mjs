@@ -117,16 +117,18 @@ async function scanOmlxModels() {
     if (!response.ok) return [];
     const body = await response.json();
     if (!Array.isArray(body?.data)) return [];
-    return body.data.map((model) => ({
-      id: model.id,
-      label: omlxLabel(model.id),
-      aliasSuggestion: model.id,
-      sizeBytes: 0,
-      quant: null,
-      family: null,
-      backend: "omlx",
-      source: "omlx",
-    })).sort((a, b) => a.label.localeCompare(b.label));
+    return body.data
+      .filter((model) => isChatOmlxModel(model))
+      .map((model) => ({
+        id: model.id,
+        label: omlxLabel(model.id),
+        aliasSuggestion: model.id,
+        sizeBytes: 0,
+        quant: null,
+        family: null,
+        backend: "omlx",
+        source: "omlx",
+      })).sort((a, b) => a.label.localeCompare(b.label));
   } catch {
     return [];
   }
@@ -138,6 +140,14 @@ function isLocalOllamaModel(model) {
   const name = String(model?.name ?? "");
   if (/:cloud(?:$|\b)/i.test(name)) return false;
   if (!Number.isFinite(model?.size) || model.size <= 0) return false;
+  return true;
+}
+
+function isChatOmlxModel(model) {
+  if (typeof model?.id !== "string" || !model.id.trim()) return false;
+  const type = String(model.type ?? model.model_type ?? "").toLowerCase();
+  if (["embedding", "embeddings", "reranker", "tool", "converter"].includes(type)) return false;
+  if (Object.hasOwn(model, "max_model_len") && model.max_model_len === null) return false;
   return true;
 }
 

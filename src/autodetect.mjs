@@ -73,14 +73,13 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     flags.chatTemplateKwargs = { enable_thinking: true };
   }
 
-  // Build argv. Prefer llama.cpp's Hugging Face resolver when a repo ref is
-  // known, so companion files such as Gemma 4 MTP drafters are discovered by
-  // llama.cpp instead of offgrid-ai maintaining repo-specific file rules.
-  const hfRef = capabilities.hfRepo ? `${capabilities.hfRepo}${capabilities.hfVariant ? `:${capabilities.hfVariant}` : ""}` : null;
-  const argv = hfRef ? ["-hf", hfRef] : ["--model", modelPath];
+  // Build argv
+  const argv = [
+    "--model", modelPath,
+  ];
 
-  if (mmprojPath && !hfRef) argv.push("--mmproj", mmprojPath);
-  if (draftModelPath && !hfRef) argv.push("--spec-draft-model", draftModelPath);
+  if (mmprojPath) argv.push("--mmproj", mmprojPath);
+  if (draftModelPath) argv.push("--spec-draft-model", draftModelPath);
 
   argv.push(
     "--host", String(flags.host),

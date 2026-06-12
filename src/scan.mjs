@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadata } from "./gguf.mjs";
 
@@ -67,7 +67,6 @@ async function scanOneDir(root) {
         source: "local-gguf",
       });
     } else {
-      const hf = inferHfRef(path, name);
       models.push({
         path,
         mmprojPath,
@@ -76,8 +75,7 @@ async function scanOneDir(root) {
         quant: quantFromName(name),
         sizeBytes,
         backend: "llama-cpp",
-        source: hf ? "huggingface" : "local-gguf",
-        ...(hf ? { hfRepo: hf.repo, hfVariant: hf.variant } : {}),
+        source: "local-gguf",
       });
     }
   }
@@ -160,23 +158,6 @@ function quantFromName(name) {
   return name.match(/(Q\d_K_[A-Z]+|Q\d_[01]|UD-[A-Z0-9_]+)/)?.[1];
 }
 
-export function inferHfRef(path, name = basename(path).replace(/\.gguf$/i, "")) {
-  const parts = path.split(sep);
-  const hubIndex = parts.lastIndexOf("hub");
-  const hfCacheRepo = hubIndex >= 0 ? parts.find((part, index) => index > hubIndex && part.startsWith("models--")) : null;
-  if (hfCacheRepo) {
-    return { repo: hfCacheRepo.replace(/^models--/u, "").replace(/--/gu, "/"), variant: quantFromName(name) ?? name };
-  }
-
-  const lmStudioIndex = parts.lastIndexOf(".lmstudio");
-  if (lmStudioIndex >= 0 && parts[lmStudioIndex + 1] === "models") {
-    const org = parts[lmStudioIndex + 2];
-    const repo = parts[lmStudioIndex + 3];
-    if (org && repo) return { repo: `${org}/${repo}`, variant: quantFromName(name) ?? name };
-  }
-
-  return null;
-}
 
 function safeReadGgufMetadata(path) {
   try {

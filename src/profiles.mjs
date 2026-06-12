@@ -134,15 +134,11 @@ export function normalizeProfile(profile) {
 export async function createProfileFromModel(model, backendId, drafterPath) {
   const { detectCapabilities } = await import("./autodetect.mjs");
   const caps = detectCapabilities(model.path, model.mmprojPath);
-  // If a drafter is provided, this model supports MTP regardless of filename.
-  // For Hugging Face Gemma 4 GGUF repos, prefer llama.cpp's -hf companion-file
-  // discovery so root mtp-*.gguf drafters do not need offgrid-ai file matching.
-  const hfGemma4Mtp = Boolean(model.hfRepo && /gemma-?4/i.test(`${model.hfRepo} ${model.label}`));
-  const hasMtp = caps.mtp || Boolean(drafterPath) || hfGemma4Mtp;
+  // If a drafter is provided, this model supports MTP regardless of filename
+  const hasMtp = caps.mtp || Boolean(drafterPath);
   const backend = backendId ?? (hasMtp ? "llama-cpp-mtp" : "llama-cpp");
-  const hfSource = model.hfRepo ? { hfRepo: model.hfRepo, hfVariant: model.hfVariant } : {};
   const { flags, argv } = computeFlags(
-    { ...caps, mtp: hasMtp, ...hfSource },
+    { ...caps, mtp: hasMtp },
     model.path,
     model.mmprojPath,
     drafterPath ?? null,
@@ -154,12 +150,11 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
     backend,
     providerId: backend,
     modelAlias: model.aliasSuggestion,
-    source: model.hfRepo ? "huggingface" : model.source,
+    source: model.source,
     modelPath: model.path,
-    mmprojPath: model.hfRepo ? null : model.mmprojPath,
-    ...hfSource,
+    mmprojPath: model.mmprojPath,
     drafterPath: drafterPath ?? null,
-    capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp, ...hfSource }),
+    capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp }),
     preset: null, // no presets — auto-detected
     flags,
     commandArgv: argv,
@@ -177,8 +172,6 @@ function summarizeCapabilities(caps) {
     quant: caps.quant,
     metaCtx: caps.metaCtx,
     mmprojProjectorType: caps.mmprojProjectorType,
-    hfRepo: caps.hfRepo,
-    hfVariant: caps.hfVariant,
     ctxSize: caps.ctxSize,
   };
 }
