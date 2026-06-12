@@ -107,7 +107,7 @@ fi
 
 echo ""
 printf "${BOLD}Installing offgrid-ai...${RESET}\n"
-dry npm install -g offgrid-ai
+dry npm install -g offgrid-ai@latest --prefer-online
 
 # ── Dry-run early exit ──────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { compareVersions, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
-import { applyRuntimeFlagOverrides } from "../src/profile-setup.mjs";
+import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-setup.mjs";
 import { parseOptions, renderRows } from "../src/ui.mjs";
 
 describe("regressions", () => {
@@ -75,6 +75,27 @@ describe("regressions", () => {
     assert.equal(caps.qat, true);
   });
 
+
+  it("disabling MTP clears backend, flags, drafter, and capability state", () => {
+    const profile = {
+      backend: "llama-cpp-mtp",
+      providerId: "llama-cpp-mtp",
+      drafterPath: "/tmp/drafter.gguf",
+      capabilities: { mtp: true },
+      flags: { host: "127.0.0.1", port: 8081, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
+      commandArgv: ["--model", "/tmp/model.gguf", "--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--spec-draft-model", "/tmp/drafter.gguf"],
+    };
+
+    const updated = removeMtpDefaults(profile);
+    assert.equal(updated.backend, "llama-cpp");
+    assert.equal(updated.providerId, "llama-cpp");
+    assert.equal(updated.drafterPath, null);
+    assert.equal(updated.capabilities.mtp, false);
+    assert.equal(updated.flags.port, 8080);
+    assert.equal(updated.commandArgv.includes("--spec-type"), false);
+    assert.equal(updated.commandArgv.includes("--spec-draft-n-max"), false);
+    assert.equal(updated.commandArgv.includes("--spec-draft-model"), false);
+  });
 
   it("updates first-run profile flags and command argv together", () => {
     const profile = {

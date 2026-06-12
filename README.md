@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 Or if you already have Node.js:
 
 ```bash
-npm install -g offgrid-ai
+npm install -g offgrid-ai@latest --prefer-online
 ```
 
 Or review the install script first:

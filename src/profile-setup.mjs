@@ -137,20 +137,29 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
   return applyProfileFlags(profile, flags);
 }
 
-function applyMtpDefaults(profile) {
+export function applyMtpDefaults(profile) {
   const flags = { ...profile.flags, port: LLAMA_CPP_MTP_PORT };
   const edits = {
     values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 4 },
   };
-  if (profile.drafterPath) {
-    edits.values["--spec-draft-model"] = profile.drafterPath;
-  }
-  return applyProfileFlags({ ...profile, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp" }, flags, edits);
+  if (profile.drafterPath) edits.values["--spec-draft-model"] = profile.drafterPath;
+  return applyProfileFlags({
+    ...profile,
+    backend: "llama-cpp-mtp",
+    providerId: "llama-cpp-mtp",
+    capabilities: { ...(profile.capabilities ?? {}), mtp: true },
+  }, flags, edits);
 }
 
-function removeMtpDefaults(profile) {
+export function removeMtpDefaults(profile) {
   const flags = { ...profile.flags, port: LLAMA_CPP_PORT };
-  return applyProfileFlags({ ...profile, backend: "llama-cpp", providerId: "llama-cpp" }, flags, {
+  return applyProfileFlags({
+    ...profile,
+    backend: "llama-cpp",
+    providerId: "llama-cpp",
+    drafterPath: null,
+    capabilities: { ...(profile.capabilities ?? {}), mtp: false },
+  }, flags, {
     remove: ["--spec-type", "--spec-draft-n-max", "--spec-draft-model"],
   });
 }
