@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 if (process.env.CI || process.env.OFFGRID_SKIP_POSTINSTALL) process.exit(0);
 
@@ -73,8 +74,16 @@ if (!content.includes(npmBin)) {
   try {
     mkdirSync(dirname(rcFile), { recursive: true });
     appendFileSync(rcFile, `${content.endsWith("\n") || content.length === 0 ? "" : "\n"}\n${marker}\n${pathLine}\n`, "utf8");
-    console.log(`offgrid-ai added ${npmBin} to ${rcFile}`);
-    console.log(`Open a new terminal, or run: source ${rcFile}`);
+    const version = currentPackageVersion();
+    console.log("");
+    console.log(`offgrid-ai v${version} installed and added to PATH`);
+    console.log(`  Config file: ${rcFile}`);
+    console.log(`  Bin path:    ${npmBin}`);
+    console.log("");
+    console.log("To use it right now in this terminal, run:");
+    console.log(`  source ${rcFile}`);
+    console.log("");
+    console.log("Or open a new terminal window/tab.");
   } catch (err) {
     console.log(`offgrid-ai postinstall: could not write to ${rcFile}: ${err.message}`);
   }
@@ -86,6 +95,15 @@ if (!content.includes(npmBin)) {
 if (process.getuid?.() === 0) {
   console.log("Warning: offgrid-ai was installed as root. PATH was added to root's shell config, not the regular user's.");
   console.log("If you installed with sudo, run the installer as your normal user instead, or manually add the line above to your user's shell config.");
+}
+
+function currentPackageVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"));
+    return pkg.version;
+  } catch {
+    return "";
+  }
 }
 
 function isHermesPrefix(prefix, home) {
