@@ -29,16 +29,12 @@ offgrid-ai stop     # stop a running server
 
 ## Install
 
-One command. Installs Node.js if you don't have it, then installs offgrid-ai.
+### Recommended: one command installer
+
+Installs Node.js if you don't have it, then installs offgrid-ai and adds it to your PATH. Prints a welcome message so you know it worked.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
-```
-
-Or if you already have Node.js:
-
-```bash
-npm install -g offgrid-ai@latest --prefer-online
 ```
 
 Or review the install script first:
@@ -46,6 +42,14 @@ Or review the install script first:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | less
 ```
+
+### Already have Node.js?
+
+```bash
+npm install -g offgrid-ai@latest --prefer-online
+```
+
+This works without extra flags, but npm hides postinstall output by default, so you won't see the welcome message. Open a new terminal window or run `source ~/.zshrc` and then `offgrid-ai`.
 
 ## How it works
 

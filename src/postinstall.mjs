@@ -26,12 +26,6 @@ if (isHermesPrefix(prefix, process.env.HOME)) {
 const npmBin = join(prefix, "bin");
 const marker = "# Added by offgrid-ai installer";
 const pathLine = `export PATH="${npmBin}:$PATH"`;
-const currentPath = process.env.PATH ?? "";
-
-if (currentPath.split(":").includes(npmBin)) {
-  console.log(`offgrid-ai is already on PATH (${npmBin})`);
-  process.exit(0);
-}
 
 const home = process.env.HOME;
 if (!home) {

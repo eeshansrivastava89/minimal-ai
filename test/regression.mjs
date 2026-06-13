@@ -1,8 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
@@ -41,6 +45,56 @@ describe("regressions", () => {
     assert.equal(compareVersions("0.3.10", "0.3.9") > 0, true);
     assert.equal(isNewerVersion("0.3.10", "0.4.0"), false);
     assert.equal(isNewerVersion("0.4.0", "0.3.10"), true);
+  });
+
+  it("postinstall adds npm global bin to shell rc even when PATH already contains it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "offgrid-postinstall-"));
+    const prefix = join(home, "npm-global");
+    const npmBin = join(prefix, "bin");
+    await mkdir(npmBin, { recursive: true });
+    const zshrc = join(home, ".zshrc");
+    await writeFile(zshrc, "# existing config\n", "utf8");
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      SHELL: "/bin/zsh",
+      npm_config_global: "true",
+      npm_config_prefix: prefix,
+      // npm puts its bin in PATH during install, so the old check would skip
+      PATH: `${npmBin}:${process.env.PATH ?? ""}`,
+      OFFGRID_SKIP_POSTINSTALL: "",
+      CI: "",
+    };
+
+    await execFileAsync(process.execPath, ["src/postinstall.mjs"], { env, cwd: process.cwd() });
+
+    const rc = await readFile(zshrc, "utf8");
+    assert.match(rc, /# Added by offgrid-ai installer/);
+    assert.ok(rc.includes(`export PATH="${npmBin}:$PATH"`));
+  });
+
+  it("postinstall does not duplicate an existing PATH export in rc", async () => {
+    const home = await mkdtemp(join(tmpdir(), "offgrid-postinstall-"));
+    const prefix = join(home, "npm-global");
+    const npmBin = join(prefix, "bin");
+    const zshrc = join(home, ".zshrc");
+    await writeFile(zshrc, `export PATH="${npmBin}:$PATH"\n`, "utf8");
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      SHELL: "/bin/zsh",
+      npm_config_global: "true",
+      npm_config_prefix: prefix,
+      PATH: `${npmBin}:${process.env.PATH ?? ""}`,
+    };
+
+    await execFileAsync(process.execPath, ["src/postinstall.mjs"], { env, cwd: process.cwd() });
+
+    const rc = await readFile(zshrc, "utf8");
+    assert.equal((rc.match(/export PATH=/g) || []).length, 1);
+    assert.doesNotMatch(rc, /# Added by offgrid-ai installer/);
   });
 
   it("uses npm exec for npx-like invocations", () => {
