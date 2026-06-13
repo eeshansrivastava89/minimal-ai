@@ -25,7 +25,7 @@ function optionPad(text, color, width) {
 function optionStatusTag(kind) {
   const statuses = {
     running: ["RUNNING", pc.green],
-    ready: ["READY", pc.green],
+    ready: ["READY", pc.blue],
     missing: ["MISSING", pc.red],
     setup: ["SETUP", pc.yellow],
   };
@@ -130,13 +130,14 @@ export function printWorkspaceHeader(normalized, runningProfilesNow) {
   const setupCount = normalized.newModels.length + normalized.managedItems.length;
 
   const countParts = [];
-  if (runningCount > 0) countParts.push(`${runningCount} running`);
-  if (readyCount > 0) countParts.push(pc.green(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
+  if (runningCount > 0) countParts.push(pc.green(`${runningCount} running`));
+  if (readyCount > 0) countParts.push(pc.blue(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
   if (missingCount > 0) countParts.push(pc.red(`${missingCount} model${missingCount === 1 ? "" : "s"} missing`));
   if (setupCount > 0) countParts.push(pc.yellow(`${setupCount} model${setupCount === 1 ? "" : "s"} need${setupCount === 1 ? "s" : ""} setup`));
 
-  console.log(pc.dim(`   ${countParts.join(" · ")}`));
+  console.log(`   ${countParts.join(pc.dim(" · "))}`);
   console.log(pc.dim(`   Profiles: ${DATA_DIR}`));
+  console.log(pc.dim("   ─────────────────────────────────────────────────────────"));
 }
 
 export async function printBenchmarkLine() {
@@ -155,7 +156,7 @@ export async function printProfileDetails(profile) {
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   console.log("\n" + renderSection("Model overview", renderRows([
     ["Name", pc.bold(profile.label)],
-    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : "Ready"],
+    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : pc.blue("Ready")],
     ["Details", profileDetailParts(profile, { fileMissing }).join(pc.dim(" · "))],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
   ])));

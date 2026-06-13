@@ -9,6 +9,8 @@ import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, nor
 import { modelSelectOption, modelNameWidth, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
+const { stripVTControlCharacters } = await import("node:util");
+
 export async function modelsCommand(argv) {
   await ensureDirs();
   const catalog = await loadModelCatalog();
@@ -62,33 +64,64 @@ export async function modelCommandCenter(initialCatalog) {
   }
 }
 
-
+function formatActions(rawActions) {
+  const sep = pc.dim("  │  ");
+  const maxName = Math.max(...rawActions.map((a) => stripVTControlCharacters(a.name).length));
+  const width = Math.max(17, maxName + 2);
+  return rawActions.map((a) => {
+    const name = a.dimmed ? pc.dim(pc.strikethrough(a.name.padEnd(width).slice(0, width))) : pc.bold(a.name.padEnd(width).slice(0, width));
+    const desc = a.dimmed ? pc.red("file not found") : pc.dim(a.desc);
+    return { value: a.value, label: name + sep + desc };
+  });
+}
 
 function actionsForItem(item) {
+  const missing = item.type === "profile" && item.fileMissing;
   if (item.type === "profile") {
-    const actions = [
-      { value: "run", label: "Start chatting", hint: "Launch and open Pi" },
-      { value: "reconfigure", label: "Reconfigure", hint: "Change context, MTP, settings" },
-      { value: "inspect", label: "Details", hint: "Paths, ports, flags" },
+    const available = [
+      { value: "inspect", name: "Details", desc: "Paths, ports, flags" },
     ];
-    const backend = backendFor(item.profile.backend);
-    if (backend.type === "local-server" || backend.type === "managed-server") actions.push({ value: "benchmark", label: "Benchmark", hint: "Prepare a benchmark run" });
-    if (!item.fileMissing) actions.push({ value: "remove", label: "Remove", hint: "Delete this setup" });
-    return actions;
+    if (!missing) {
+      available.unshift(
+        { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
+        { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
+      );
+      const backend = backendFor(item.profile.backend);
+      if (backend.type === "local-server" || backend.type === "managed-server") {
+        available.push({ value: "benchmark", name: "Benchmark", desc: "Prepare a benchmark run" });
+      }
+    }
+    available.push({ value: "remove", name: "Remove", desc: missing ? "Delete this broken setup" : "Delete this setup" });
+    if (missing) {
+      available.unshift(
+        { value: "run", name: "Start chatting", desc: "Launch and open Pi", dimmed: true },
+        { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", dimmed: true },
+      );
+      const backend = backendFor(item.profile.backend);
+      if (backend.type === "local-server" || backend.type === "managed-server") {
+        available.push({ value: "benchmark", name: "Benchmark", desc: "Prepare a benchmark run", dimmed: true });
+      }
+    }
+    return formatActions(available);
   }
   if (item.type === "new") {
-    return [
-      { value: "setup", label: "Set up", hint: "Configure and save" },
-      { value: "inspect", label: "Details", hint: "Model info" },
-    ];
+    return formatActions([
+      { value: "setup", name: "Set up", desc: "Configure and save" },
+      { value: "inspect", name: "Details", desc: "Model info" },
+    ]);
   }
-  return [
-    { value: "setup", label: "Set up", hint: `Connect via ${BACKENDS[item.backendId].label}` },
-    { value: "inspect", label: "Details", hint: "Model info" },
-  ];
+  return formatActions([
+    { value: "setup", name: "Set up", desc: `Connect via ${BACKENDS[item.backendId].label}` },
+    { value: "inspect", name: "Details", desc: "Model info" },
+  ]);
 }
 
 async function performAction(prompt, action, item) {
+  const missing = item.type === "profile" && item.fileMissing;
+  if (missing && ["run", "reconfigure", "benchmark"].includes(action)) {
+    console.log(pc.red("This model's file is no longer on disk. Remove the setup or move the file back."));
+    return;
+  }
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
