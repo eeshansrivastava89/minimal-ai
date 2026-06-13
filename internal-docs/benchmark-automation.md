@@ -438,6 +438,10 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 - [x] For `llama-cpp` / `llama-cpp-mtp`: if not ready, call `ensureLocalServer()` / `waitForReady()` from `src/commands/run.mjs`.
 - [x] For `ollama` / `omlx`: if not ready, print a clear error and abort.
 - [x] Stop any server offgrid-ai started after the benchmark completes, unless `--keep-server` is passed. Managed servers (Ollama/oMLX) are left alone.
+- [x] Unload the model from server memory after the benchmark completes or fails:
+  - Ollama: POST `/api/generate` with `keep_alive: 0`.
+  - llama.cpp / llama.cpp-MTP: unloaded when the server process exits (no HTTP unload API).
+  - oMLX: no unload API available; model stays resident until the server process is stopped.
 
 ### Phase 7 — Validation
 

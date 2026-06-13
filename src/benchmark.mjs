@@ -727,6 +727,44 @@ async function queryOllamaMetrics(profile) {
   };
 }
 
+// ── Unload model from server memory after benchmark ────────────────────────
+
+export async function unloadModelFromServer(profile) {
+  const backend = backendFor(profile.backend);
+
+  if (backend.id === "ollama") {
+    const apiBaseUrl = (profile.baseUrl
+      ? profile.baseUrl.replace(/\/v1\/?$/u, "")
+      : backend.apiBaseUrl).replace(/\/$/u, "");
+
+    try {
+      await fetch(`${apiBaseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: profile.modelAlias, prompt: "", stream: false, keep_alive: 0 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return { unloaded: true, backend: backend.id };
+    } catch (err) {
+      return { unloaded: false, backend: backend.id, error: err.message };
+    }
+  }
+
+  if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
+    // llama.cpp unloads when the server process exits; no HTTP unload API exists.
+    // If offgrid-ai started the server, stopProfile already handled it.
+    return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+  }
+
+  if (backend.id === "omlx") {
+    // oMLX does not expose a model-unload endpoint. The model stays resident
+    // until the oMLX server process is stopped.
+    return { unloaded: false, backend: backend.id, reason: "no unload API available" };
+  }
+
+  return { unloaded: false, backend: backend.id, reason: "unsupported backend" };
+}
+
 // ── Finalize benchmark run metadata ──────────────────────────────────────
 
 export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics) {
@@ -869,6 +907,7 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
         console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
       }
     }
+    await unloadModelFromServer(profile).catch(() => {});
   }
 
   return metadata;
