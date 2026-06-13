@@ -20,10 +20,7 @@ export async function checkForUpdate({ now = Date.now(), fetchImpl = globalThis.
     if (cached.currentVersion === currentVersion) {
       return updateResult(currentVersion, cached.latestVersion);
     }
-    // Cache is from a different version — if latest isn't newer than current, no update
-    if (cached.latestVersion && !isNewerVersion(cached.latestVersion, currentVersion)) {
-      return null;
-    }
+    // Cache is from a different installed version — invalidate and refetch
   }
 
   try {
