@@ -370,25 +370,20 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 0 — Finalize schema and contract
 
-- [ ] Confirm the result schema in §2.7 is compatible with `local-llm-visual-benchmark/src/lib/types.ts`.
-- [ ] Decide whether `speedMetrics` stays under `runner` or moves to a top-level field. Recommendation: keep it under `runner` because it is runner-dependent.
-- [ ] Confirm success criteria per `kind`.
 - [x] Confirm the final summary table is totals-only; per-turn data is saved but not displayed.
 - [x] Confirm both `Run Benchmark` and `Prepare Benchmark (manual)` actions remain in the menu.
 - [x] Confirm server speed query failure marks the whole run failed.
 - [x] Confirm `Ctrl+C` writes `status: "failed"` with "Cancelled by user".
-- [ ] Remove the old `benchmark-automation-audit.md` file after this document is approved.
+- [x] Remove the old `benchmark-automation-audit.md` file after this document is approved.
 
 ### Phase 1 — Prepare run directory with richer metadata
 
-- [ ] Extend `prepareBenchmarkRun()` in `src/benchmark.mjs` to include:
+- [x] Extend `prepareBenchmarkRun()` in `src/benchmark.mjs` to include:
   - `runner.tokenMetrics` with `reported: false` and placeholder counts.
   - `runner.speedMetrics` with null/default values.
   - `runner.metricSource` as `null`.
   - Empty `results` object with `success: false`, `outputFiles: []`, `perTurn: []`.
   - `assets.stream` = `"stream.ndjson"` and `assets.stderr` = `"stderr.log"`.
-- [ ] Continue writing `prompt.md`.
-- [ ] No functional change for the manual flow yet.
 
 ### Phase 2 — Add stream runner
 

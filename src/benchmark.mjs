@@ -27,7 +27,7 @@ export function createRunId(date = new Date()) {
   return date.toISOString().replace(/:/gu, "-").replace(/\./gu, "-");
 }
 
-export function buildToolPrompt(benchmark, kind) {
+export function buildToolPrompt(benchmark) {
   return benchmark.prompt;
 }
 
@@ -152,7 +152,7 @@ function printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, run
 }
 
 async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile }) {
-  const toolPrompt = buildToolPrompt(benchmark, kind);
+  const toolPrompt = buildToolPrompt(benchmark);
   const now = new Date();
   const runId = createRunId(now);
   const modelSlug = slugModelId(modelId);
@@ -165,6 +165,13 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
   await mkdir(runDirectory, { recursive: true });
 
   const isDs = kind === "data-science";
+  const baseAssets = {
+    metadata: "metadata.json",
+    prompt: "prompt.md",
+    rawResponse: "response.raw.txt",
+    stream: "stream.ndjson",
+    stderr: "stderr.log",
+  };
   const metadata = {
     schemaVersion: 1,
     kind,
@@ -177,8 +184,8 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
     preparedAt: now.toISOString(),
     runDirectory,
     assets: isDs
-      ? { metadata: "metadata.json", prompt: "prompt.md", rawResponse: "response.raw.txt", ds: { notebook: "analysis.ipynb", summary: "summary.json", chartDistribution: "chart-distribution.png", chartTreatmentEffect: "chart-treatment-effect.png", chartCompletionRates: "chart-completion-rates.png" } }
-      : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm", rawResponse: "response.raw.txt" },
+      ? { ...baseAssets, ds: { notebook: "analysis.ipynb", summary: "summary.json", chartDistribution: "chart-distribution.png", chartTreatmentEffect: "chart-treatment-effect.png", chartCompletionRates: "chart-completion-rates.png" } }
+      : { ...baseAssets, html: "index.html", preview: "preview.png", video: "preview.webm" },
     runner: {
       mode: modelSource === "cloud" ? "manual" : "external",
       intendedRunner: profile ? runnerLabel : undefined,
@@ -188,7 +195,30 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
       ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
       model: modelId,
       retries: 0,
-      tokenMetrics: { reported: false },
+      tokenMetrics: {
+        reported: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      },
+      speedMetrics: {
+        prefillTokensPerSecond: null,
+        generationTokensPerSecond: null,
+        ttftMs: null,
+        modelLoadMs: null,
+        speculativeDecodeAcceptance: null,
+        kvCacheTokens: null,
+      },
+      metricSource: null,
+    },
+    results: {
+      wallClockMs: null,
+      agentTurns: 0,
+      toolCalls: 0,
+      toolResults: 0,
+      success: false,
+      outputFiles: [],
+      perTurn: [],
     },
   };
 
