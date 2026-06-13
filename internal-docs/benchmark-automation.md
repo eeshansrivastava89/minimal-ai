@@ -416,7 +416,7 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 4 — Finalize run metadata
 
-- [ ] Add `finalizeBenchmarkRun(runDirectory, runResult, speedMetrics)` in `src/benchmark.mjs`:
+- [x] Add `finalizeBenchmarkRun(runDirectory, runResult, speedMetrics)` in `src/benchmark.mjs`:
   - Read existing `metadata.json`.
   - Set `status`, `updatedAt`, `completedAt` or `failedAt`.
   - Write `runner.tokenMetrics`, `runner.speedMetrics`, `runner.metricSource`.

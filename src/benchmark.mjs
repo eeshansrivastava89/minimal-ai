@@ -720,6 +720,66 @@ async function queryOllamaMetrics(profile) {
   };
 }
 
+// ── Finalize benchmark run metadata ──────────────────────────────────────
+
+export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics) {
+  const metadataPath = join(runDirectory, "metadata.json");
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  const now = new Date();
+  const timestamp = now.toISOString();
+
+  const kind = metadata.kind ?? "visual";
+  const isDs = kind === "data-science";
+  const requiredFile = isDs ? "analysis.ipynb" : "index.html";
+  const requiredPath = join(runDirectory, requiredFile);
+
+  const outputFiles = [];
+  for (const candidate of [requiredFile, isDs ? "summary.json" : "preview.png", isDs ? "chart-distribution.png" : "preview.webm", "preview.mp4"]) {
+    if (existsSync(join(runDirectory, candidate))) {
+      outputFiles.push(candidate);
+    }
+  }
+
+  const success = existsSync(requiredPath) && (await readFile(requiredPath, "utf8")).trim().length > 0;
+
+  metadata.status = runResult.error ? "failed" : "completed";
+  metadata.updatedAt = timestamp;
+  if (runResult.error) {
+    metadata.failedAt = timestamp;
+  } else {
+    metadata.completedAt = timestamp;
+  }
+
+  metadata.runner.tokenMetrics = {
+    reported: true,
+    promptTokens: runResult.promptTokens,
+    completionTokens: runResult.completionTokens,
+    totalTokens: runResult.totalTokens,
+  };
+
+  metadata.runner.speedMetrics = speedMetrics;
+  metadata.runner.metricSource = speedMetrics?.metricSource ?? null;
+
+  metadata.results = {
+    wallClockMs: runResult.wallClockMs,
+    agentTurns: runResult.agentTurns,
+    toolCalls: runResult.toolCalls,
+    toolResults: runResult.toolResults,
+    success,
+    outputFiles,
+    perTurn: runResult.perTurn,
+  };
+
+  if (runResult.error) {
+    metadata.error = typeof runResult.error === "string"
+      ? { message: runResult.error }
+      : { message: runResult.error.message ?? "Unknown error", ...(runResult.error.stack ? { stack: runResult.error.stack } : {}) };
+  }
+
+  await writeFile(metadataPath, JSON.stringify(metadata, null, 2) + "\n", "utf8");
+  return metadata;
+}
+
 // ── Benchmark from a selected profile (from model picker) ────────────────
 
 export async function benchmarkForProfile(profile) {
