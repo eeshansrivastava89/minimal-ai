@@ -131,10 +131,10 @@ if command -v npm &>/dev/null; then
   # Try the modern way first, then legacy
   NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
   if [[ -n "$NPM_PREFIX" ]]; then
-    NPM_BIN="${NPM_PREFIX}/bin"
+    NPM_BIN="${NPM_PREFIX%/}/bin"
   fi
   # Validate: the binary should exist there
-  if [[ ! -d "$NPM_BIN" ]]; then
+  if [[ ! -x "$NPM_BIN/offgrid-ai" ]]; then
     NPM_BIN=""
   fi
 fi
@@ -158,12 +158,14 @@ if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
 
     # Add to shell config for future sessions (pick first existing or .zshrc)
     ADDED_TO_RC=false
-    for RC_FILE in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+    # Respect user's shell preference; default to .zshrc on macOS
+    [[ "$OSTYPE" == darwin* ]] && [[ -z "$DEFAULT_RC" ]] && DEFAULT_RC="$HOME/.zshrc"
+    RC_CANDIDATES=("${DEFAULT_RC:-}" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
+    for RC_FILE in "${RC_CANDIDATES[@]}"; do
+      [[ -z "$RC_FILE" ]] && continue
       if [[ -f "$RC_FILE" || "$RC_FILE" == "$HOME/.zshrc" ]]; then
         if ! grep -qF "$NPM_BIN" "$RC_FILE" 2>/dev/null; then
-          echo '' >> "$RC_FILE"
-          echo '# Added by offgrid-ai installer' >> "$RC_FILE"
-          echo "export PATH=\"$NPM_BIN:\$PATH\"" >> "$RC_FILE"
+          { echo ''; echo '# Added by offgrid-ai installer'; echo "export PATH=\"$NPM_BIN:\$PATH\""; } >> "$RC_FILE"
           ok "Added $NPM_BIN to $RC_FILE"
           ADDED_TO_RC=true
           # Only add to one rc file to avoid duplicates
