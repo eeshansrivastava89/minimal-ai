@@ -15,8 +15,15 @@ export async function checkForUpdate({ now = Date.now(), fetchImpl = globalThis.
   const cacheFile = join(DATA_DIR, "update-cache.json");
   const cached = await readUpdateCache(cacheFile);
 
-  if (!force && cached?.currentVersion === currentVersion && cached?.lastChecked && now - cached.lastChecked < UPDATE_CHECK_INTERVAL) {
-    return updateResult(currentVersion, cached.latestVersion);
+  // Use cache if fresh (within 24h) and still applies to current version
+  if (!force && cached?.lastChecked && now - cached.lastChecked < UPDATE_CHECK_INTERVAL) {
+    if (cached.currentVersion === currentVersion) {
+      return updateResult(currentVersion, cached.latestVersion);
+    }
+    // Cache is from a different version — if latest isn't newer than current, no update
+    if (cached.latestVersion && !isNewerVersion(cached.latestVersion, currentVersion)) {
+      return null;
+    }
   }
 
   try {
