@@ -2,30 +2,36 @@ import { existsSync, statSync } from "node:fs";
 import { BACKENDS, backendFor } from "./backends.mjs";
 import { readCommandArgv } from "./profiles.mjs";
 import { isProfileRunning } from "./process.mjs";
-import { detectCapabilities } from "./autodetect.mjs";
 import { buildPrettyCommand } from "./command.mjs";
-import { pc, formatBytes, renderRows, renderSection, renderCard } from "./ui.mjs";
-import { capabilitySummary, ggufDetailParts, ggufMtpLabel, isProfileFileMissing, profileDetailParts, profileMtpLabel } from "./model-summary.mjs";
+import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
+import { DATA_DIR } from "./config.mjs";
+import { findBenchmarkRepo } from "./benchmark.mjs";
 
 const OPTION_SEPARATOR = pc.dim("  │  ");
-const OPTION_STATUS_WIDTH = 12;
+const OPTION_STATUS_WIDTH = 10;
 const OPTION_SOURCE_WIDTH = 14;
+const OPTION_MODEL_WIDTH = 26;
+const OPTION_CTX_WIDTH = 5;
 
-function optionTag(text, color, width) {
+const { stripVTControlCharacters } = await import("node:util");
+
+function optionPad(text, color, width) {
+  const visible = stripVTControlCharacters(String(text)).length;
   const padded = String(text).padEnd(width);
-  return color ? color(padded) : padded;
+  return color ? color(padded.slice(0, padded.length - Math.max(0, visible - width))) : padded;
 }
 
 function optionStatusTag(kind) {
   const statuses = {
     running: ["RUNNING", pc.green],
     ready: ["READY", pc.green],
-    missing: ["FILE MISSING", pc.red],
-    setup: ["NEEDS SETUP", pc.yellow],
+    missing: ["MISSING", pc.red],
+    setup: ["SETUP", pc.yellow],
   };
   const [text, color] = statuses[kind] ?? [kind, pc.dim];
-  return optionTag(text, color, OPTION_STATUS_WIDTH);
+  return optionPad(text, color, OPTION_STATUS_WIDTH);
 }
 
 function optionSourceTag(sourceId, label) {
@@ -36,11 +42,35 @@ function optionSourceTag(sourceId, label) {
     omlx: pc.magenta,
     gguf: pc.cyan,
   };
-  return optionTag(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
+  return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
 }
 
-function optionLabel({ status, source, name, details = [] }) {
-  return [status, source, pc.bold(name), ...details].filter(Boolean).join(OPTION_SEPARATOR);
+function optionCtxLabel(item, runningProfilesNow) {
+  if (item.type === "profile" && item.profile.flags?.ctxSize) {
+    return `${(item.profile.flags.ctxSize / 1000).toFixed(0)}k`;
+  }
+  return "—";
+}
+
+function optionSizeLabel(item) {
+  if (item.type === "profile") {
+    if (item.fileMissing) return "—";
+    if (item.profile.modelPath && existsSync(item.profile.modelPath)) {
+      return formatBytes(statSync(item.profile.modelPath).size);
+    }
+    return "—";
+  }
+  if (item.type === "new") {
+    return formatBytes(item.model.sizeBytes);
+  }
+  // managed
+  if (item.model.quant) return item.model.quant;
+  if (item.model.sizeBytes) return formatBytes(item.model.sizeBytes);
+  return "—";
+}
+
+function optionLabel({ status, source, name, ctx, size }) {
+  return [status, source, pc.bold(optionPad(name, null, OPTION_MODEL_WIDTH)), ctx, pc.dim(size)].filter(Boolean).join(OPTION_SEPARATOR);
 }
 
 export function modelSelectOption(item, { runningProfilesNow }) {
@@ -53,74 +83,88 @@ export function modelSelectOption(item, { runningProfilesNow }) {
         status: optionStatusTag(item.fileMissing ? "missing" : running ? "running" : "ready"),
         source: optionSourceTag(item.profile.backend, backend.label),
         name: item.profile.label,
+        ctx: optionCtxLabel(item, runningProfilesNow),
+        size: optionSizeLabel(item),
       }),
     };
   }
   if (item.type === "new") {
     return {
       value: itemKey(item),
-      label: optionLabel({ status: optionStatusTag("setup"), source: optionSourceTag("gguf", "GGUF file"), name: item.model.label }),
+      label: optionLabel({
+        status: optionStatusTag("setup"),
+        source: optionSourceTag("gguf", "GGUF file"),
+        name: item.model.label,
+        ctx: optionCtxLabel(item, runningProfilesNow),
+        size: optionSizeLabel(item),
+      }),
     };
   }
   const backend = BACKENDS[item.backendId];
   return {
     value: itemKey(item),
-    label: optionLabel({ status: optionStatusTag("setup"), source: optionSourceTag(item.backendId, backend.label), name: item.model.label }),
+    label: optionLabel({
+      status: optionStatusTag("setup"),
+      source: optionSourceTag(item.backendId, backend.label),
+      name: item.model.label,
+      ctx: optionCtxLabel(item, runningProfilesNow),
+      size: optionSizeLabel(item),
+    }),
   };
 }
 
-export function printModelCards(items, { runningProfilesNow, drafters }) {
-  const profiles = items.filter((item) => item.type === "profile");
-  const newModels = items.filter((item) => item.type === "new");
-  const managed = items.filter((item) => item.type === "managed");
+export function printWorkspaceHeader(normalized, runningProfilesNow) {
+  const profiles = normalized.profiles;
+  const readyCount = profiles.filter((p) => !isProfileFileMissing(p) && !runningProfilesNow.some((r) => r.id === p.id)).length;
+  const runningCount = runningProfilesNow.length;
+  const missingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
+  const setupCount = normalized.newModels.length + normalized.managedItems.length;
 
-  if (profiles.length > 0) {
-    console.log("\n" + pc.bold("Ready to chat"));
-    for (const item of profiles) {
-      const { profile } = item;
-      const backend = backendFor(profile.backend);
-      const running = runningProfilesNow.some((runningProfile) => runningProfile.id === profile.id);
-      const status = item.fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : "Ready";
-      const border = item.fileMissing ? pc.red : running ? pc.green : pc.dim;
-      const detailParts = [item.fileMissing ? pc.red("File not found") : profileDetailParts(profile, { drafters }).filter(Boolean)[0]];
-      const mtpLabel = profileMtpLabel(profile, drafters);
-      if (mtpLabel) detailParts.push(mtpLabel);
-      const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
-      if (ctxLabel) detailParts.push(ctxLabel);
-      console.log(renderCard(profile.label, renderRows([
-        ["Status", status],
-        ["Details", detailParts.join(pc.dim(" · "))],
-        ["Runs with", backend.label],
-      ]), { formatBorder: border }));
-    }
-  }
+  const countParts = [];
+  if (readyCount > 0) countParts.push(`${readyCount} ready`);
+  if (runningCount > 0) countParts.push(`${runningCount} running`);
+  if (missingCount > 0) countParts.push(`${missingCount} missing`);
+  if (setupCount > 0) countParts.push(`${setupCount} need setup`);
 
-  if (newModels.length > 0) {
-    console.log("\n" + pc.bold("Needs setup"));
-    for (const item of newModels) {
-      const caps = detectCapabilities(item.model.path, item.model.mmprojPath);
-      const detailParts = [capabilitySummary(caps)];
-      const mtpLabel = ggufMtpLabel(item.model, item.drafter);
-      if (mtpLabel) detailParts.push(mtpLabel);
-      detailParts.push(formatBytes(item.model.sizeBytes));
-      console.log(renderCard(item.model.label, renderRows([
-        ["Status", pc.yellow("Needs setup")],
-        ["Details", detailParts.join(pc.dim(" · "))],
-      ]), { formatBorder: pc.yellow }));
-    }
-  }
+  console.log(pc.bold("  offgrid-ai"));
+  console.log(pc.dim(`   ${countParts.join(" · ")} · ${DATA_DIR}`));
+}
 
-  for (const backendId of ["ollama", "omlx"]) {
-    const managedForBackend = managed.filter((item) => item.backendId === backendId);
-    if (managedForBackend.length === 0) continue;
-    const backend = BACKENDS[backendId];
-    console.log("\n" + pc.bold(`Via ${backend.label}`));
-    for (const item of managedForBackend) {
-      console.log(renderCard(item.model.label, renderRows([
-        ["Details", [item.model.id, item.model.quant].filter(Boolean).join(pc.dim(" · "))],
-      ]), { formatBorder: pc.dim }));
-    }
+export async function printBenchmarkLine() {
+  const repoPath = await findBenchmarkRepo();
+  if (repoPath) {
+    console.log(pc.green("   ✓") + " local-llm-visual-benchmark linked");
+  } else {
+    console.log(pc.yellow("   ○") + " to run benchmarks, pair with " + pc.cyan("local-llm-visual-benchmark"));
   }
+}
+
+function tableWidth() {
+  const header = [
+    optionPad("Status", null, OPTION_STATUS_WIDTH),
+    optionPad("Backend", null, OPTION_SOURCE_WIDTH),
+    optionPad("Model", null, OPTION_MODEL_WIDTH),
+    optionPad("Ctx", null, OPTION_CTX_WIDTH),
+    "Size",
+  ].join(OPTION_SEPARATOR.replace(/\x1b\[[0-9;]*m/g, ""));
+  return stripVTControlCharacters(header).length;
+}
+
+export function printTableHeader() {
+  console.log("");
+  const header = [
+    optionPad("Status", pc.dim, OPTION_STATUS_WIDTH),
+    optionPad("Backend", pc.dim, OPTION_SOURCE_WIDTH),
+    optionPad("Model", pc.dim, OPTION_MODEL_WIDTH),
+    optionPad("Ctx", pc.dim, OPTION_CTX_WIDTH),
+    pc.dim("Size"),
+  ].join(OPTION_SEPARATOR);
+  console.log(header);
+  console.log(pc.dim("─".repeat(tableWidth())));
+}
+
+export function printTableFooter() {
+  console.log(pc.dim("─".repeat(tableWidth())));
 }
 
 export async function printProfileDetails(profile) {

@@ -1,13 +1,12 @@
 import { ensureDirs } from "../config.mjs";
 import { backendFor, BACKENDS } from "../backends.mjs";
-import { createProfileFromModel, readProfile, saveProfile, deleteProfile } from "../profiles.mjs";
+import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
-import { pc, renderRows, renderCard, startInteractive, createPrompt } from "../ui.mjs";
+import { pc, startInteractive, createPrompt } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { isProfileFileMissing } from "../model-summary.mjs";
-import { modelSelectOption, printGgufModelDetails, printManagedModelDetails, printModelCards, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printTableHeader, printTableFooter, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 export async function modelsCommand(argv) {
@@ -42,15 +41,17 @@ export async function modelCommandCenter(initialCatalog) {
   for (const profile of normalized.profiles) {
     if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
   }
-  printWorkspaceSummary(normalized, runningProfilesNow);
-  printModelCards(allItems, { runningProfilesNow, drafters: normalized.drafters });
+  printWorkspaceHeader(normalized, runningProfilesNow);
+  await printBenchmarkLine();
+  printTableHeader();
 
   const prompt = createPrompt();
   try {
-    const selected = await prompt.choice("Select a model", allItems.map((item) => modelSelectOption(item, { runningProfilesNow, drafters: normalized.drafters })));
+    const selected = await prompt.choice("Select a model", allItems.map((item) => modelSelectOption(item, { runningProfilesNow })));
     if (!selected) return;
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;
+    printTableFooter();
 
     const actions = actionsForItem(item);
     const action = await prompt.choice(item.label, actions, actions[0].value);
@@ -61,16 +62,7 @@ export async function modelCommandCenter(initialCatalog) {
   }
 }
 
-function printWorkspaceSummary(normalized, runningProfilesNow) {
-  const fileMissingCount = normalized.profiles.filter((profile) => isProfileFileMissing(profile)).length;
-  const summaryBorder = fileMissingCount > 0 ? pc.red : normalized.newModels.length > 0 ? pc.yellow : pc.dim;
-  console.log("\n" + renderCard("Your local AI workspace", renderRows([
-    ["Setups", `${normalized.profiles.length} saved`],
-    ["Need setup", normalized.newModels.length > 0 ? pc.yellow(`${normalized.newModels.length} model${normalized.newModels.length === 1 ? "" : "s"}`) : pc.dim("none")],
-    ["Running", runningProfilesNow.length > 0 ? pc.green(String(runningProfilesNow.length)) : pc.dim("none")],
-    ["File missing", fileMissingCount > 0 ? pc.red(`${fileMissingCount} setup${fileMissingCount === 1 ? "" : "s"}`) : pc.dim("none")],
-  ]), { formatBorder: summaryBorder }));
-}
+
 
 function actionsForItem(item) {
   if (item.type === "profile") {
@@ -122,7 +114,12 @@ async function runItem(prompt, item) {
   if (!configured) return;
   await saveProfile(configured);
   await syncPiConfig(configured);
+  printProfileSaved(configured.id);
   return await runProfile(configured);
+}
+
+function printProfileSaved(id) {
+  console.log(pc.dim(`  Profile: ${profileJsonPath(id)}`));
 }
 
 async function setupItem(prompt, item, action) {
@@ -130,18 +127,23 @@ async function setupItem(prompt, item, action) {
     const configured = await configureLocalProfile(prompt, await readProfile(item.profile.id));
     if (!configured) return;
     await saveProfile(configured, { writeCommand: true });
-    return await syncPiConfig(configured);
+    await syncPiConfig(configured);
+    printProfileSaved(configured.id);
+    return;
   }
   if (item.type === "managed") {
     const profile = createManagedProfile(item.model, item.backendId);
     await saveProfile(profile);
-    return await syncPiConfig(profile);
+    await syncPiConfig(profile);
+    printProfileSaved(profile.id);
+    return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
   const configured = await configureLocalProfile(prompt, profile);
   if (!configured) return;
   await saveProfile(configured, { writeCommand: action === "reconfigure" });
-  return await syncPiConfig(configured);
+  await syncPiConfig(configured);
+  printProfileSaved(configured.id);
 }
 
 async function removeProfileInteractive(id) {

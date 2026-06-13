@@ -64,7 +64,7 @@ export async function configureLocalProfile(prompt, profile) {
     ["Sampling", samplingSummary(profile.flags)],
   ])));
   console.log(pc.dim("Larger context windows use more memory. KV cache precision controls memory used by attention history."));
-  console.log(pc.dim("Sampling defaults are shown for transparency; you can edit command.json later if needed.\n"));
+  console.log(pc.dim("Sampling defaults are shown for transparency; you can edit the profile later if needed.\n"));
 
   if (caps.mtp) {
     const drafterInfo = configured.drafterPath ? `\n  Drafter: ${configured.drafterPath}` : "";
