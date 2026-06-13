@@ -7,6 +7,8 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { ensureDirs, loadConfig, saveConfig } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
+import { hasPi, hasPiModel, syncPiConfig } from "./harness-pi.mjs";
+import { serverReady, startServer, waitForReady, stopProfile } from "./process.mjs";
 import { pc, createPrompt, renderRows, renderSection } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -151,7 +153,7 @@ function printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, run
   console.log(`  3. ${pc.cyan(runnerCommand)}, then copy this run's prompt from the gallery and paste it into ${runnerLabel}`);
 }
 
-async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile }) {
+async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps = true }) {
   const toolPrompt = buildToolPrompt(benchmark);
   const now = new Date();
   const runId = createRunId(now);
@@ -235,7 +237,9 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
     ["Source", backendLabel || modelSource],
   ])));
 
-  printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, runnerLabel });
+  if (showNextSteps) {
+    printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, runnerLabel });
+  }
 
   return runDirectory;
 }
@@ -510,7 +514,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
     signal.addEventListener("abort", abortListener);
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     child.on("exit", async (code) => {
       if (signal) signal.removeEventListener("abort", abortListener);
       if (streamBuffer.trim()) {
@@ -528,13 +532,13 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
 
       if (cancelled) {
         runResult.error = { message: "Cancelled by user" };
-        reject(new Error("Cancelled by user"));
+        resolve(runResult);
         return;
       }
 
       if (runResult.exitCode !== 0) {
         runResult.error = { message: `Pi exited with code ${runResult.exitCode}` };
-        reject(new Error(runResult.error.message));
+        resolve(runResult);
         return;
       }
 
@@ -546,7 +550,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       await streamHandle.close();
       await stderrHandle.close();
       runResult.error = { message: err.message };
-      reject(err);
+      resolve(runResult);
     });
   });
 }
@@ -780,6 +784,159 @@ export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics
   return metadata;
 }
 
+async function ensureServerForBenchmark(profile) {
+  const backend = backendFor(profile.backend);
+  if (await serverReady(profile.baseUrl)) {
+    console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
+    return { started: false };
+  }
+
+  if (backend.type === "managed-server") {
+    throw new Error(`${backend.label} is not running at ${profile.baseUrl}. Start it and try again.`);
+  }
+
+  console.log(pc.dim(`Starting ${backend.label} for ${profile.label}...`));
+  const state = await startServer(profile);
+  await waitForReady(profile, state?.pid, state?.rawLogPath);
+  console.log(pc.green(`[ready] ${profile.baseUrl}/models`));
+  return { started: true, state };
+}
+
+async function runPreparedBenchmark(profile, runDirectory, options = {}) {
+  const controller = new AbortController();
+  let serverStarted = false;
+  let metadata = null;
+
+  const onSigint = () => {
+    controller.abort();
+  };
+  process.on("SIGINT", onSigint);
+
+  try {
+    if (!(await hasPi())) {
+      console.log(pc.yellow("\nPi is not installed. Run prepared for manual execution."));
+      return metadata;
+    }
+
+    const serverState = await ensureServerForBenchmark(profile);
+    serverStarted = serverState.started;
+
+    if (!(await hasPiModel(profile))) {
+      await syncPiConfig(profile);
+    }
+
+    const runResult = await runBenchmarkInPi(profile, runDirectory, { signal: controller.signal });
+
+    let speedMetrics = null;
+    if (!runResult.error) {
+      try {
+        speedMetrics = await queryServerMetrics(profile);
+      } catch (err) {
+        runResult.error = { message: `Speed metrics query failed: ${err.message}` };
+      }
+    }
+
+    metadata = await finalizeBenchmarkRun(runDirectory, runResult, speedMetrics);
+    renderBenchmarkSummary(metadata);
+  } catch (err) {
+    const failedResult = {
+      error: { message: err.message },
+      wallClockMs: null,
+      agentTurns: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      toolCalls: 0,
+      toolResults: 0,
+      perTurn: [],
+    };
+    metadata = await finalizeBenchmarkRun(runDirectory, failedResult, null);
+    renderBenchmarkSummary(metadata);
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    if (serverStarted && !options.keepServer) {
+      const backend = backendFor(profile.backend);
+      if (backend.type !== "managed-server") {
+        const result = await stopProfile(profile);
+        console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function formatMetric(value, formatter) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return pc.dim("—");
+  return formatter(value);
+}
+
+function formatMs(ms) {
+  return formatMetric(ms, (n) => (n < 1000 ? `${Math.round(n)} ms` : `${(n / 1000).toFixed(1)} s`));
+}
+
+function formatNumber(n) {
+  return formatMetric(n, (v) => v.toLocaleString());
+}
+
+function formatTokPerSec(n) {
+  return formatMetric(n, (v) => `${v.toFixed(1)} tok/s`);
+}
+
+function formatPercent(n) {
+  return formatMetric(n, (v) => `${(v * 100).toFixed(0)} %`);
+}
+
+export function renderBenchmarkSummary(metadata) {
+  const { status, results, runner, error } = metadata;
+
+  const agentRows = [
+    ["Status", status === "completed" ? pc.green("completed") : pc.red(status ?? "failed")],
+    ["Duration", formatMs(results?.wallClockMs)],
+    ["Agent turns", formatNumber(results?.agentTurns)],
+    ["Input tokens", formatNumber(runner?.tokenMetrics?.promptTokens)],
+    ["Output tokens", formatNumber(runner?.tokenMetrics?.completionTokens)],
+    ["Total tokens", formatNumber(runner?.tokenMetrics?.totalTokens)],
+    ["Tool calls", formatNumber(results?.toolCalls)],
+    ["Tool results", formatNumber(results?.toolResults)],
+    ["Output files", (results?.outputFiles?.length ?? 0) > 0 ? results.outputFiles.join(", ") : pc.dim("—")],
+  ];
+
+  console.log("");
+  console.log(renderSection("Benchmark Result", renderRows(agentRows)));
+
+  if (status === "completed" && runner?.speedMetrics) {
+    const speed = runner.speedMetrics;
+    const speedRows = [
+      ["Prefill tok/s", formatTokPerSec(speed.prefillTokensPerSecond)],
+      ["Generation tok/s", formatTokPerSec(speed.generationTokensPerSecond)],
+      ["TTFT", formatMs(speed.ttftMs)],
+      ["Speculative decode", formatPercent(speed.speculativeDecodeAcceptance)],
+      ["KV cache tokens", formatNumber(speed.kvCacheTokens)],
+      ["Model load time", formatMs(speed.modelLoadMs)],
+      ["Metric source", speed.metricSource ?? pc.dim("—")],
+    ];
+    console.log(renderSection("Speed Metrics", renderRows(speedRows)));
+  } else if (error) {
+    console.log(renderSection("Error", pc.red(error.message ?? "Unknown error")));
+  }
+}
+
+function benchmarkModelSource(profile) {
+  if (!profile) return "cloud";
+  return profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+}
+
+async function chooseBenchmarkAction(prompt, canRun) {
+  const choices = [
+    { value: "run", label: "Run Benchmark", hint: "Automated with Pi" },
+    { value: "prepare", label: "Prepare Benchmark (manual)", hint: "Copy prompt and run yourself" },
+  ];
+  return await prompt.choice("Action", canRun ? choices : choices.filter((c) => c.value === "prepare"), canRun ? "run" : "prepare");
+}
+
 // ── Benchmark from a selected profile (from model picker) ────────────────
 
 export async function benchmarkForProfile(profile) {
@@ -807,10 +964,19 @@ export async function benchmarkForProfile(profile) {
     if (!selectedBenchmark) return;
 
     const modelId = profile.modelAlias;
-    const modelSource = profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+    const modelSource = benchmarkModelSource(profile);
     const backendLabel = backendFor(profile.backend).label;
 
-    return await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile });
+    const canRun = (await hasPi()) && modelSource !== "cloud";
+    const action = await chooseBenchmarkAction(prompt, canRun);
+
+    const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps: action === "prepare" });
+
+    if (action === "run") {
+      return await runPreparedBenchmark(profile, runDirectory);
+    }
+
+    return runDirectory;
   } finally {
     prompt.close();
   }
@@ -864,7 +1030,7 @@ export async function benchmarkFlow() {
       profile = profiles.find((p) => p.id === profileId);
       if (!profile) return;
       modelId = profile.modelAlias;
-      modelSource = profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+      modelSource = benchmarkModelSource(profile);
       backendLabel = backendFor(profile.backend).label;
     } else {
       backendLabel = await prompt.text("Backend label", "cloud");
@@ -873,7 +1039,16 @@ export async function benchmarkFlow() {
       modelSource = "cloud";
     }
 
-    return await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile });
+    const canRun = (await hasPi()) && modelSource !== "cloud" && profile != null;
+    const action = await chooseBenchmarkAction(prompt, canRun);
+
+    const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps: action === "prepare" });
+
+    if (action === "run" && profile) {
+      return await runPreparedBenchmark(profile, runDirectory);
+    }
+
+    return runDirectory;
   } finally {
     prompt.close();
   }

@@ -426,7 +426,7 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 5 — Wire into benchmark flows
 
-- [ ] Update `benchmarkForProfile()` and `benchmarkFlow()`:
+- [x] Update `benchmarkForProfile()` and `benchmarkFlow()`:
   - Keep the existing menu with both **Run Benchmark** and **Prepare Benchmark (manual)** actions.
   - For **Run Benchmark**: after `prepareBenchmarkRun()`, check `hasPi()` and whether profile is a local-server backend. If yes, run `runBenchmarkInPi()` then `queryServerMetrics()` then `finalizeBenchmarkRun()` and print the final metrics table.
   - If Pi is missing or model is cloud-only, fall back to prepare-only with `printBenchmarkNextSteps()`.
