@@ -387,23 +387,23 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 2 — Add stream runner
 
-- [ ] Add `runBenchmarkInPi(profile, runDirectory)` in `src/benchmark.mjs`:
+- [x] Add `runBenchmarkInPi(profile, runDirectory)` in `src/benchmark.mjs`:
   - Resolve Pi model string from `profile.harnesses.pi.model`, falling back to `${providerId}/${modelAlias}`.
   - Spawn `pi --model <model> --mode json -p @prompt.md` with `cwd: runDirectory`.
   - Capture stdout line-by-line as JSONL.
   - Pipe stderr to `stderr.log` in the run directory.
   - Write every line to `stream.ndjson`.
   - Accumulate per-turn usage from `turn_end`.
-  - Accumulate per-turn wall-clock from first `message_start` per turn to `turn_end`.
+  - Accumulate per-turn wall-clock from session/agent_start and consecutive `turn_end` timestamps.
   - Count tool calls from `message_end` assistant content and `tool_execution_start`.
   - Resolve on `agent_end`; reject on non-zero exit code.
-- [ ] Add `renderBenchmarkStream()` for real-time terminal output:
+- [x] Add `renderBenchmarkStream()` for real-time terminal output:
   - `thinking_delta` → magenta.
   - `text_delta` → green.
   - `toolcall_start` / tool name → yellow.
   - `tool_execution_update` → yellow/dim.
   - Accept both `toolcall_*` and `tool_call_*` event subtypes.
-- [ ] Reconstruct and write `response.raw.txt` from the streamed text, thinking, and tool-call summary.
+- [x] Reconstruct and write `response.raw.txt` from the streamed text, thinking, and tool-call summary.
 
 ### Phase 3 — Add backend-aware speed metrics
 

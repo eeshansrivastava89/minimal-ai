@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { execFile } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { ensureDirs, loadConfig, saveConfig } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
@@ -238,6 +238,337 @@ async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSo
   printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, runnerLabel });
 
   return runDirectory;
+}
+
+// ── Run benchmark in Pi (non-interactive JSON mode) ───────────────────────
+
+const BENCH_COLORS = {
+  thinking: pc.magenta,
+  text: pc.green,
+  tool: pc.yellow,
+  toolOutput: pc.dim,
+  error: pc.red,
+  info: pc.cyan,
+  dim: pc.dim,
+};
+
+function formatToolCall(toolCall) {
+  const path = toolCall.arguments?.path || toolCall.arguments?.file_path || toolCall.arguments?.filename || "";
+  const summary = path ? ` → ${path}` : "";
+  return `[toolCall] ${toolCall.name}${summary}`;
+}
+
+function renderStreamEvent(parsed, state) {
+  const type = parsed.type;
+
+  switch (type) {
+    case "session":
+      console.log(BENCH_COLORS.dim(`[session] ${parsed.id}`));
+      break;
+    case "agent_start":
+      console.log(BENCH_COLORS.dim("[agent_start]"));
+      break;
+    case "turn_start": {
+      state.turn += 1;
+      console.log(BENCH_COLORS.info(`\n[turn ${state.turn}]`));
+      break;
+    }
+    case "message_start": {
+      const msg = parsed.message;
+      if (msg?.role === "assistant" && msg.provider && msg.model) {
+        console.log(BENCH_COLORS.info(`[assistant] ${msg.provider}/${msg.model}`));
+      }
+      break;
+    }
+    case "message_update": {
+      const evt = parsed.assistantMessageEvent;
+      if (!evt) return;
+      const subtype = String(evt.type ?? "").replace(/_/gu, "");
+      if (subtype === "thinkingstart" || subtype === "thinkingdelta") {
+        process.stdout.write(BENCH_COLORS.thinking(evt.delta || ""));
+      } else if (subtype === "textstart" || subtype === "textdelta") {
+        process.stdout.write(BENCH_COLORS.text(evt.delta || ""));
+      } else if (subtype === "toolcallstart") {
+        console.log(BENCH_COLORS.tool("\n[tool_call_start]"));
+      } else if (subtype === "toolcalldelta") {
+        process.stdout.write(BENCH_COLORS.tool(evt.delta || ""));
+      } else if (subtype === "toolcallend") {
+        console.log(BENCH_COLORS.tool("[tool_call_end]"));
+      }
+      break;
+    }
+    case "message_end": {
+      const msg = parsed.message;
+      if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+        for (const item of msg.content) {
+          if (item.type === "toolCall") {
+            console.log(BENCH_COLORS.tool(`\n${formatToolCall(item)}`));
+          }
+        }
+      }
+      break;
+    }
+    case "tool_execution_start":
+      console.log(BENCH_COLORS.tool(`\n[exec] ${parsed.toolName}`));
+      break;
+    case "tool_execution_update":
+      if (parsed.content) {
+        process.stdout.write(BENCH_COLORS.toolOutput(parsed.content));
+      }
+      break;
+    case "tool_execution_end":
+      console.log(BENCH_COLORS.tool(`[exec done] ${parsed.toolName}`));
+      break;
+    case "toolResult": {
+      const errorFlag = parsed.isError ? BENCH_COLORS.error(" error") : "";
+      console.log(BENCH_COLORS.tool(`\n[result] ${parsed.toolName}${errorFlag}`));
+      break;
+    }
+    case "agent_end":
+      console.log(BENCH_COLORS.dim("\n[agent_end]"));
+      break;
+    default:
+      break;
+  }
+}
+
+export function piModelString(profile) {
+  return profile.harnesses?.pi?.model ?? `${profile.providerId}/${profile.modelAlias}`;
+}
+
+export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
+  const model = piModelString(profile);
+  const args = ["--model", model, "--mode", "json", "-p", "@prompt.md"];
+
+  const child = spawn("pi", args, {
+    cwd: runDirectory,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const runResult = {
+    model,
+    exitCode: null,
+    wallClockMs: null,
+    agentTurns: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    toolCalls: 0,
+    toolResults: 0,
+    perTurn: [],
+    rawResponseLines: [],
+    error: null,
+  };
+
+  let streamBuffer = "";
+  let responseBuffer = "";
+  let currentTurnStartMs = null;
+  let lastTurnEndMs = null;
+  let runStartMs = null;
+  let firstEventMs = null;
+  let lastEventMs = null;
+  let cancelled = false;
+
+  const streamPath = join(runDirectory, "stream.ndjson");
+  const stderrPath = join(runDirectory, "stderr.log");
+  const responsePath = join(runDirectory, "response.raw.txt");
+
+  const streamHandle = await openFileHandle(streamPath, "w");
+  const stderrHandle = await openFileHandle(stderrPath, "w");
+
+  const renderState = { turn: 0 };
+
+  function appendResponse(text) {
+    responseBuffer += text;
+  }
+
+  function flushResponse() {
+    if (responseBuffer) {
+      runResult.rawResponseLines.push(responseBuffer);
+      responseBuffer = "";
+    }
+  }
+
+  function updateTimeBounds(timestamp) {
+    if (!timestamp) return;
+    if (firstEventMs === null) firstEventMs = timestamp;
+    lastEventMs = timestamp;
+  }
+
+  function beginTurn() {
+    runResult.agentTurns += 1;
+    currentTurnStartMs = lastTurnEndMs ?? runStartMs ?? null;
+  }
+
+  function endTurn(usage, timestamp) {
+    const turnEndMs = timestamp ?? null;
+    const wallClockMs = currentTurnStartMs && turnEndMs ? turnEndMs - currentTurnStartMs : null;
+    runResult.perTurn.push({
+      turn: runResult.agentTurns,
+      inputTokens: usage?.input ?? 0,
+      outputTokens: usage?.output ?? 0,
+      cacheRead: usage?.cacheRead ?? 0,
+      cacheWrite: usage?.cacheWrite ?? 0,
+      wallClockMs,
+      toolCalls: 0,
+    });
+    if (turnEndMs) lastTurnEndMs = turnEndMs;
+    currentTurnStartMs = null;
+  }
+
+  function processLine(line) {
+    if (!line.trim()) return;
+    streamHandle.write(line + "\n");
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch (err) {
+      console.log(BENCH_COLORS.error(`[parse error] ${err.message}`));
+      return;
+    }
+
+    const timestamp = extractTimestamp(parsed);
+    updateTimeBounds(timestamp);
+
+    renderStreamEvent(parsed, renderState);
+
+    if (parsed.type === "session" || parsed.type === "agent_start") {
+      if (timestamp && runStartMs === null) runStartMs = timestamp;
+    }
+
+    if (parsed.type === "turn_start") {
+      beginTurn();
+    }
+
+    if (parsed.type === "turn_end" && parsed.message?.usage) {
+      const usage = parsed.message.usage;
+      runResult.promptTokens += usage.input ?? 0;
+      runResult.completionTokens += usage.output ?? 0;
+      runResult.totalTokens += usage.totalTokens ?? 0;
+      runResult.cacheRead += usage.cacheRead ?? 0;
+      runResult.cacheWrite += usage.cacheWrite ?? 0;
+      endTurn(usage, timestamp);
+    }
+
+    if (parsed.type === "message_update" && parsed.assistantMessageEvent) {
+      const evt = parsed.assistantMessageEvent;
+      const subtype = String(evt.type ?? "").replace(/_/gu, "");
+      if (subtype === "thinkingdelta" || subtype === "textdelta") {
+        appendResponse(evt.delta || "");
+      }
+    }
+
+    if (parsed.type === "message_end" && parsed.message?.role === "assistant") {
+      flushResponse();
+      const content = parsed.message.content ?? [];
+      for (const item of content) {
+        if (item.type === "toolCall") {
+          runResult.toolCalls += 1;
+          appendResponse(`\n${formatToolCall(item)}\n`);
+          const currentTurn = runResult.perTurn[runResult.perTurn.length - 1];
+          if (currentTurn) currentTurn.toolCalls += 1;
+        }
+      }
+    }
+
+    if (parsed.type === "toolResult") {
+      runResult.toolResults += 1;
+      const status = parsed.isError ? "error" : "ok";
+      appendResponse(`\n[toolResult] ${parsed.toolName} (${status})\n`);
+    }
+
+    if (parsed.type === "agent_end") {
+      flushResponse();
+    }
+  }
+
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    streamBuffer += chunk;
+    const lines = streamBuffer.split("\n");
+    streamBuffer = lines.pop();
+    for (const line of lines) {
+      processLine(line);
+    }
+  });
+
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    stderrHandle.write(chunk);
+  });
+
+  const abortListener = () => {
+    if (cancelled) return;
+    cancelled = true;
+    console.log(BENCH_COLORS.error("\n\n[Cancelled by user]"));
+    child.kill("SIGTERM");
+  };
+
+  if (signal) {
+    signal.addEventListener("abort", abortListener);
+  }
+
+  return new Promise((resolve, reject) => {
+    child.on("exit", async (code) => {
+      if (signal) signal.removeEventListener("abort", abortListener);
+      if (streamBuffer.trim()) {
+        processLine(streamBuffer);
+      }
+      flushResponse();
+      await streamHandle.close();
+      await stderrHandle.close();
+      await writeFile(responsePath, runResult.rawResponseLines.join(""), "utf8");
+
+      runResult.exitCode = code ?? 0;
+      if (firstEventMs !== null && lastEventMs !== null) {
+        runResult.wallClockMs = lastEventMs - firstEventMs;
+      }
+
+      if (cancelled) {
+        runResult.error = { message: "Cancelled by user" };
+        reject(new Error("Cancelled by user"));
+        return;
+      }
+
+      if (runResult.exitCode !== 0) {
+        runResult.error = { message: `Pi exited with code ${runResult.exitCode}` };
+        reject(new Error(runResult.error.message));
+        return;
+      }
+
+      resolve(runResult);
+    });
+
+    child.on("error", async (err) => {
+      if (signal) signal.removeEventListener("abort", abortListener);
+      await streamHandle.close();
+      await stderrHandle.close();
+      runResult.error = { message: err.message };
+      reject(err);
+    });
+  });
+}
+
+function extractTimestamp(event) {
+  const raw = event?.message?.timestamp ?? event?.timestamp ?? event?.assistantMessageEvent?.partial?.timestamp;
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const iso = event?.message?.createdAt ?? event?.createdAt ?? event?.created_at;
+  if (typeof iso === "string") {
+    const parsed = Date.parse(iso);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+async function openFileHandle(path, flags) {
+  const { open } = await import("node:fs/promises");
+  return open(path, flags);
 }
 
 // ── Benchmark from a selected profile (from model picker) ────────────────
