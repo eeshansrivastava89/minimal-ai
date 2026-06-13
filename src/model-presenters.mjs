@@ -63,8 +63,8 @@ function optionSizeLabel(item) {
     return formatBytes(item.model.sizeBytes);
   }
   // managed
-  if (item.model.quant) return item.model.quant;
   if (item.model.sizeBytes) return formatBytes(item.model.sizeBytes);
+  if (item.model.quant) return item.model.quant;
   return "—";
 }
 
