@@ -12,6 +12,7 @@ import { findBenchmarkRepo } from "./benchmark.mjs";
 const OPTION_SEPARATOR = pc.dim("  │  ");
 const OPTION_STATUS_WIDTH = 10;
 const OPTION_SOURCE_WIDTH = 14;
+const OPTION_CTX_WIDTH = 5;
 
 const { stripVTControlCharacters } = await import("node:util");
 
@@ -45,9 +46,9 @@ function optionSourceTag(sourceId, label) {
 
 function optionCtxLabel(item) {
   if (item.type === "profile" && item.profile.flags?.ctxSize) {
-    return `${(item.profile.flags.ctxSize / 1000).toFixed(0)}k`;
+    return optionPad(`${(item.profile.flags.ctxSize / 1000).toFixed(0)}k`, null, OPTION_CTX_WIDTH);
   }
-  return "—";
+  return optionPad("—", null, OPTION_CTX_WIDTH);
 }
 
 function optionSizeLabel(item) {
@@ -75,7 +76,7 @@ export function modelNameWidth(items) {
 }
 
 function optionLabel({ status, source, name, ctx, size, nameWidth }) {
-  return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].filter(Boolean).join(OPTION_SEPARATOR);
+  return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
 export function modelSelectOption(item, { runningProfilesNow, nameWidth }) {
