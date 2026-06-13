@@ -28,17 +28,7 @@ export function createRunId(date = new Date()) {
 }
 
 export function buildToolPrompt(benchmark, kind) {
-  if (kind === "data-science") return benchmark.prompt;
-  return [
-    "Create a complete, self-contained HTML file for the request below.",
-    "Write the file as `index.html` in the current working directory.",
-    "Do not create any folders, do not infer a filesystem path, and do not print the HTML in chat.",
-    "",
-    "The HTML must include all CSS and JavaScript inline and must not depend on external network assets.",
-    "After building the page, run a visual QA pass with agent-browser or Playwright: open the saved index.html, inspect the rendered result, and fix any obvious layout, animation, console, or viewport issues before you finish.",
-    "",
-    benchmark.prompt,
-  ].join("\n");
+  return benchmark.prompt;
 }
 
 export async function loadBenchmarks(benchDir) {
