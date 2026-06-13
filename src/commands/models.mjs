@@ -6,7 +6,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printTableHeader, printTableFooter, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, modelNameWidth, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 export async function modelsCommand(argv) {
@@ -43,15 +43,15 @@ export async function modelCommandCenter(initialCatalog) {
   }
   printWorkspaceHeader(normalized, runningProfilesNow);
   await printBenchmarkLine();
-  printTableHeader();
+
+  const nameWidth = modelNameWidth(allItems);
 
   const prompt = createPrompt();
   try {
-    const selected = await prompt.choice("Select a model", allItems.map((item) => modelSelectOption(item, { runningProfilesNow })));
+    const selected = await prompt.choice("Select a model", allItems.map((item) => modelSelectOption(item, { runningProfilesNow, nameWidth })));
     if (!selected) return;
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;
-    printTableFooter();
 
     const actions = actionsForItem(item);
     const action = await prompt.choice(item.label, actions, actions[0].value);

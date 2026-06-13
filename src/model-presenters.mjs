@@ -12,15 +12,13 @@ import { findBenchmarkRepo } from "./benchmark.mjs";
 const OPTION_SEPARATOR = pc.dim("  │  ");
 const OPTION_STATUS_WIDTH = 10;
 const OPTION_SOURCE_WIDTH = 14;
-const OPTION_MODEL_WIDTH = 26;
-const OPTION_CTX_WIDTH = 5;
 
 const { stripVTControlCharacters } = await import("node:util");
 
 function optionPad(text, color, width) {
   const visible = stripVTControlCharacters(String(text)).length;
-  const padded = String(text).padEnd(width);
-  return color ? color(padded.slice(0, padded.length - Math.max(0, visible - width))) : padded;
+  const padding = Math.max(1, width - visible);
+  return (color ? color(String(text)) : String(text)) + " ".repeat(padding);
 }
 
 function optionStatusTag(kind) {
@@ -69,11 +67,18 @@ function optionSizeLabel(item) {
   return "—";
 }
 
-function optionLabel({ status, source, name, ctx, size }) {
-  return [status, source, pc.bold(optionPad(name, null, OPTION_MODEL_WIDTH)), ctx, pc.dim(size)].filter(Boolean).join(OPTION_SEPARATOR);
+export function modelNameWidth(items) {
+  const maxName = Math.max(...items.map((item) =>
+    stripVTControlCharacters(item.label ?? item.model?.label ?? item.profile?.label ?? "").length,
+  ));
+  return Math.max(20, maxName + 2);
 }
 
-export function modelSelectOption(item, { runningProfilesNow }) {
+function optionLabel({ status, source, name, ctx, size, nameWidth }) {
+  return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].filter(Boolean).join(OPTION_SEPARATOR);
+}
+
+export function modelSelectOption(item, { runningProfilesNow, nameWidth }) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
@@ -83,6 +88,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
         status: optionStatusTag(item.fileMissing ? "missing" : running ? "running" : "ready"),
         source: optionSourceTag(item.profile.backend, backend.label),
         name: item.profile.label,
+        nameWidth,
         ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
@@ -95,6 +101,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
         status: optionStatusTag("setup"),
         source: optionSourceTag("gguf", "GGUF file"),
         name: item.model.label,
+        nameWidth,
         ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
@@ -107,6 +114,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
       status: optionStatusTag("setup"),
       source: optionSourceTag(item.backendId, backend.label),
       name: item.model.label,
+      nameWidth,
       ctx: optionCtxLabel(item),
       size: optionSizeLabel(item),
     }),
@@ -121,13 +129,13 @@ export function printWorkspaceHeader(normalized, runningProfilesNow) {
   const setupCount = normalized.newModels.length + normalized.managedItems.length;
 
   const countParts = [];
-  if (readyCount > 0) countParts.push(`${readyCount} ready`);
   if (runningCount > 0) countParts.push(`${runningCount} running`);
-  if (missingCount > 0) countParts.push(`${missingCount} missing`);
-  if (setupCount > 0) countParts.push(`${setupCount} need setup`);
+  if (readyCount > 0) countParts.push(pc.green(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
+  if (missingCount > 0) countParts.push(pc.red(`${missingCount} model${missingCount === 1 ? "" : "s"} missing`));
+  if (setupCount > 0) countParts.push(pc.yellow(`${setupCount} model${setupCount === 1 ? "" : "s"} need${setupCount === 1 ? "s" : ""} setup`));
 
-  console.log(pc.bold("  offgrid-ai"));
-  console.log(pc.dim(`   ${countParts.join(" · ")} · ${DATA_DIR}`));
+  console.log(pc.dim(`   ${countParts.join(" · ")}`));
+  console.log(pc.dim(`   Profiles: ${DATA_DIR}`));
 }
 
 export async function printBenchmarkLine() {
@@ -137,34 +145,6 @@ export async function printBenchmarkLine() {
   } else {
     console.log(pc.yellow("   ○") + " to run benchmarks, pair with " + pc.cyan("local-llm-visual-benchmark"));
   }
-}
-
-function tableWidth() {
-  const header = [
-    optionPad("Status", null, OPTION_STATUS_WIDTH),
-    optionPad("Backend", null, OPTION_SOURCE_WIDTH),
-    optionPad("Model", null, OPTION_MODEL_WIDTH),
-    optionPad("Ctx", null, OPTION_CTX_WIDTH),
-    "Size",
-  ].join("  \u2502  ");
-  return stripVTControlCharacters(header).length;
-}
-
-export function printTableHeader() {
-  console.log("");
-  const header = [
-    optionPad("Status", pc.dim, OPTION_STATUS_WIDTH),
-    optionPad("Backend", pc.dim, OPTION_SOURCE_WIDTH),
-    optionPad("Model", pc.dim, OPTION_MODEL_WIDTH),
-    optionPad("Ctx", pc.dim, OPTION_CTX_WIDTH),
-    pc.dim("Size"),
-  ].join(OPTION_SEPARATOR);
-  console.log(header);
-  console.log(pc.dim("─".repeat(tableWidth())));
-}
-
-export function printTableFooter() {
-  console.log(pc.dim("─".repeat(tableWidth())));
 }
 
 export async function printProfileDetails(profile) {
@@ -207,7 +187,7 @@ export async function printProfileDetails(profile) {
 
 export function printGgufModelDetails(model, drafter) {
   const { caps, parts } = ggufDetailParts(model, drafter);
-  parts.push(formatBytes(model.sizeBytes));
+  parts.push(formatBytes(model.model.sizeBytes));
   console.log("\n" + renderSection("Downloaded model", renderRows([
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],
