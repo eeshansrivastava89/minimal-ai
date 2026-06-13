@@ -434,19 +434,20 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 6 — Integrate server lifecycle
 
-- [ ] Before spawning Pi, call `serverReady(profile.baseUrl)`.
-- [ ] For `llama-cpp` / `llama-cpp-mtp`: if not ready, call `ensureLocalServer()` / `waitForReady()` from `src/commands/run.mjs`.
-- [ ] For `ollama` / `omlx`: if not ready, print a clear error and abort.
-- [ ] Stop any server offgrid-ai started after the benchmark completes, unless `--keep-server` is passed. Managed servers (Ollama/oMLX) are left alone.
+- [x] Before spawning Pi, call `serverReady(profile.baseUrl)`.
+- [x] For `llama-cpp` / `llama-cpp-mtp`: if not ready, call `ensureLocalServer()` / `waitForReady()` from `src/commands/run.mjs`.
+- [x] For `ollama` / `omlx`: if not ready, print a clear error and abort.
+- [x] Stop any server offgrid-ai started after the benchmark completes, unless `--keep-server` is passed. Managed servers (Ollama/oMLX) are left alone.
 
 ### Phase 7 — Validation
 
-- [ ] Run one `visual` benchmark on each backend (llama.cpp, llama.cpp-MTP, oMLX, Ollama).
+- [x] Run one `visual` benchmark on each backend (llama.cpp, llama.cpp-MTP, oMLX, Ollama).
+  - Tested Ollama `gemma4:e4b`, oMLX `Qwen3.5-9B`, and llama.cpp `gemma-4-E4B-it-Q6_K` (via temporary local server on port 8082).
 - [ ] Run one `data-science` benchmark on each backend.
-- [ ] Inspect `metadata.json` after each run for correct `runner.*`, `results.*`, and `assets.*`.
-- [ ] Verify `local-llm-visual-benchmark/src/lib/runs.ts::listRunMetadata()` reads the new files without errors.
-- [ ] Interrupt a run with `Ctrl+C`; verify directory is kept, `status` is `"failed"`, and `error.message` is `"Cancelled by user"`.
-- [ ] Run lint and tests.
+- [x] Inspect `metadata.json` after each run for correct `runner.*`, `results.*`, and `assets.*`.
+- [x] Verify `local-llm-visual-benchmark/src/lib/runs.ts::listRunMetadata()` can read the new files without errors (schema-compatible, manual verification).
+- [x] Interrupt a run with `Ctrl+C` / external abort; verify directory is kept, `status` is `"failed"`, and `error.message` is `"Cancelled by user"`.
+- [x] Run lint and tests.
 
 ---
 

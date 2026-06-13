@@ -153,7 +153,7 @@ function printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, run
   console.log(`  3. ${pc.cyan(runnerCommand)}, then copy this run's prompt from the gallery and paste it into ${runnerLabel}`);
 }
 
-async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps = true }) {
+export async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps = true }) {
   const toolPrompt = buildToolPrompt(benchmark);
   const now = new Date();
   const runId = createRunId(now);
@@ -614,7 +614,10 @@ async function queryLlamaCppMetrics(profile) {
   }
 
   const data = await response.json();
-  const timings = data.timings ?? {};
+  const timings = data.timings;
+  if (!timings || typeof timings.prompt_per_second !== "number" || typeof timings.predicted_per_second !== "number") {
+    throw new Error("llama.cpp response did not include usable timings object");
+  }
   const draftN = timings.draft_n;
   const draftAccepted = timings.draft_n_accepted;
 
@@ -802,8 +805,11 @@ async function ensureServerForBenchmark(profile) {
   return { started: true, state };
 }
 
-async function runPreparedBenchmark(profile, runDirectory, options = {}) {
+export async function runPreparedBenchmark(profile, runDirectory, options = {}) {
   const controller = new AbortController();
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
   let serverStarted = false;
   let metadata = null;
 
