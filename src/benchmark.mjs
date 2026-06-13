@@ -530,7 +530,6 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       const usage = parsed.message.usage;
       runResult.promptTokens += usage.input ?? 0;
       runResult.completionTokens += usage.output ?? 0;
-      runResult.totalTokens += usage.totalTokens ?? 0;
       runResult.cacheRead += usage.cacheRead ?? 0;
       runResult.cacheWrite += usage.cacheWrite ?? 0;
       endTurn(usage, timestamp);
@@ -866,20 +865,24 @@ export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics
   }
 
   const success = existsSync(requiredPath) && (await readFile(requiredPath, "utf8")).trim().length > 0;
+  const hasTurns = runResult.agentTurns > 0;
+  const failed = runResult.error || !success || !hasTurns;
 
-  metadata.status = runResult.error ? "failed" : "completed";
+  metadata.status = failed ? "failed" : "completed";
   metadata.updatedAt = timestamp;
-  if (runResult.error) {
+  if (failed) {
     metadata.failedAt = timestamp;
   } else {
     metadata.completedAt = timestamp;
   }
 
+  const totalTokens = runResult.promptTokens + runResult.completionTokens;
+
   metadata.runner.tokenMetrics = {
-    reported: true,
+    reported: hasTurns,
     promptTokens: runResult.promptTokens,
     completionTokens: runResult.completionTokens,
-    totalTokens: runResult.totalTokens,
+    totalTokens,
   };
 
   metadata.runner.speedMetrics = speedMetrics;
