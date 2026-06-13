@@ -89,6 +89,8 @@ describe("regressions", () => {
       npm_config_global: "true",
       npm_config_prefix: prefix,
       PATH: `${npmBin}:${process.env.PATH ?? ""}`,
+      OFFGRID_SKIP_POSTINSTALL: "",
+      CI: "",
     };
 
     await execFileAsync(process.execPath, ["src/postinstall.mjs"], { env, cwd: process.cwd() });
@@ -112,6 +114,8 @@ describe("regressions", () => {
       npm_config_global: "true",
       npm_config_prefix: prefix,
       PATH: `${npmBin}:${process.env.PATH ?? ""}`,
+      OFFGRID_SKIP_POSTINSTALL: "",
+      CI: "",
     };
 
     await execFileAsync(process.execPath, ["src/postinstall.mjs"], { env, cwd: process.cwd() });
