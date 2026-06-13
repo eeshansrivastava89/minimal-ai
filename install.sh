@@ -27,6 +27,7 @@ set -euo pipefail
 
 DRY_RUN=false
 SKIP_RUN=false
+DEFAULT_RC="${DEFAULT_RC:-}"  # allow callers to override target rc file
 
 for arg in "$@"; do
   case "$arg" in
@@ -153,13 +154,12 @@ if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
   else
     # Not on PATH — add it
     export PATH="$NPM_BIN:$PATH"
-    ok "Added $NPM_BIN to PATH for this session"
     ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed"
 
     # Add to shell config for future sessions (pick first existing or .zshrc)
     ADDED_TO_RC=false
     # Respect user's shell preference; default to .zshrc on macOS
-    [[ "$OSTYPE" == darwin* ]] && [[ -z "$DEFAULT_RC" ]] && DEFAULT_RC="$HOME/.zshrc"
+    [[ "$OSTYPE" == darwin* ]] && [[ -z "${DEFAULT_RC}" ]] && DEFAULT_RC="$HOME/.zshrc"
     RC_CANDIDATES=("${DEFAULT_RC:-}" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
     for RC_FILE in "${RC_CANDIDATES[@]}"; do
       [[ -z "$RC_FILE" ]] && continue
@@ -174,7 +174,13 @@ if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
       fi
     done
 
-    if ! $ADDED_TO_RC; then
+    if $ADDED_TO_RC; then
+      echo ""
+      echo "To use it right now, run:"
+      echo "  source ${RC_FILE}"
+      echo ""
+      echo "Or open a new terminal window/tab."
+    else
       warn "$NPM_BIN is already in a shell config file — restart your terminal to use offgrid-ai"
     fi
   fi

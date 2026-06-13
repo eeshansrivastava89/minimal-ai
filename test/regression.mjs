@@ -74,6 +74,30 @@ describe("regressions", () => {
     assert.ok(rc.includes(`export PATH="${npmBin}:$PATH"`));
   });
 
+  it("postinstall adds PATH to rc even for a Hermes-managed npm prefix", async () => {
+    const home = await mkdtemp(join(tmpdir(), "offgrid-postinstall-"));
+    const prefix = join(home, ".hermes", "node");
+    const npmBin = join(prefix, "bin");
+    await mkdir(npmBin, { recursive: true });
+    const zshrc = join(home, ".zshrc");
+    await writeFile(zshrc, "# existing config\n", "utf8");
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      SHELL: "/bin/zsh",
+      npm_config_global: "true",
+      npm_config_prefix: prefix,
+      PATH: `${npmBin}:${process.env.PATH ?? ""}`,
+    };
+
+    await execFileAsync(process.execPath, ["src/postinstall.mjs"], { env, cwd: process.cwd() });
+
+    const rc = await readFile(zshrc, "utf8");
+    assert.match(rc, /# Added by offgrid-ai installer/);
+    assert.ok(rc.includes(`export PATH="${npmBin}:$PATH"`));
+  });
+
   it("postinstall does not duplicate an existing PATH export in rc", async () => {
     const home = await mkdtemp(join(tmpdir(), "offgrid-postinstall-"));
     const prefix = join(home, "npm-global");

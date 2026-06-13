@@ -17,12 +17,6 @@ if (!prefix) {
   process.exit(0);
 }
 
-if (isHermesPrefix(prefix, process.env.HOME)) {
-  console.log("offgrid-ai installed with a Hermes-managed npm prefix.");
-  console.log("Not adding Hermes Node to PATH automatically. Use your normal Node/npm, or run the offgrid-ai install script.");
-  process.exit(0);
-}
-
 const npmBin = join(prefix, "bin");
 const marker = "# Added by offgrid-ai installer";
 const pathLine = `export PATH="${npmBin}:$PATH"`;
@@ -98,12 +92,6 @@ function currentPackageVersion() {
   } catch {
     return "";
   }
-}
-
-function isHermesPrefix(prefix, home) {
-  const normalized = prefix.replace(/\\/gu, "/");
-  if (normalized.includes("/.hermes/")) return true;
-  return Boolean(home && normalized === `${home.replace(/\\/gu, "/")}/.hermes/node`);
 }
 
 function isLikelyGlobalPrefix(prefix, home) {
