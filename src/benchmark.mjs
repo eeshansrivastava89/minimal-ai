@@ -262,7 +262,36 @@ function formatToolCall(toolCall) {
   return `[toolCall] ${toolCall.name}${summary}`;
 }
 
-function renderStreamEvent(parsed, state) {
+function formatTokens(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(Math.round(n));
+}
+
+function estimatedTokensFromText(text) {
+  // Simple heuristic: ~4 chars per token for code/English.
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+function clearStatusLine() {
+  if (process.stdout.isTTY) {
+    process.stdout.write("\r\x1b[K");
+  }
+}
+
+function printStatusLine(text) {
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\r\x1b[K${text}`);
+  }
+}
+
+function printFinalLine(text) {
+  clearStatusLine();
+  console.log(text);
+}
+
+function renderStreamEvent(parsed, state, opts = {}) {
+  const verbose = Boolean(opts.verbose);
   const type = parsed.type;
 
   switch (type) {
@@ -274,7 +303,11 @@ function renderStreamEvent(parsed, state) {
       break;
     case "turn_start": {
       state.turn += 1;
-      console.log(BENCH_COLORS.info(`\n[turn ${state.turn}]`));
+      state.status.mode = "thinking";
+      state.status.toolName = null;
+      state.status.bytes = 0;
+      state.status.tokens = 0;
+      printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}]`));
       break;
     }
     case "message_start": {
@@ -289,15 +322,21 @@ function renderStreamEvent(parsed, state) {
       if (!evt) return;
       const subtype = String(evt.type ?? "").replace(/_/gu, "");
       if (subtype === "thinkingstart" || subtype === "thinkingdelta") {
-        process.stdout.write(BENCH_COLORS.thinking(evt.delta || ""));
+        if (verbose) process.stdout.write(BENCH_COLORS.thinking(evt.delta || ""));
+        state.status.mode = "thinking";
+        updateStatusFromDelta(state, evt.delta);
       } else if (subtype === "textstart" || subtype === "textdelta") {
-        process.stdout.write(BENCH_COLORS.text(evt.delta || ""));
+        if (verbose) process.stdout.write(BENCH_COLORS.text(evt.delta || ""));
+        state.status.mode = "text";
+        updateStatusFromDelta(state, evt.delta);
       } else if (subtype === "toolcallstart") {
-        console.log(BENCH_COLORS.tool("\n[tool_call_start]"));
+        if (!verbose) printFinalLine(BENCH_COLORS.tool("[tool_call_start]"));
       } else if (subtype === "toolcalldelta") {
-        process.stdout.write(BENCH_COLORS.tool(evt.delta || ""));
+        if (verbose) process.stdout.write(BENCH_COLORS.tool(evt.delta || ""));
+        state.status.mode = "tool";
+        updateStatusFromDelta(state, evt.delta);
       } else if (subtype === "toolcallend") {
-        console.log(BENCH_COLORS.tool("[tool_call_end]"));
+        if (!verbose) printFinalLine(BENCH_COLORS.tool("[tool_call_end]"));
       }
       break;
     }
@@ -306,34 +345,74 @@ function renderStreamEvent(parsed, state) {
       if (msg?.role === "assistant" && Array.isArray(msg.content)) {
         for (const item of msg.content) {
           if (item.type === "toolCall") {
-            console.log(BENCH_COLORS.tool(`\n${formatToolCall(item)}`));
+            const toolLine = formatToolCall(item);
+            state.status.toolName = item.name;
+            if (!verbose) printFinalLine(BENCH_COLORS.tool(toolLine));
           }
         }
       }
       break;
     }
     case "tool_execution_start":
-      console.log(BENCH_COLORS.tool(`\n[exec] ${parsed.toolName}`));
+      state.status.mode = "exec";
+      state.status.toolName = parsed.toolName;
+      state.status.bytes = 0;
+      state.status.tokens = 0;
+      printFinalLine(BENCH_COLORS.tool(`[exec] ${parsed.toolName}`));
       break;
-    case "tool_execution_update":
+    case "tool_execution_update": {
       if (parsed.content) {
-        process.stdout.write(BENCH_COLORS.toolOutput(parsed.content));
+        if (verbose) process.stdout.write(BENCH_COLORS.toolOutput(parsed.content));
+        state.status.mode = "exec";
+        updateStatusFromDelta(state, parsed.content);
       }
       break;
+    }
     case "tool_execution_end":
-      console.log(BENCH_COLORS.tool(`[exec done] ${parsed.toolName}`));
+      printFinalLine(BENCH_COLORS.tool(`[exec done] ${state.status.toolName || parsed.toolName}`));
       break;
     case "toolResult": {
       const errorFlag = parsed.isError ? BENCH_COLORS.error(" error") : "";
-      console.log(BENCH_COLORS.tool(`\n[result] ${parsed.toolName}${errorFlag}`));
+      printFinalLine(BENCH_COLORS.tool(`[result] ${parsed.toolName}${errorFlag}`));
+      break;
+    }
+    case "turn_end": {
+      const usage = parsed.message?.usage;
+      if (usage) {
+        const exact = usage.output ?? usage.totalTokens ?? 0;
+        printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}] completed · ${formatTokens(exact)} tokens`));
+      } else {
+        printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}] completed`));
+      }
       break;
     }
     case "agent_end":
-      console.log(BENCH_COLORS.dim("\n[agent_end]"));
+      clearStatusLine();
+      console.log(BENCH_COLORS.dim("[agent_end]"));
       break;
     default:
       break;
   }
+}
+
+function updateStatusFromDelta(state, delta) {
+  if (!delta) return;
+  state.status.bytes += Buffer.byteLength(delta, "utf8");
+  state.status.tokens = estimatedTokensFromText(String(state.status.bytes));
+  const label = state.status.toolName ? ` · ${state.status.toolName}` : "";
+  const modeLabel = state.status.mode === "thinking" ? "thinking" : state.status.mode === "text" ? "text" : state.status.mode === "tool" ? "tool" : "exec";
+  const bytes = formatBytes(state.status.bytes);
+  const tokens = formatTokens(state.status.tokens);
+  printStatusLine(BENCH_COLORS.dim(`[turn ${state.turn}] ${modeLabel}${label} · ${bytes} (~${tokens} tokens)`));
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return "unknown";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+  return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 }
 
 export function piModelString(profile) {
@@ -382,7 +461,8 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   const streamHandle = await openFileHandle(streamPath, "w");
   const stderrHandle = await openFileHandle(stderrPath, "w");
 
-  const renderState = { turn: 0 };
+  const verbose = Boolean(process.env.OFFGRID_BENCHMARK_VERBOSE);
+  const renderState = { turn: 0, status: { mode: "idle", toolName: null, bytes: 0, tokens: 0 } };
 
   function appendResponse(text) {
     responseBuffer += text;
@@ -436,7 +516,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
     const timestamp = extractTimestamp(parsed);
     updateTimeBounds(timestamp);
 
-    renderStreamEvent(parsed, renderState);
+    renderStreamEvent(parsed, renderState, { verbose });
 
     if (parsed.type === "session" || parsed.type === "agent_start") {
       if (timestamp && runStartMs === null) runStartMs = timestamp;
