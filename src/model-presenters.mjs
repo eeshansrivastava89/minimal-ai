@@ -45,7 +45,7 @@ function optionSourceTag(sourceId, label) {
   return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
 }
 
-function optionCtxLabel(item, runningProfilesNow) {
+function optionCtxLabel(item) {
   if (item.type === "profile" && item.profile.flags?.ctxSize) {
     return `${(item.profile.flags.ctxSize / 1000).toFixed(0)}k`;
   }
@@ -83,7 +83,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
         status: optionStatusTag(item.fileMissing ? "missing" : running ? "running" : "ready"),
         source: optionSourceTag(item.profile.backend, backend.label),
         name: item.profile.label,
-        ctx: optionCtxLabel(item, runningProfilesNow),
+        ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
     };
@@ -95,7 +95,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
         status: optionStatusTag("setup"),
         source: optionSourceTag("gguf", "GGUF file"),
         name: item.model.label,
-        ctx: optionCtxLabel(item, runningProfilesNow),
+        ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
     };
@@ -107,7 +107,7 @@ export function modelSelectOption(item, { runningProfilesNow }) {
       status: optionStatusTag("setup"),
       source: optionSourceTag(item.backendId, backend.label),
       name: item.model.label,
-      ctx: optionCtxLabel(item, runningProfilesNow),
+      ctx: optionCtxLabel(item),
       size: optionSizeLabel(item),
     }),
   };
@@ -146,7 +146,7 @@ function tableWidth() {
     optionPad("Model", null, OPTION_MODEL_WIDTH),
     optionPad("Ctx", null, OPTION_CTX_WIDTH),
     "Size",
-  ].join(OPTION_SEPARATOR.replace(/\x1b\[[0-9;]*m/g, ""));
+  ].join("  \u2502  ");
   return stripVTControlCharacters(header).length;
 }
 
