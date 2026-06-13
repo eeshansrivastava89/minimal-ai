@@ -407,12 +407,12 @@ Unavailable fields show `—`. On failure, the table shows `Status: failed` and 
 
 ### Phase 3 — Add backend-aware speed metrics
 
-- [ ] Add `queryServerMetrics(profile)` in `src/benchmark.mjs`:
+- [x] Add `queryServerMetrics(profile)` in `src/benchmark.mjs`:
   - **llama.cpp:** POST non-streaming `/v1/chat/completions` with a tiny prompt, read `timings`.
   - **oMLX:** POST streaming `/v1/chat/completions` with `stream_options: { include_usage: true }`, parse final SSE chunk.
   - **Ollama:** POST native `/api/generate` with `stream: false`.
   - Return normalized object: `prefillTokensPerSecond`, `generationTokensPerSecond`, `ttftMs`, `modelLoadMs`, `speculativeDecodeAcceptance`, `kvCacheTokens`, `metricSource`.
-- [ ] Handle query failure by throwing an error so the run is marked `failed`.
+- [x] Handle query failure by throwing an error so the run is marked `failed`.
 
 ### Phase 4 — Finalize run metadata
 
