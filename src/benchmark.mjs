@@ -306,7 +306,7 @@ function renderStreamEvent(parsed, state, opts = {}) {
       state.status.mode = "thinking";
       state.status.toolName = null;
       state.status.bytes = 0;
-      state.status.tokens = 0;
+      state.status.text = "";
       printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}]`));
       break;
     }
@@ -357,7 +357,7 @@ function renderStreamEvent(parsed, state, opts = {}) {
       state.status.mode = "exec";
       state.status.toolName = parsed.toolName;
       state.status.bytes = 0;
-      state.status.tokens = 0;
+      state.status.text = "";
       printFinalLine(BENCH_COLORS.tool(`[exec] ${parsed.toolName}`));
       break;
     case "tool_execution_update": {
@@ -398,7 +398,8 @@ function renderStreamEvent(parsed, state, opts = {}) {
 function updateStatusFromDelta(state, delta) {
   if (!delta) return;
   state.status.bytes += Buffer.byteLength(delta, "utf8");
-  state.status.tokens = estimatedTokensFromText(String(state.status.bytes));
+  state.status.text = (state.status.text || "") + delta;
+  state.status.tokens = estimatedTokensFromText(state.status.text);
   const label = state.status.toolName ? ` · ${state.status.toolName}` : "";
   const modeLabel = state.status.mode === "thinking" ? "thinking" : state.status.mode === "text" ? "text" : state.status.mode === "tool" ? "tool" : "exec";
   const bytes = formatBytes(state.status.bytes);
@@ -462,7 +463,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   const stderrHandle = await openFileHandle(stderrPath, "w");
 
   const verbose = Boolean(process.env.OFFGRID_BENCHMARK_VERBOSE);
-  const renderState = { turn: 0, status: { mode: "idle", toolName: null, bytes: 0, tokens: 0 } };
+  const renderState = { turn: 0, status: { mode: "idle", toolName: null, bytes: 0, text: "", tokens: 0 } };
 
   function appendResponse(text) {
     responseBuffer += text;
