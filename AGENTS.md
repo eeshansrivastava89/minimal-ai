@@ -11,6 +11,9 @@
 - **DRY and minimal.** Avoid duplication. Prefer deleting code to adding code. If a helper already exists, use it.
 - **Reuse existing solutions.** Prefer standard library, established npm packages, and patterns already in the codebase over custom implementations.
 - **Usability over cleverness.** Make workflows simple and friendly for non-technical users. Clear errors, sensible defaults, minimal steps.
-- **No implicit skill runs.** Only run skills on explicit invocation (`$skill` in Codex, `/skill:` in Pi, or direct selection).
+- **Explain failures, don't just report them.** When something fails, diagnose the cause and surface a specific, actionable reason.
+- **Terminal output should fit.** Long messages must wrap so cards/tables stay aligned and readable.
+- **Commit workflow.** Propose a focused conventional-commit message and ask for approval before committing. Keep commits small and logical.
+- **Document consolidation.** Completed plans go to `internal-docs/archive/`. Living runbooks go to `internal-docs/reference/`. Active strategy stays in `internal-docs/` root. Keep the README simple; detailed internals live in `internal-docs/`.
 - **Codebase is the source of truth.** Verify assumptions against current files and tests, not memory or old docs.
 - **Test and lint before committing.** Run `npm test` and `npm run lint`. Keep the change focused.
