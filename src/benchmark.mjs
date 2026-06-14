@@ -867,7 +867,21 @@ export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics
 
   const success = existsSync(requiredPath) && (await readFile(requiredPath, "utf8")).trim().length > 0;
   const hasTurns = runResult.agentTurns > 0;
-  const failed = runResult.error || !success || !hasTurns;
+
+  let failureReason = null;
+  if (runResult.error) {
+    failureReason = typeof runResult.error === "string" ? runResult.error : (runResult.error.message ?? "Unknown error");
+  } else if (!hasTurns) {
+    failureReason = "The model did not produce any response turns.";
+  } else if (!success) {
+    if (runResult.toolCalls === 0) {
+      failureReason = `The model finished without writing the required output file (${requiredFile}). It may have returned the response as chat text instead of using the write tool.`;
+    } else {
+      failureReason = `The required output file (${requiredFile}) was missing or empty after the run.`;
+    }
+  }
+
+  const failed = failureReason !== null;
 
   metadata.status = failed ? "failed" : "completed";
   metadata.updatedAt = timestamp;
@@ -899,7 +913,9 @@ export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics
     perTurn: runResult.perTurn,
   };
 
-  if (runResult.error) {
+  if (failureReason) {
+    metadata.error = { message: failureReason, ...(typeof runResult.error === "object" && runResult.error?.stack ? { stack: runResult.error.stack } : {}) };
+  } else if (runResult.error) {
     metadata.error = typeof runResult.error === "string"
       ? { message: runResult.error }
       : { message: runResult.error.message ?? "Unknown error", ...(runResult.error.stack ? { stack: runResult.error.stack } : {}) };
@@ -1049,8 +1065,30 @@ export function renderBenchmarkSummary(metadata) {
     ];
     console.log(renderSection("Speed Metrics", renderRows(speedRows)));
   } else if (error) {
-    console.log(renderSection("Error", pc.red(error.message ?? "Unknown error")));
+    const wrappedError = wrapText(error.message ?? "Unknown error");
+    console.log(renderSection("Error", pc.red(wrappedError)));
+    if (error.message?.includes("write tool") || error.message?.includes("required output file")) {
+      const tip = wrapText("Tip: This usually means the model returned the answer as chat text instead of writing the file. Try a model with stronger tool-use support, or run the prompt manually.", 64);
+      console.log(pc.dim("\n" + tip));
+    }
   }
+}
+
+function wrapText(text, width = 64) {
+  if (!text) return "";
+  const words = text.split(/\s+/);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    if ((current + " " + word).trim().length > width) {
+      if (current) lines.push(current.trim());
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) lines.push(current.trim());
+  return lines.join("\n");
 }
 
 function benchmarkModelSource(profile) {
