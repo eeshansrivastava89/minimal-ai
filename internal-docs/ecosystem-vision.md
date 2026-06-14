@@ -1,6 +1,6 @@
 # offgrid-ai Ecosystem Vision
 
-Last updated: 2025-06-13
+Last updated: 2026-06-13
 
 ## Mission
 
@@ -14,8 +14,8 @@ The ecosystem extends this mission across related tools that all share one thing
 
 | Package | Purpose | Current name | Status |
 |---|---|---|---|
-| `offgrid-ai` | Control center: discover, configure, run local models | offgrid-ai | Published npm, v0.7.x |
-| `offgrid-ai-benchmark` | Visual + data-science benchmarks for local LLMs | local-llm-visual-benchmark | Git clone, Astro app |
+| `offgrid-ai` | Control center: discover, configure, run, benchmark local models | offgrid-ai | Published npm, v0.8.10 |
+| `offgrid-ai-benchmark` | Visual + data-science benchmarks for local LLMs | local-llm-visual-benchmark | Git clone, Astro app; benchmark runner embedded in offgrid-ai v0.8.10 |
 | `offgrid-ai-sidequests` | Dev dashboard for local LLM workflows | (dev folder) | Prototype |
 | `offgrid-ai-howiprompt` | Prompt analyzer / evaluator | (dev folder) | Prototype |
 
@@ -94,11 +94,13 @@ offgrid-ai and local-llm-visual-benchmark duplicate these functions:
 | `loadBenchmarks` | Own copy | `benchmarks.ts` | Frontmatter parsing drifts |
 | `prepareBenchmarkRun` | Hand-rolled metadata.json | `prompt-prep.ts prepareRun` | Metadata schema drifts |
 
-This already caused a bug: the visual QA instruction was removed from the benchmark repo's `buildToolPrompt` but remained in offgrid-ai's copy.
+This already caused a bug: the visual QA instruction was removed from the benchmark repo's `buildToolPrompt` but remained in offgrid-ai's copy. The offgrid-ai v0.8.10 benchmark automation works end-to-end, but it still duplicates these helpers; the migration below remains the path to a single source of truth.
 
 ## Migration Plan
 
-### Phase 1: Add library exports to benchmark repo (current milestone)
+### Phase 1: Add library exports to benchmark repo
+
+Status: **not started**. The benchmark runner in offgrid-ai is functional, but `local-llm-visual-benchmark` is still a git-cloned Astro app, not an npm package.
 
 Convert local-llm-visual-benchmark into a publishable npm package:
 
@@ -116,6 +118,8 @@ Convert local-llm-visual-benchmark into a publishable npm package:
 5. Publish as `offgrid-ai-benchmark` to npm (or keep current name during transition)
 
 ### Phase 2: offgrid-ai imports from the package
+
+Status: **blocked on Phase 1**.
 
 1. `npm install offgrid-ai-benchmark` as a dependency
 2. Remove `buildToolPrompt`, `slugModelId`, `createRunId`, `loadBenchmarks`, `prepareBenchmarkRun` from offgrid-ai's `benchmark.mjs`

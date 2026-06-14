@@ -2,12 +2,12 @@
 
 # offgrid-ai
 
-**Privacy-first CLI for running local LLMs. Your AI, your machine, nothing leaves.**
+**Privacy-first CLI for running local AI models on your own machine.**
 
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
 
-Install • Run • Done.
+Install • Pick a model • Start chatting
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
@@ -15,92 +15,83 @@ curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/
 
 </div>
 
-## What it does
+## What is offgrid-ai?
 
-You run `offgrid-ai`. It finds your local models, auto-configures everything, starts the server, and launches Pi. Zero configuration. No parameter tuning. No presets.
+offgrid-ai is a command-line tool that lets you run AI models locally. Everything stays on your computer. No API keys, no remote servers, no data leaving your machine.
 
-**First run** walks you through installing anything missing. For GGUF models, offgrid-ai installs a managed `llama.cpp` runtime under `~/.offgrid-ai/runtime`; Homebrew is only used if you choose Homebrew-installed apps like LM Studio, Ollama, or oMLX.
+It works with:
 
-```bash
-offgrid-ai          # pick a model and run it
-offgrid-ai status   # show running servers (from another terminal)
-offgrid-ai stop     # stop a running server
-```
+- Models from **LM Studio**
+- **Ollama** models
+- **oMLX** models on Apple Silicon
+- GGUF models from **Hugging Face** or other sources
 
-## Install
+## Quick start
 
-### Recommended: one command installer
+### 1. Install
 
-Installs Node.js if you don't have it, then installs offgrid-ai and adds it to your PATH. Prints a welcome message so you know it worked.
+Open your terminal and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
 
-Or review the install script first:
+This installs offgrid-ai and anything else it needs. Then open a new terminal window and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | less
+offgrid-ai
 ```
 
-### Already have Node.js?
+If you already have Node.js installed, you can also use:
 
 ```bash
 npm install -g offgrid-ai@latest --prefer-online
 ```
 
-This works without extra flags, but npm hides postinstall output by default, so you won't see the welcome message. Open a new terminal window or run `source ~/.zshrc` and then `offgrid-ai`.
+### 2. Pick a model
 
-## How it works
+The first time you run offgrid-ai, it looks for models already on your machine. If it does not find any, it tells you how to get one.
 
-1. **Auto-detect everything.** Scans for GGUF models in LM Studio and Hugging Face cache directories, and checks managed backends like Ollama/oMLX through their local APIs. Reads model metadata (quantization, context size, vision, thinking mode) directly from GGUF files. No presets, no manual configuration.
+Supported ways to get models:
 
-2. **One command to run.** `offgrid-ai` → pick a model → confirm context/KV memory settings on first setup → it starts llama-server, syncs Pi config, and launches Pi.
+| Source | Example command |
+|---|---|
+| LM Studio | `lms get qwen/qwen3.5-9b` |
+| Ollama | `ollama pull gemma3:4b` |
+| oMLX | Use `omlx start` |
+| Hugging Face | Download a GGUF file |
 
-3. **One model at a time.** Laptops have limited RAM. One server, one model, no confusion.
+### 3. Start chatting
 
-## Supported backends
-
-| Backend | Type | Auto-detected |
-|---|---|---|
-| **LM Studio** | Visual model browser + CLI (`lms`) | ✓ models in `~/.lmstudio/models/` |
-| **llama.cpp** | Managed local runtime | ✓ GGUF models in `~/.lmstudio/models/` and Hugging Face cache |
-| **llama.cpp MTP** | Managed local runtime (speculative decoding) | ✓ MTP detected from model metadata |
-| **Ollama** | Managed server | ✓ via `localhost:11434` |
-| **oMLX** | Managed server | ✓ via `127.0.0.1:8000` |
-
-## First run onboarding
-
-When you run `offgrid-ai` for the first time on a fresh machine:
-
-1. **llama.cpp runtime** — Required for GGUF models. Offered as an offgrid-ai managed runtime from official `llama.cpp` release binaries.
-2. **Pi** — Required to chat from the Pi coding agent. Offered to install via npm if missing.
-3. **Model backend** — At least one is needed (LM Studio recommended):
-   - **LM Studio** — visual model browser + `lms` CLI, download models with `lms get qwen/qwen3.5-9b`
-   - **Ollama** — models download on demand with `ollama pull`
-   - **oMLX** — Apple Silicon optimized
-4. **Models** — If no models found, tells you where to get them.
-
-Homebrew is optional and only prompted when you choose a Homebrew-based backend install. Subsequent runs skip everything that's already installed. When a GGUF model is set up for the first time, offgrid-ai asks only for the memory-impacting choices: context window and KV cache precision. Sampling defaults are shown but not forced into a tuning wizard.
-
-## Data directory
-
-```
-~/.offgrid-ai/
-  config.json          # auto-detected paths, editable for overrides
-  profiles/            # one per model, auto-created on first run
-    <id>/
-      profile.json     # model metadata + auto-detected settings
-      command.json     # llama-server flags (auto-generated, hand-editable)
-      notes.md         # scratch notes
-  logs/
-  run/                 # PID state files
-  runtime/             # managed llama.cpp binaries
+```bash
+offgrid-ai
 ```
 
-## Benchmark (coming soon)
+Pick a model from the list and press Enter. offgrid-ai configures the rest and opens the Pi coding agent.
 
-"Benchmark" is always shown as an option in the CLI. If the [local-llm-visual-benchmark](https://github.com/eeshansrivastava89/local-llm-visual-benchmark) repo is found locally, it works. If not, it offers to clone it. Model management works standalone; benchmarking is the upsell.
+## Everyday commands
+
+```bash
+offgrid-ai              # start a model
+offgrid-ai status       # see what's running
+offgrid-ai stop         # stop the running model
+offgrid-ai benchmark    # run a benchmark
+offgrid-ai uninstall    # remove offgrid-ai
+```
+
+## What can I do with it?
+
+- **Chat with local models** — no internet required after setup.
+- **Run benchmarks** — compare how different models perform on creative or data-science tasks.
+- **Keep data private** — everything happens on your machine.
+
+## Need help?
+
+Run any command with `--help`:
+
+```bash
+offgrid-ai --help
+```
 
 ## Development
 

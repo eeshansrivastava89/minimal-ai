@@ -1,5 +1,7 @@
 # End-to-End Testing
 
+This guide covers testing `offgrid-ai` in a clean macOS VM using Tart. Use it for release smoke tests and regression checks.
+
 ## Tart VM Setup (one-time)
 
 ```bash
@@ -26,11 +28,11 @@ tart delete tahoe-test              # clean up
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 
 # Or via npm (if Node already present)
-npm install -g offgrid-ai
+npm install -g offgrid-ai@latest --prefer-online
 
 # Verify
-offgrid-ai version
-offgrid-ai --help
+offgrid-ai version          # e.g., 0.8.10
+offgrid-ai --help           # lists commands: start, status, stop, benchmark, uninstall, version
 ```
 
 ## Uninstall offgrid-ai
@@ -84,6 +86,38 @@ rm -rf ~/.offgrid-ai ~/.nvm ~/.lmstudio ~/.ollama
 ```
 
 Nuclear reset is overkill for most testing — just `tart stop tahoe-test && tart delete tahoe-test` and re-clone from base instead.
+
+## Commands to exercise in the VM
+
+After install, run through the main surface area:
+
+```bash
+offgrid-ai --help           # help card
+offgrid-ai version          # version output
+offgrid-ai models           # list / scan for local models (creates profiles on first run)
+offgrid-ai benchmark        # prepare or run a visual/data-science benchmark
+offgrid-ai status           # show running servers, if any
+offgrid-ai stop             # stop a running server
+offgrid-ai uninstall        # remove offgrid-ai and data directory
+```
+
+For `offgrid-ai benchmark`, you will be prompted to link the `local-llm-visual-benchmark` repo. Automated runs require Pi to be installed and a local model server (llama.cpp, Ollama, or oMLX) to be running.
+
+## Postinstall / CI behavior
+
+`src/postinstall.mjs` intentionally exits early when `CI` or `OFFGRID_SKIP_POSTINSTALL` is set. This protects CI runners and automated installs from shell-config modifications.
+
+When testing the postinstall script directly (for example in `test/regression.mjs`), the environment must explicitly clear those variables:
+
+```js
+const env = {
+  ...process.env,
+  CI: "",
+  OFFGRID_SKIP_POSTINSTALL: "",
+};
+```
+
+GitHub Actions sets `CI=true` by default, so postinstall regression tests that do not unset it will fail with the script exiting before the assertions run.
 
 ## VM Quick Reference
 
