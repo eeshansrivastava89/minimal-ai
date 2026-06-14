@@ -113,9 +113,20 @@ export async function stopProfile(profile) {
 
 export async function isProfileRunning(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.type === "managed-server") return await serverReady(profile.baseUrl);
+  if (backend.type === "managed-server") {
+    return await serverReady(profile.baseUrl) && (await modelLoadedOnServer(profile));
+  }
   const state = await readState(profile.id);
   return Boolean(state?.pid && pidAlive(state.pid));
+}
+
+export async function isProfileServerUp(profile) {
+  return await serverReady(profile.baseUrl);
+}
+
+export async function modelLoadedOnServer(profile) {
+  const { matches } = await serverMatchesProfile(profile);
+  return matches;
 }
 
 export async function profileRuntimeStatus(profile) {

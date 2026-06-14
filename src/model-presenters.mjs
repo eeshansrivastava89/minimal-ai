@@ -25,6 +25,7 @@ function optionPad(text, color, width) {
 function optionStatusTag(kind) {
   const statuses = {
     running: ["RUNNING", pc.green],
+    serverup: ["SERVER UP", pc.yellow],
     ready: ["READY", pc.blue],
     missing: ["MISSING", pc.red],
     setup: ["SETUP", pc.yellow],
@@ -79,14 +80,16 @@ function optionLabel({ status, source, name, ctx, size, nameWidth }) {
   return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, nameWidth }) {
+export function modelSelectOption(item, { runningProfilesNow, serverUpIds, nameWidth }) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
+    const serverUp = !running && !item.fileMissing && serverUpIds?.has(item.profile.id);
+    const status = item.fileMissing ? "missing" : running ? "running" : serverUp ? "serverup" : "ready";
     return {
       value: itemKey(item),
       label: optionLabel({
-        status: optionStatusTag(item.fileMissing ? "missing" : running ? "running" : "ready"),
+        status: optionStatusTag(status),
         source: optionSourceTag(item.profile.backend, backend.label),
         name: item.profile.label,
         nameWidth,
@@ -122,15 +125,19 @@ export function modelSelectOption(item, { runningProfilesNow, nameWidth }) {
   };
 }
 
-export function printWorkspaceHeader(normalized, runningProfilesNow) {
+export function printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds = new Set()) {
   const profiles = normalized.profiles;
-  const readyCount = profiles.filter((p) => !isProfileFileMissing(p) && !runningProfilesNow.some((r) => r.id === p.id)).length;
+  const isRunning = (p) => runningProfilesNow.some((r) => r.id === p.id);
+  const isMissing = (p) => isProfileFileMissing(p);
+  const readyCount = profiles.filter((p) => !isMissing(p) && !isRunning(p) && !serverUpIds.has(p.id)).length;
   const runningCount = runningProfilesNow.length;
-  const missingCount = profiles.filter((p) => isProfileFileMissing(p)).length;
+  const serverUpCount = profiles.filter((p) => !isMissing(p) && serverUpIds.has(p.id) && !isRunning(p)).length;
+  const missingCount = profiles.filter(isMissing).length;
   const setupCount = normalized.newModels.length + normalized.managedItems.length;
 
   const countParts = [];
   if (runningCount > 0) countParts.push(pc.green(`${runningCount} running`));
+  if (serverUpCount > 0) countParts.push(pc.yellow(`${serverUpCount} server up, model not loaded`));
   if (readyCount > 0) countParts.push(pc.blue(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
   if (missingCount > 0) countParts.push(pc.red(`${missingCount} model${missingCount === 1 ? "" : "s"} missing`));
   if (setupCount > 0) countParts.push(pc.yellow(`${setupCount} model${setupCount === 1 ? "" : "s"} need${setupCount === 1 ? "s" : ""} setup`));

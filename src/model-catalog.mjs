@@ -37,10 +37,24 @@ export function itemKey(item) {
   return `managed:${item.backendId}:${item.model.id}`;
 }
 
+function profileRecency(item) {
+  const updated = item.profile?.updatedAt ?? item.profile?.createdAt;
+  const ts = updated ? Date.parse(updated) : NaN;
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function compareRecency(a, b) {
+  const diff = profileRecency(b) - profileRecency(a);
+  if (diff !== 0) return diff;
+  return String(a.label ?? "").localeCompare(String(b.label ?? ""));
+}
+
 export function buildCatalogItems(normalized) {
   const { profiles, newModels, managedItems, drafters } = normalized;
+  const profileItems = profiles.map((profile) => ({ type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) }));
+  profileItems.sort(compareRecency);
   return [
-    ...profiles.map((profile) => ({ type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) })),
+    ...profileItems,
     ...newModels.map((model) => ({ type: "new", model, label: model.label, drafter: matchDrafter(model.path, drafters) })),
     ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label })),
   ];

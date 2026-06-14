@@ -1,7 +1,7 @@
 import { ensureDirs } from "../config.mjs";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, stopProfile } from "../process.mjs";
+import { isProfileRunning, isProfileServerUp, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
@@ -40,18 +40,55 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   const runningProfilesNow = [];
+  const serverUpIds = new Set();
   for (const profile of normalized.profiles) {
-    if (await isProfileRunning(profile)) runningProfilesNow.push(profile);
+    if (await isProfileRunning(profile)) {
+      runningProfilesNow.push(profile);
+      continue;
+    }
+    if (await isProfileServerUp(profile)) serverUpIds.add(profile.id);
   }
-  printWorkspaceHeader(normalized, runningProfilesNow);
+  printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds);
   await printBenchmarkLine();
 
   const nameWidth = modelNameWidth(allItems);
 
+  const statusFor = (item) => {
+    if (item.type === "profile") {
+      if (item.fileMissing) return "missing";
+      if (runningProfilesNow.some((profile) => profile.id === item.profile.id)) return "running";
+      if (serverUpIds.has(item.profile.id)) return "serverup";
+      return "ready";
+    }
+    return "setup";
+  };
+
+  const groupOrder = [
+    { key: "running", label: pc.green("  Running") },
+    { key: "serverup", label: pc.yellow("  Server up · model not loaded") },
+    { key: "ready", label: pc.blue("  Ready to chat") },
+    { key: "setup", label: pc.yellow("  Need setup") },
+    { key: "missing", label: pc.red("  File missing") },
+  ];
+  const grouped = new Map(groupOrder.map((g) => [g.key, []]));
+  for (const item of allItems) grouped.get(statusFor(item)).push(item);
+
+  const sectionSentinel = "__section__";
+  const choices = [];
+  for (const group of groupOrder) {
+    const bucket = grouped.get(group.key);
+    if (!bucket || bucket.length === 0) continue;
+    choices.push({ value: `${sectionSentinel}:${group.key}`, label: `── ${group.label} (${bucket.length}) ──`, disabled: true });
+    for (const item of bucket) {
+      const opt = modelSelectOption(item, { runningProfilesNow, serverUpIds, nameWidth });
+      choices.push({ value: opt.value, label: opt.label });
+    }
+  }
+
   const prompt = createPrompt();
   try {
-    const selected = await prompt.choice("Select a model", allItems.map((item) => modelSelectOption(item, { runningProfilesNow, nameWidth })));
-    if (!selected) return;
+    const selected = await prompt.choice("Select a model", choices);
+    if (!selected || selected.startsWith(`${sectionSentinel}:`)) return;
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;
 
