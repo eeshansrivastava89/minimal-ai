@@ -201,9 +201,87 @@ describe("regressions", () => {
     assert.equal(caps.architecture, null);
     assert.equal(caps.quant, "q4_k_m");
   });
+
+  it("does not treat an available Ollama model as running unless it is loaded", async () => {
+    const profile = managedProfile("ollama", "llama3.2:latest", "http://localhost:11434/v1");
+    const { isProfileRunning, isProfileServerUp, profileRuntimeStatus } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://localhost:11434/v1/models") return jsonResponse({ data: [{ id: "llama3.2:latest" }] });
+      if (url === "http://localhost:11434/api/ps") return jsonResponse({ models: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      assert.equal(await isProfileServerUp(profile), true);
+      assert.equal(await isProfileRunning(profile), false);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.ready, true);
+      assert.equal(status.running, false);
+      assert.equal(status.modelLoaded, false);
+    });
+  });
+
+  it("uses Ollama /api/ps to detect loaded models", async () => {
+    const profile = managedProfile("ollama", "llama3.2:latest", "http://localhost:11434/v1");
+    const { isProfileRunning, profileRuntimeStatus } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://localhost:11434/v1/models") return jsonResponse({ data: [{ id: "llama3.2:latest" }] });
+      if (url === "http://localhost:11434/api/ps") return jsonResponse({ models: [{ name: "llama3.2:latest" }] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      assert.equal(await isProfileRunning(profile), true);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.running, true);
+      assert.equal(status.modelLoaded, true);
+    });
+  });
+
+  it("uses oMLX loaded-model status instead of /v1/models availability", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { isProfileRunning, profileRuntimeStatus } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/v1/models/status") {
+        return jsonResponse({ loaded_count: 0, models: [{ id: "Qwen3-4B-4bit", loaded: false }] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      assert.equal(await isProfileRunning(profile), false);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.ready, true);
+      assert.equal(status.running, false);
+      assert.equal(status.modelLoaded, false);
+    });
+  });
 });
 
 function optionValue(argv, flag) {
   const index = argv.indexOf(flag);
   return index === -1 ? undefined : argv[index + 1];
+}
+
+function managedProfile(backend, modelId, baseUrl) {
+  return {
+    id: `${backend}-${modelId.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}`,
+    backend,
+    label: modelId,
+    modelAlias: modelId,
+    baseUrl,
+    ...(backend === "ollama" ? { ollamaModel: modelId } : { omlxModel: modelId }),
+  };
+}
+
+async function withMockedFetch(fetchImpl, callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => fetchImpl(String(url));
+  try {
+    await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function jsonResponse(body, ok = true) {
+  return { ok, json: async () => body };
 }

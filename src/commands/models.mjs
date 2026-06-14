@@ -46,7 +46,7 @@ export async function modelCommandCenter(initialCatalog) {
       runningProfilesNow.push(profile);
       continue;
     }
-    if (await isProfileServerUp(profile)) serverUpIds.add(profile.id);
+    if (backendFor(profile.backend).type === "managed-server" && await isProfileServerUp(profile)) serverUpIds.add(profile.id);
   }
   printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds);
   await printBenchmarkLine();
@@ -63,22 +63,14 @@ export async function modelCommandCenter(initialCatalog) {
     return "setup";
   };
 
-  const groupOrder = [
-    { key: "running", label: pc.green("  Running") },
-    { key: "serverup", label: pc.yellow("  Server up · model not loaded") },
-    { key: "ready", label: pc.blue("  Ready to chat") },
-    { key: "setup", label: pc.yellow("  Need setup") },
-    { key: "missing", label: pc.red("  File missing") },
-  ];
-  const grouped = new Map(groupOrder.map((g) => [g.key, []]));
+  const groupOrder = ["running", "serverup", "ready", "setup", "missing"];
+  const grouped = new Map(groupOrder.map((key) => [key, []]));
   for (const item of allItems) grouped.get(statusFor(item)).push(item);
 
-  const sectionSentinel = "__section__";
   const choices = [];
   for (const group of groupOrder) {
-    const bucket = grouped.get(group.key);
+    const bucket = grouped.get(group);
     if (!bucket || bucket.length === 0) continue;
-    choices.push({ value: `${sectionSentinel}:${group.key}`, label: `── ${group.label} (${bucket.length}) ──`, disabled: true });
     for (const item of bucket) {
       const opt = modelSelectOption(item, { runningProfilesNow, serverUpIds, nameWidth });
       choices.push({ value: opt.value, label: opt.label });
@@ -88,7 +80,7 @@ export async function modelCommandCenter(initialCatalog) {
   const prompt = createPrompt();
   try {
     const selected = await prompt.choice("Select a model", choices);
-    if (!selected || selected.startsWith(`${sectionSentinel}:`)) return;
+    if (!selected) return;
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;
 

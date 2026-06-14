@@ -36,7 +36,7 @@ export function createPrompt() {
     async choice(label, choices, defaultValue) {
       return handleCancel(await select({
         message: label, initialValue: defaultValue,
-        options: choices.map((c) => ({ value: c.value, label: c.label ?? c.value, hint: c.hint })),
+        options: choices.map((c) => ({ value: c.value, label: c.label ?? c.value, hint: c.hint, disabled: c.disabled })),
       }));
     },
     close() {},

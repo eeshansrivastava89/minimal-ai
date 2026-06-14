@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { BACKENDS, backendFor } from "./backends.mjs";
 import { readCommandArgv } from "./profiles.mjs";
-import { isProfileRunning } from "./process.mjs";
+import { isProfileRunning, isProfileServerUp } from "./process.mjs";
 import { buildPrettyCommand } from "./command.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
@@ -160,10 +160,11 @@ export async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
   const running = await isProfileRunning(profile);
+  const serverUp = !running && isManaged && await isProfileServerUp(profile);
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   console.log("\n" + renderSection("Model overview", renderRows([
     ["Name", pc.bold(profile.label)],
-    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : pc.blue("Ready")],
+    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : serverUp ? pc.yellow("Server up, model not loaded") : pc.blue("Ready")],
     ["Details", profileDetailParts(profile, { fileMissing }).join(pc.dim(" · "))],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
   ])));

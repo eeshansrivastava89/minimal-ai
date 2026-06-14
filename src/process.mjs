@@ -125,6 +125,9 @@ export async function isProfileServerUp(profile) {
 }
 
 export async function modelLoadedOnServer(profile) {
+  const backend = backendFor(profile.backend);
+  if (backend.id === "ollama") return modelIdsMatch(await ollamaLoadedModelIds(profile), expectedModelIds(profile));
+  if (backend.id === "omlx") return modelIdsMatch(await omlxLoadedModelIds(profile), expectedModelIds(profile));
   const { matches } = await serverMatchesProfile(profile);
   return matches;
 }
@@ -133,7 +136,8 @@ export async function profileRuntimeStatus(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
     const ready = await serverReady(profile.baseUrl);
-    return { state: null, pid: null, running: ready, ready, rssBytes: null, startedAt: null };
+    const modelLoaded = ready ? await modelLoadedOnServer(profile) : false;
+    return { state: null, pid: null, running: ready && modelLoaded, ready, serverUp: ready, modelLoaded, rssBytes: null, startedAt: null };
   }
   const state = await readState(profile.id);
   const running = Boolean(state?.pid && pidAlive(state.pid));
@@ -191,16 +195,77 @@ export async function waitForReady(profile, pid, rawLogPath) {
 // ── Internals ──────────────────────────────────────────────────────────────
 
 async function serverModelIds(baseUrl) {
+  const body = await fetchJson(`${baseUrl.replace(/\/$/, "")}/models`);
+  return (Array.isArray(body?.data) ? body.data : [])
+    .map((model) => String(model?.id ?? "").trim())
+    .filter(Boolean);
+}
+
+async function ollamaLoadedModelIds(profile) {
+  const body = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/ps`);
+  return (Array.isArray(body?.models) ? body.models : [])
+    .flatMap((model) => [model?.name, model?.model])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+}
+
+async function omlxLoadedModelIds(profile) {
+  const status = await fetchJson(`${profile.baseUrl.replace(/\/$/, "")}/models/status`);
+  const fromStatus = (Array.isArray(status?.models) ? status.models : [])
+    .filter((model) => model?.loaded === true)
+    .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  if (Number(status?.loaded_count) === 0) return fromStatus;
+
+  const summary = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
+  const fromSummary = (Array.isArray(summary?.loaded_models) ? summary.loaded_models : [])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  return [...fromStatus, ...fromSummary];
+}
+
+async function fetchJson(url) {
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { signal: AbortSignal.timeout(1000) });
-    if (!response.ok) return [];
-    const body = await response.json();
-    return (Array.isArray(body?.data) ? body.data : [])
-      .map((model) => String(model?.id ?? "").trim())
-      .filter(Boolean);
+    const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+    if (!response.ok) return null;
+    return await response.json();
   } catch {
-    return [];
+    return null;
   }
+}
+
+function apiRootUrl(baseUrl) {
+  try {
+    const url = new URL(baseUrl);
+    url.pathname = url.pathname.replace(/\/v1\/?$/u, "") || "/";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return String(baseUrl).replace(/\/v1\/?$/u, "").replace(/\/$/u, "");
+  }
+}
+
+function modelIdsMatch(actualIds, expectedIds) {
+  const actual = normalizedModelIds(actualIds);
+  const expected = normalizedModelIds(expectedIds);
+  return [...expected].some((id) => actual.has(id));
+}
+
+function normalizedModelIds(ids) {
+  const normalized = new Set();
+  for (const id of ids) {
+    const value = normalizeModelId(id);
+    if (!value) continue;
+    normalized.add(value);
+    if (value.endsWith(":latest")) normalized.add(value.slice(0, -":latest".length));
+  }
+  return normalized;
+}
+
+function normalizeModelId(id) {
+  return String(id ?? "").trim().toLowerCase();
 }
 
 function expectedModelIds(profile) {
