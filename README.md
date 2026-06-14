@@ -7,8 +7,6 @@
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
 
-Install • Run • Done.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
