@@ -2,28 +2,29 @@
 
 # offgrid-ai
 
-**Privacy-first CLI for running local AI models on your own machine.**
+**Helper CLI for running local AI models on Mac with llama.cpp, ollama, and oMLX.**
 
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
 
-Install • Pick a model • Start chatting
-```bash
-curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
-```
 
 </div>
 
 ## What is offgrid-ai?
 
-offgrid-ai is a command-line tool that lets you run AI models locally. Everything stays on your computer. No API keys, no remote servers, no data leaving your machine.
+offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama.cpp, ollama, or oMLX have a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity, while still providing a powerful and flexible way to run local models.
 
-It works with:
+This is the recommended workflow:
 
-- Models from **LM Studio**
-- **Ollama** models
-- **oMLX** models on Apple Silicon
-- GGUF models from **Hugging Face** or other sources
+1. Download models from **LM Studio**, **Ollama**, or **oMLX**
+2. Do minimal configuration using the `offgrid-ai` command
+3. Run the model with `offgrid-ai` with Pi in interactive mode
+
+## Core Features
+- Auto-detects available models from LM Studio, Ollama, and oMLX
+- Auto-detects MTP (multi-token prediction) or QAT (quantization aware training) models, and applies the correct flags for llama.cpp
+- Auto-applies the optimal flags for the model type in llama.cpp
+- Start / stop llama.cpp server automatically for chat sessions
 
 ## Quick start
 
@@ -35,7 +36,7 @@ Open your terminal and run:
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
 
-This installs offgrid-ai and anything else it needs. Then open a new terminal window and run:
+This installs offgrid-ai and dependencies (node, npm, and llama.cpp). Then open a new terminal window and run:
 
 ```bash
 offgrid-ai
@@ -53,14 +54,7 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 The first time you run offgrid-ai, it looks for models already on your machine. If it does not find any, it tells you how to get one.
 
-Supported ways to get models:
 
-| Source | Example command |
-|---|---|
-| LM Studio | `lms get qwen/qwen3.5-9b` |
-| Ollama | `ollama pull gemma3:4b` |
-| oMLX | Use `omlx start` |
-| Hugging Face | Download a GGUF file |
 
 ### 3. Start chatting
 
