@@ -10,6 +10,8 @@
 - **Root cause first.** Understand the problem before writing code. Read relevant source, reproduce if possible, then fix.
 - **DRY and minimal.** Avoid duplication. Prefer deleting code to adding code. If a helper already exists, use it.
 - **Reuse existing solutions.** Prefer standard library, established npm packages, and patterns already in the codebase over custom implementations.
+- **Single path over competing paths.** Keep one clear way to do each behavior; remove duplicate/legacy pathways instead of maintaining parallel implementations.
+- **No hidden fallbacks.** Do not silently substitute stale caches, alternate mechanisms, or best-effort behavior that changes outcomes without telling the user; make fallback behavior explicit or remove it.
 - **Usability over cleverness.** Make workflows simple and friendly for non-technical users. Clear errors, sensible defaults, minimal steps.
 - **Explain failures, don't just report them.** When something fails, diagnose the cause and surface a specific, actionable reason.
 - **Terminal output should fit.** Long messages must wrap so cards/tables stay aligned and readable.

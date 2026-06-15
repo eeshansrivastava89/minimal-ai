@@ -1,27 +1,13 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DATA_DIR } from "./config.mjs";
 
 const PACKAGE_NAME = "offgrid-ai";
-const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 
-export async function checkForUpdate({ now = Date.now(), fetchImpl = globalThis.fetch, force = false } = {}) {
+export async function checkForUpdate({ fetchImpl = globalThis.fetch } = {}) {
   if (process.env.OFFGRID_NO_UPDATE_CHECK) return null;
 
   const currentVersion = currentPackageVersion();
-  const cacheFile = join(DATA_DIR, "update-cache.json");
-  const cached = await readUpdateCache(cacheFile);
-
-  // Use cache if fresh (within 24h) and still applies to current version
-  if (!force && cached?.lastChecked && now - cached.lastChecked < UPDATE_CHECK_INTERVAL) {
-    if (cached.currentVersion === currentVersion) {
-      return updateResult(currentVersion, cached.latestVersion);
-    }
-    // Cache is from a different installed version — invalidate and refetch
-  }
 
   try {
     const response = await fetchImpl(`https://registry.npmjs.org/${PACKAGE_NAME}/latest`, {
@@ -32,9 +18,6 @@ export async function checkForUpdate({ now = Date.now(), fetchImpl = globalThis.
     const latestVersion = typeof body?.version === "string" ? body.version : null;
     if (!latestVersion) return null;
 
-    await mkdir(DATA_DIR, { recursive: true });
-    await writeFile(cacheFile, JSON.stringify({ lastChecked: now, currentVersion, latestVersion }, null, 2) + "\n", "utf8");
-
     return updateResult(currentVersion, latestVersion);
   } catch {
     return null;
@@ -42,8 +25,8 @@ export async function checkForUpdate({ now = Date.now(), fetchImpl = globalThis.
 }
 
 export function currentPackageVersion() {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+  const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
   return pkg.version;
 }
 
@@ -95,14 +78,6 @@ export function runUpdateCommand(plan) {
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code}`)));
   });
-}
-
-async function readUpdateCache(cacheFile) {
-  try {
-    return JSON.parse(await readFile(cacheFile, "utf8"));
-  } catch {
-    return null;
-  }
 }
 
 function updateResult(currentVersion, latestVersion) {

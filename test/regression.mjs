@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
-import { compareVersions, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
+import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-setup.mjs";
 import { parseOptions, renderRows } from "../src/ui.mjs";
 
@@ -45,6 +45,19 @@ describe("regressions", () => {
     assert.equal(compareVersions("0.3.10", "0.3.9") > 0, true);
     assert.equal(isNewerVersion("0.3.10", "0.4.0"), false);
     assert.equal(isNewerVersion("0.4.0", "0.3.10"), true);
+  });
+
+  it("checks npm directly instead of using a hidden update cache", async () => {
+    const currentVersion = currentPackageVersion();
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      return jsonResponse({ version: calls === 1 ? currentVersion : "999.0.0" });
+    };
+
+    assert.equal(await checkForUpdate({ fetchImpl }), null);
+    assert.deepEqual(await checkForUpdate({ fetchImpl }), { current: currentVersion, latest: "999.0.0" });
+    assert.equal(calls, 2);
   });
 
   it("postinstall adds npm global bin to shell rc even when PATH already contains it", async () => {
