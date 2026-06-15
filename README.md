@@ -54,6 +54,7 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 The first time you run offgrid-ai, it looks for models already on your machine. If it does not find any, it tells you how to get one.
 
+<img width="808" height="274" alt="image" src="https://github.com/user-attachments/assets/6e1583ab-65db-423c-b0eb-b627586fbf86" />
 
 
 ### 3. Start chatting
@@ -62,23 +63,29 @@ The first time you run offgrid-ai, it looks for models already on your machine. 
 offgrid-ai
 ```
 
+<img width="786" height="281" alt="image" src="https://github.com/user-attachments/assets/03cb1e06-d461-4bdf-ad82-f0692e5ba5c6" />
+
+
 Pick a model from the list and press Enter. offgrid-ai configures the rest and opens the Pi coding agent.
+
+<img width="786" height="499" alt="image" src="https://github.com/user-attachments/assets/223e1455-c69c-4405-a91c-5bac1b9fc9bd" />
+
 
 ## Everyday commands
 
 ```bash
-offgrid-ai              # start a model
-offgrid-ai status       # see what's running
+offgrid-ai              # primary entry-point for the CLI
+offgrid-ai status       # see if any model is running
 offgrid-ai stop         # stop the running model
-offgrid-ai benchmark    # run a benchmark
+offgrid-ai benchmark    # run a benchmark paired with my local llm benchmark runner
 offgrid-ai uninstall    # remove offgrid-ai
 ```
 
 ## What can I do with it?
 
-- **Chat with local models** — no internet required after setup.
-- **Run benchmarks** — compare how different models perform on creative or data-science tasks.
-- **Keep data private** — everything happens on your machine.
+- **Chat with local models** — you download the models yourself, and then offgrid-ai helps configure and run then
+- **Run benchmarks** — compare how different models perform on creative or data-science tasks. Pairs with my other [local llm benchmark runner](https://github.com/eeshansrivastava89/local-llm-visual-benchmark)
+- **Keep data private** — everything runs on your machine without any cloud connections
 
 ## Need help?
 
