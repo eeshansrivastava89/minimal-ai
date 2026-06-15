@@ -20,6 +20,14 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
+// Guard against recursive invocation: if we're already inside npm pack's prepack hook,
+// skip the privacy gate to avoid infinite recursion.
+if (process.env.npm_lifecycle_event === "prepack" && process.env.OFFGRID_PRIVACY_GATE_RUNNING === "1") {
+  console.log("Skipping privacy gate: already running inside npm pack lifecycle.");
+  process.exit(0);
+}
+process.env.OFFGRID_PRIVACY_GATE_RUNNING = "1";
+
 let failures = 0;
 let warnings = 0;
 
@@ -128,6 +136,8 @@ const MAX_TARBALL_FILES = 50;
 const MAX_TARBALL_SIZE_MB = 5;
 
 try {
+  // Use --ignore-scripts to avoid recursive prepack during dry-run.
+  // The actual tarball contents are identical; this just skips the prepack hook.
   const packList = execSync("npm pack --dry-run --ignore-scripts 2>&1", { encoding: "utf-8" });
   const lines = packList.split("\n").filter(
     (l) =>
@@ -216,6 +226,7 @@ const walkFiles = (dir) => {
 let _tarball = null;
 let _tmpDir = null;
 try {
+  // Use --ignore-scripts for the secret scan pack too, for consistency.
   const packJson = JSON.parse(execSync("npm pack --json --ignore-scripts 2>/dev/null", { encoding: "utf-8" }));
   _tarball = packJson[0].filename;
   const tmpBase = join(homedir(), ".tmp");

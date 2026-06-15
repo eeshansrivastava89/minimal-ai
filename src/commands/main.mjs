@@ -27,8 +27,8 @@ export async function mainFlow() {
   const { models: ggufModels, drafters } = await scanGgufModels();
   const managedModels = await scanManagedModels();
   const profiles = await loadProfiles();
-  const hasAnyBackend = llamaBinary || managedModels.some((item) => item.models.length > 0);
-  const hasAnyModels = ggufModels.length > 0 || managedModels.some((item) => item.models.length > 0);
+  const hasAnyBackend = llamaBinary || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
+  const hasAnyModels = ggufModels.length > 0 || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
 
   const piInstalled = await hasPi();
   const needsLlama = ggufModels.length > 0 || profiles.some((profile) => backendFor(profile.backend).type === "local-server");

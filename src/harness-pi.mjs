@@ -70,7 +70,7 @@ export async function hasPi() {
 // ── Internals ──────────────────────────────────────────────────────────────
 
 async function activeProviderProfiles(currentProfile) {
-  const allProfiles = await loadProfiles().catch(() => []);
+  const allProfiles = await loadProfiles();
   const byAlias = new Map();
   for (const item of [...allProfiles, currentProfile]) {
     if (item.providerId !== currentProfile.providerId) continue;

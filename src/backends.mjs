@@ -87,51 +87,47 @@ export function defaultFlagsForBackend(backendId) {
 // ── Ollama model discovery ──────────────────────────────────────────────
 
 async function scanOllamaModels() {
-  try {
-    const response = await fetch(`${BACKENDS.ollama.apiBaseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    if (!response.ok) return [];
-    const body = await response.json();
-    if (!Array.isArray(body?.models)) return [];
-    return body.models
-      .filter((model) => isLocalOllamaModel(model))
-      .map((model) => ({
-        id: model.name,
-        label: ollamaLabel(model.name),
-        aliasSuggestion: model.name,
-        sizeBytes: model.size ?? 0,
-        quant: model.details?.quantization_level,
-        family: model.details?.family,
-        backend: "ollama",
-        source: "ollama",
-      })).sort((a, b) => a.label.localeCompare(b.label));
-  } catch {
-    return [];
+  const response = await fetch(`${BACKENDS.ollama.apiBaseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) {
+    throw new Error(`Ollama /api/tags returned ${response.status} ${response.statusText}`);
   }
+  const body = await response.json();
+  if (!Array.isArray(body?.models)) return [];
+  return body.models
+    .filter((model) => isLocalOllamaModel(model))
+    .map((model) => ({
+      id: model.name,
+      label: ollamaLabel(model.name),
+      aliasSuggestion: model.name,
+      sizeBytes: model.size ?? 0,
+      quant: model.details?.quantization_level,
+      family: model.details?.family,
+      backend: "ollama",
+      source: "ollama",
+    })).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // ── oMLX model discovery ───────────────────────────────────────────────
 
 async function scanOmlxModels() {
-  try {
-    const response = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(3000) });
-    if (!response.ok) return [];
-    const body = await response.json();
-    if (!Array.isArray(body?.data)) return [];
-    return body.data
-      .filter((model) => isChatOmlxModel(model))
-      .map((model) => ({
-        id: model.id,
-        label: omlxLabel(model.id),
-        aliasSuggestion: model.id,
-        sizeBytes: 0,
-        quant: null,
-        family: null,
-        backend: "omlx",
-        source: "omlx",
-      })).sort((a, b) => a.label.localeCompare(b.label));
-  } catch {
-    return [];
+  const response = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) {
+    throw new Error(`oMLX /models returned ${response.status} ${response.statusText}`);
   }
+  const body = await response.json();
+  if (!Array.isArray(body?.data)) return [];
+  return body.data
+    .filter((model) => isChatOmlxModel(model))
+    .map((model) => ({
+      id: model.id,
+      label: omlxLabel(model.id),
+      aliasSuggestion: model.id,
+      sizeBytes: 0,
+      quant: null,
+      family: null,
+      backend: "omlx",
+      source: "omlx",
+    })).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────

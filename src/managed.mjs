@@ -10,9 +10,9 @@ export async function scanManagedModels() {
     const backend = BACKENDS[backendId];
     try {
       const models = await backend.scanModels();
-      results.push({ backendId, models });
-    } catch {
-      // Managed backends are optional and may not be running.
+      results.push({ backendId, models, status: "ok" });
+    } catch (error) {
+      results.push({ backendId, models: [], status: "unavailable", reason: error?.message ?? String(error) });
     }
   }
   return results;

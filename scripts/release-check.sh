@@ -115,8 +115,29 @@ print_header
 # ── 1. Repo status ──────────────────────────────────────────────────
 
 print_step "Repo diff review"
-run_check "Git status" git --no-pager status --short
-run_check "Git diff stat" git --no-pager diff --stat
+
+# Git status --short exits 0 even when dirty, so we must check output.
+GIT_STATUS_OUTPUT="$(git --no-pager status --short)"
+if [[ -n "$GIT_STATUS_OUTPUT" ]]; then
+  printf '%s\n' "$GIT_STATUS_OUTPUT"
+  FAILED_STEP="Git status (dirty)"
+  add_summary "Git status" "FAIL" "working tree has uncommitted changes"
+  print_fail "Working tree has uncommitted changes. Commit or stash before releasing."
+  exit 1
+fi
+add_summary "Git status" "PASS" "clean"
+print_ok "Git status (clean)"
+
+GIT_DIFF_OUTPUT="$(git --no-pager diff --stat)"
+if [[ -n "$GIT_DIFF_OUTPUT" ]]; then
+  printf '%s\n' "$GIT_DIFF_OUTPUT"
+  FAILED_STEP="Git diff stat (staged changes)"
+  add_summary "Git diff stat" "FAIL" "staged changes present"
+  print_fail "Staged changes present. Commit before releasing."
+  exit 1
+fi
+add_summary "Git diff stat" "PASS" "clean"
+print_ok "Git diff stat (clean)"
 
 # ── 2. Install ───────────────────────────────────────────────────────
 

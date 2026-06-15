@@ -195,47 +195,55 @@ export async function waitForReady(profile, pid, rawLogPath) {
 // ── Internals ──────────────────────────────────────────────────────────────
 
 async function serverModelIds(baseUrl) {
-  const body = await fetchJson(`${baseUrl.replace(/\/$/, "")}/models`);
-  return (Array.isArray(body?.data) ? body.data : [])
+  const result = await fetchJson(`${baseUrl.replace(/\/+$/u, "")}/models`);
+  if (!result.ok) return [];
+  return (Array.isArray(result.data?.data) ? result.data.data : [])
     .map((model) => String(model?.id ?? "").trim())
     .filter(Boolean);
 }
 
 async function ollamaLoadedModelIds(profile) {
-  const body = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/ps`);
-  return (Array.isArray(body?.models) ? body.models : [])
+  const result = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/ps`);
+  if (!result.ok) return [];
+  return (Array.isArray(result.data?.models) ? result.data.models : [])
     .flatMap((model) => [model?.name, model?.model])
     .map((id) => String(id ?? "").trim())
     .filter(Boolean);
 }
 
 async function omlxLoadedModelIds(profile) {
-  const status = await fetchJson(`${profile.baseUrl.replace(/\/$/, "")}/models/status`);
-  const fromStatus = (Array.isArray(status?.models) ? status.models : [])
-    .filter((model) => model?.loaded === true)
-    .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-  if (Number(status?.loaded_count) === 0) return fromStatus;
+  const statusResult = await fetchJson(`${profile.baseUrl.replace(/\/+$/u, "")}/models/status`);
+  const fromStatus = statusResult.ok
+    ? (Array.isArray(statusResult.data?.models) ? statusResult.data.models : [])
+        .filter((model) => model?.loaded === true)
+        .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean)
+    : [];
+  if (!statusResult.ok || Number(statusResult.data?.loaded_count) === 0) return fromStatus;
 
-  const summary = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
-  const fromSummary = (Array.isArray(summary?.loaded_models) ? summary.loaded_models : [])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
+  const summaryResult = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
+  const fromSummary = summaryResult.ok
+    ? (Array.isArray(summaryResult.data?.loaded_models) ? summaryResult.data.loaded_models : [])
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean)
+    : [];
   return [...fromStatus, ...fromSummary];
 }
 
 async function fetchJson(url) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
+    if (!response.ok) return { ok: false, reason: "http", status: response.status, data: null };
+    const data = await response.json();
+    return { ok: true, data };
+  } catch (error) {
+    if (error?.name === "AbortError" || error?.name === "TimeoutError") return { ok: false, reason: "timeout", data: null };
+    return { ok: false, reason: "network", data: null };
   }
 }
 
-function apiRootUrl(baseUrl) {
+export function apiRootUrl(baseUrl) {
   try {
     const url = new URL(baseUrl);
     url.pathname = url.pathname.replace(/\/v1\/?$/u, "") || "/";

@@ -33,6 +33,12 @@ export async function offerManagedLlamaRuntimeUpdate(prompt, { fetchImpl = globa
   return true;
 }
 
+/**
+ * Check for the latest llama.cpp release on GitHub.
+ * Returns null if the check fails (network error, timeout, etc.).
+ * Callers must treat null as "check failed, skip prompt" — do not
+ * treat null as "no update available."
+ */
 export async function latestLlamaRelease(fetchImpl = globalThis.fetch) {
   try {
     const response = await fetchImpl(RELEASE_API, { signal: AbortSignal.timeout(5000) });
@@ -47,6 +53,11 @@ export async function latestLlamaRelease(fetchImpl = globalThis.fetch) {
   }
 }
 
+/**
+ * Read the installed runtime version from disk.
+ * Returns null if not installed or if the version file is missing/corrupt.
+ * Callers must treat null as "runtime not installed" — not as a hidden default.
+ */
 export async function installedRuntime() {
   try {
     return JSON.parse(await readFile(VERSION_PATH, "utf8"));

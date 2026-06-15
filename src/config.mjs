@@ -46,8 +46,13 @@ export async function loadConfig() {
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
     return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULT_CONFIG };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { ...DEFAULT_CONFIG };
+    throw new Error(
+      `Failed to read config at ${CONFIG_PATH}: ${error.message}. ` +
+      `Fix or remove the file, then try again.`,
+      { cause: error }
+    );
   }
 }
 
@@ -99,6 +104,7 @@ export async function findLlamaServer() {
     if (existsSync(candidate)) return candidate;
   } catch { /* Homebrew not installed or llama.cpp not brewed */ }
 
+  // No llama-server found — caller must present actionable error or onboarding.
   return null;
 }
 

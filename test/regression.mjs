@@ -186,6 +186,30 @@ describe("regressions", () => {
       assert.equal(status.modelLoaded, false);
     });
   });
+
+  it("loadConfig returns defaults for missing config (ENOENT)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "offgrid-no-config-"));
+    process.env.OFFGRID_DIR = dir;
+    // Fresh import to pick up OFFGRID_DIR.
+    const mod = await import("../src/config.mjs?t=" + Date.now());
+    const config = await mod.loadConfig();
+    assert.equal(config.modelScanDirs.length, 0);
+    assert.equal(config.benchmarkRepoPath, null);
+  });
+
+  it("loadConfig throws on corrupt config instead of silently defaulting", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "offgrid-corrupt-config-"));
+    process.env.OFFGRID_DIR = dir;
+    const configPath = join(dir, "config.json");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true });
+    await writeFile(configPath, "not valid json {{{");
+    const mod = await import("../src/config.mjs?t=" + Date.now());
+    await assert.rejects(
+      () => mod.loadConfig(),
+      (err) => err.message.includes("Failed to read config"),
+    );
+  });
 });
 
 function optionValue(argv, flag) {

@@ -90,8 +90,12 @@ function printFoundModels(ggufModels, managedModels, llamaBinary) {
     console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"}`));
     if (!llamaBinary) console.log(pc.yellow("Install the managed llama.cpp runtime to run these GGUF models."));
   }
-  for (const { backendId, models } of managedModels) {
-    if (models.length > 0) console.log(pc.green(`✓ ${BACKENDS[backendId].label}: ${models.length} model${models.length === 1 ? "" : "s"}`));
+  for (const { backendId, models, status, reason } of managedModels) {
+    if (status === "unavailable") {
+      console.log(pc.yellow(`${BACKENDS[backendId].label}: unavailable${reason ? ` — ${reason}` : ""}`));
+    } else if (models.length > 0) {
+      console.log(pc.green(`✓ ${BACKENDS[backendId].label}: ${models.length} model${models.length === 1 ? "" : "s"}`));
+    }
   }
 }
 

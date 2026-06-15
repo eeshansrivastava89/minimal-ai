@@ -18,7 +18,8 @@ export function normalizeCatalog(catalog) {
   const profiledPaths = new Set(profiles.map((profile) => profile.modelPath).filter(Boolean));
   const newModels = ggufModels.filter((model) => !profiledPaths.has(model.path));
   const managedItems = [];
-  for (const { backendId, models } of managedModels) {
+  for (const { backendId, models, status } of managedModels) {
+    if (status === "unavailable") continue;
     const profiledAliases = new Set(
       profiles
         .filter((profile) => profile.backend === backendId)
