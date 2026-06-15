@@ -41,11 +41,13 @@ This installs offgrid-ai and anything else it needs. Then open a new terminal wi
 offgrid-ai
 ```
 
-If you already have Node.js installed, you can also use:
+If you already have Node.js installed, you can also install with npm:
 
 ```bash
 npm install -g offgrid-ai@latest --prefer-online
 ```
+
+The curl installer is recommended for first-time setup because it also verifies the global npm bin directory is on your PATH. The npm package itself does not run install scripts or mutate shell config during `npm install`.
 
 ### 2. Pick a model
 

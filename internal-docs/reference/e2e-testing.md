@@ -103,21 +103,9 @@ offgrid-ai uninstall        # remove offgrid-ai and data directory
 
 For `offgrid-ai benchmark`, you will be prompted to link the `local-llm-visual-benchmark` repo. Automated runs require Pi to be installed and a local model server (llama.cpp, Ollama, or oMLX) to be running.
 
-## Postinstall / CI behavior
+## Install behavior
 
-`src/postinstall.mjs` intentionally exits early when `CI` or `OFFGRID_SKIP_POSTINSTALL` is set. This protects CI runners and automated installs from shell-config modifications.
-
-When testing the postinstall script directly (for example in `test/regression.mjs`), the environment must explicitly clear those variables:
-
-```js
-const env = {
-  ...process.env,
-  CI: "",
-  OFFGRID_SKIP_POSTINSTALL: "",
-};
-```
-
-GitHub Actions sets `CI=true` by default, so postinstall regression tests that do not unset it will fail with the script exiting before the assertions run.
+The npm package intentionally has no install lifecycle scripts. PATH setup belongs to `install.sh`, not to `npm install`, so installs do not trigger npm allow-scripts warnings and do not silently mutate shell config.
 
 ## VM Quick Reference
 

@@ -1,6 +1,6 @@
 {
   "name": "offgrid-ai",
-  "version": "0.8.14",
+  "version": "0.8.15",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, benchmark",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
@@ -36,7 +36,6 @@
     "release:check": "bash scripts/release-check.sh",
     "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual",
     "prepack": "npm run check:privacy",
-    "postinstall": "node src/postinstall.mjs",
     "pretest": "npm run lint"
   },
   "dependencies": {

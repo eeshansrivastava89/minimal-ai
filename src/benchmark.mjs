@@ -1,7 +1,7 @@
 import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -250,6 +250,8 @@ const BENCH_COLORS = {
   thinking: pc.magenta,
   text: pc.green,
   tool: pc.yellow,
+  success: pc.green,
+  warning: pc.yellow,
   toolOutput: pc.dim,
   error: pc.red,
   info: pc.cyan,
@@ -268,9 +270,9 @@ function formatTokens(n) {
   return String(Math.round(n));
 }
 
-function estimatedTokensFromText(text) {
-  // Simple heuristic: ~4 chars per token for code/English.
-  return Math.max(1, Math.ceil(text.length / 4));
+function estimatedTokensFromBytes(bytes) {
+  // Simple heuristic: ~4 bytes per token for code/English.
+  return Math.max(1, Math.ceil(bytes / 4));
 }
 
 function clearStatusLine() {
@@ -296,24 +298,24 @@ function renderStreamEvent(parsed, state, opts = {}) {
 
   switch (type) {
     case "session":
-      console.log(BENCH_COLORS.dim(`[session] ${parsed.id}`));
+      printFinalLine(BENCH_COLORS.info("Pi benchmark started"));
+      if (parsed.id) printFinalLine(BENCH_COLORS.dim(`  Session  ${parsed.id}`));
       break;
     case "agent_start":
-      console.log(BENCH_COLORS.dim("[agent_start]"));
       break;
     case "turn_start": {
       state.turn += 1;
-      state.status.mode = "thinking";
-      state.status.toolName = null;
-      state.status.bytes = 0;
-      state.status.text = "";
-      printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}]`));
+      state.turnHadToolError = false;
+      resetStatus(state, "thinking");
+      printFinalLine("");
+      printFinalLine(BENCH_COLORS.info(`Turn ${state.turn}`));
       break;
     }
     case "message_start": {
       const msg = parsed.message;
-      if (msg?.role === "assistant" && msg.provider && msg.model) {
-        console.log(BENCH_COLORS.info(`[assistant] ${msg.provider}/${msg.model}`));
+      if (!state.modelPrinted && msg?.role === "assistant" && msg.provider && msg.model) {
+        state.modelPrinted = true;
+        printFinalLine(BENCH_COLORS.dim(`  Model    ${msg.provider}/${msg.model}`));
       }
       break;
     }
@@ -321,90 +323,189 @@ function renderStreamEvent(parsed, state, opts = {}) {
       const evt = parsed.assistantMessageEvent;
       if (!evt) return;
       const subtype = String(evt.type ?? "").replace(/_/gu, "");
-      if (subtype === "thinkingstart" || subtype === "thinkingdelta") {
+      if (subtype === "thinkingstart") {
+        resetStatus(state, "thinking");
+      } else if (subtype === "thinkingdelta") {
         if (verbose) process.stdout.write(BENCH_COLORS.thinking(evt.delta || ""));
-        state.status.mode = "thinking";
-        updateStatusFromDelta(state, evt.delta);
-      } else if (subtype === "textstart" || subtype === "textdelta") {
+        updateStatusFromDelta(state, evt.delta, "thinking");
+      } else if (subtype === "textstart") {
+        resetStatus(state, "text");
+      } else if (subtype === "textdelta") {
         if (verbose) process.stdout.write(BENCH_COLORS.text(evt.delta || ""));
-        state.status.mode = "text";
-        updateStatusFromDelta(state, evt.delta);
+        updateStatusFromDelta(state, evt.delta, "text");
       } else if (subtype === "toolcallstart") {
-        if (!verbose) printFinalLine(BENCH_COLORS.tool("[tool_call_start]"));
+        resetStatus(state, "tool");
       } else if (subtype === "toolcalldelta") {
         if (verbose) process.stdout.write(BENCH_COLORS.tool(evt.delta || ""));
-        state.status.mode = "tool";
-        updateStatusFromDelta(state, evt.delta);
-      } else if (subtype === "toolcallend") {
-        if (!verbose) printFinalLine(BENCH_COLORS.tool("[tool_call_end]"));
+        updateStatusFromDelta(state, evt.delta, "tool");
       }
       break;
     }
-    case "message_end": {
-      const msg = parsed.message;
-      if (msg?.role === "assistant" && Array.isArray(msg.content)) {
-        for (const item of msg.content) {
-          if (item.type === "toolCall") {
-            const toolLine = formatToolCall(item);
-            state.status.toolName = item.name;
-            if (!verbose) printFinalLine(BENCH_COLORS.tool(toolLine));
-          }
-        }
-      }
+    case "message_end":
+      break;
+    case "tool_execution_start": {
+      state.activeTool = {
+        name: parsed.toolName,
+        args: parsed.args ?? {},
+        outputText: "",
+      };
+      resetStatus(state, "exec", parsed.toolName);
+      printFinalLine(BENCH_COLORS.tool(formatToolStart(parsed.toolName, parsed.args ?? {}, state)));
       break;
     }
-    case "tool_execution_start":
-      state.status.mode = "exec";
-      state.status.toolName = parsed.toolName;
-      state.status.bytes = 0;
-      state.status.text = "";
-      printFinalLine(BENCH_COLORS.tool(`[exec] ${parsed.toolName}`));
-      break;
     case "tool_execution_update": {
-      if (parsed.content) {
-        if (verbose) process.stdout.write(BENCH_COLORS.toolOutput(parsed.content));
-        state.status.mode = "exec";
-        updateStatusFromDelta(state, parsed.content);
+      const text = toolResultText(parsed.partialResult ?? parsed.result ?? parsed);
+      if (text) {
+        if (verbose) process.stdout.write(BENCH_COLORS.toolOutput(text));
+        if (state.activeTool) state.activeTool.outputText = text;
+        updateStatusFromDelta(state, text, "exec");
       }
       break;
     }
-    case "tool_execution_end":
-      printFinalLine(BENCH_COLORS.tool(`[exec done] ${state.status.toolName || parsed.toolName}`));
+    case "tool_execution_end": {
+      const lines = formatToolEnd(parsed, state);
+      if (parsed.isError) state.turnHadToolError = true;
+      for (const line of lines) printFinalLine(line);
+      state.activeTool = null;
+      resetStatus(state, "idle");
       break;
+    }
     case "toolResult": {
-      const errorFlag = parsed.isError ? BENCH_COLORS.error(" error") : "";
-      printFinalLine(BENCH_COLORS.tool(`[result] ${parsed.toolName}${errorFlag}`));
+      if (parsed.isError) state.turnHadToolError = true;
+      const status = parsed.isError ? BENCH_COLORS.error("✗") : BENCH_COLORS.success("✓");
+      printFinalLine(`${status} ${parsed.toolName ?? "tool"}`);
       break;
     }
     case "turn_end": {
       const usage = parsed.message?.usage;
-      if (usage) {
-        const exact = usage.output ?? usage.totalTokens ?? 0;
-        printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}] completed · ${formatTokens(exact)} tokens`));
-      } else {
-        printFinalLine(BENCH_COLORS.info(`[turn ${state.turn}] completed`));
-      }
+      const tokenPart = usage ? ` · ${formatTokens(usage.output ?? usage.totalTokens ?? 0)} tokens` : "";
+      const marker = state.turnHadToolError ? BENCH_COLORS.warning("⚠") : BENCH_COLORS.success("✓");
+      const suffix = state.turnHadToolError ? " · tool issue" : "";
+      printFinalLine(`${marker} turn ${state.turn}${tokenPart}${suffix}`);
       break;
     }
     case "agent_end":
       clearStatusLine();
-      console.log(BENCH_COLORS.dim("[agent_end]"));
+      printFinalLine(BENCH_COLORS.info("Pi benchmark finished"));
       break;
     default:
       break;
   }
 }
 
-function updateStatusFromDelta(state, delta) {
+function resetStatus(state, mode, toolName = null) {
+  state.status.mode = mode;
+  state.status.toolName = toolName;
+  state.status.bytes = 0;
+  state.status.tokens = 0;
+}
+
+function updateStatusFromDelta(state, delta, mode = state.status.mode) {
   if (!delta) return;
+  state.status.mode = mode;
   state.status.bytes += Buffer.byteLength(delta, "utf8");
-  state.status.text = (state.status.text || "") + delta;
-  state.status.tokens = estimatedTokensFromText(state.status.text);
+  state.status.tokens = estimatedTokensFromBytes(state.status.bytes);
   const label = state.status.toolName ? ` · ${state.status.toolName}` : "";
-  const modeLabel = state.status.mode === "thinking" ? "thinking" : state.status.mode === "text" ? "text" : state.status.mode === "tool" ? "tool" : "exec";
+  const modeLabel = {
+    thinking: "thinking…",
+    text: "drafting response…",
+    tool: "preparing tool…",
+    exec: "running tool…",
+  }[state.status.mode] ?? "working…";
   const bytes = formatBytes(state.status.bytes);
   const tokens = formatTokens(state.status.tokens);
-  printStatusLine(BENCH_COLORS.dim(`[turn ${state.turn}] ${modeLabel}${label} · ${bytes} (~${tokens} tokens)`));
+  printStatusLine(BENCH_COLORS.dim(`Turn ${state.turn} ${modeLabel}${label} · ${bytes} (~${tokens} tokens)`));
+}
+
+function formatToolStart(toolName, args, state) {
+  if (toolName === "read") return `→ read ${displayPath(args.path, state)}`;
+  if (toolName === "write") {
+    const size = args.content ? ` · ${formatBytes(Buffer.byteLength(String(args.content), "utf8"))}` : "";
+    return `→ write ${displayPath(args.path, state)}${size}`;
+  }
+  if (toolName === "edit") {
+    const count = Array.isArray(args.edits) ? args.edits.length : 0;
+    const suffix = count > 0 ? ` · ${count} replacement${count === 1 ? "" : "s"}` : "";
+    return `→ edit ${displayPath(args.path, state)}${suffix}`;
+  }
+  if (toolName === "bash") return `→ run ${truncateOneLine(args.command ?? "")}`;
+  return `→ ${toolName}${compactArgs(args)}`;
+}
+
+function formatToolEnd(parsed, state) {
+  const toolName = parsed.toolName ?? state.activeTool?.name ?? "tool";
+  const args = parsed.args ?? state.activeTool?.args ?? {};
+  const text = toolResultText(parsed.result) || state.activeTool?.outputText || "";
+  const marker = parsed.isError ? BENCH_COLORS.error("✗") : BENCH_COLORS.success("✓");
+
+  if (parsed.isError) {
+    return [`${marker} ${toolName} failed · ${firstUsefulLine(text)}`];
+  }
+
+  if (toolName === "write") return [`${marker} wrote ${displayPath(args.path, state)}${parsedWriteSize(text)}`];
+  if (toolName === "read") return [`${marker} read ${displayPath(args.path, state)}${text ? ` · ${formatBytes(Buffer.byteLength(text, "utf8"))}` : ""}`];
+  if (toolName === "edit") return [`${marker} edited ${displayPath(args.path, state)}`];
+  if (toolName === "bash") return formatBashResult(marker, text);
+
+  const summary = firstUsefulLine(text);
+  return [`${marker} ${toolName}${summary ? ` · ${summary}` : ""}`];
+}
+
+function formatBashResult(marker, text) {
+  const lines = meaningfulLines(text).slice(0, 2);
+  if (lines.length === 0) return [`${marker} command completed`];
+  return [`${marker} ${lines[0]}`, ...lines.slice(1).map((line) => BENCH_COLORS.dim(`  ${line}`))];
+}
+
+function parsedWriteSize(text) {
+  const match = String(text).match(/Successfully wrote\s+([0-9,]+)\s+bytes/iu);
+  if (!match) return "";
+  const bytes = Number(match[1].replace(/,/gu, ""));
+  return Number.isFinite(bytes) ? ` · ${formatBytes(bytes)}` : "";
+}
+
+function toolResultText(result) {
+  const content = result?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((item) => typeof item?.text === "string" ? item.text : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function firstUsefulLine(text) {
+  return meaningfulLines(text)[0] ?? "no details";
+}
+
+function meaningfulLines(text) {
+  const lines = String(text ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^\^+$/u.test(line));
+  const errorLine = lines.find((line) => /(?:error|exception|failed|not found|command exited with code|validation failed)/iu.test(line));
+  if (errorLine) return [errorLine, ...lines.filter((line) => line !== errorLine)];
+  return lines;
+}
+
+function displayPath(value, state) {
+  if (!value) return "unknown";
+  const path = String(value);
+  const rel = state.cwd ? relative(state.cwd, path) : path;
+  if (rel && !rel.startsWith("..") && rel !== ".") return rel;
+  return basename(path) || path;
+}
+
+function compactArgs(args) {
+  const entries = Object.entries(args ?? {}).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  if (entries.length === 0) return "";
+  return ` · ${truncateOneLine(entries.map(([key, value]) => `${key}=${String(value)}`).join(" "))}`;
+}
+
+function truncateOneLine(value, max = Math.max(60, Math.min(process.stdout.columns ?? 100, 140) - 12)) {
+  const text = String(value ?? "").replace(/\s+/gu, " ").trim();
+  return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
 }
 
 function formatBytes(bytes) {
@@ -463,7 +564,14 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   const stderrHandle = await openFileHandle(stderrPath, "w");
 
   const verbose = Boolean(process.env.OFFGRID_BENCHMARK_VERBOSE);
-  const renderState = { turn: 0, status: { mode: "idle", toolName: null, bytes: 0, text: "", tokens: 0 } };
+  const renderState = {
+    cwd: runDirectory,
+    turn: 0,
+    turnHadToolError: false,
+    modelPrinted: false,
+    activeTool: null,
+    status: { mode: "idle", toolName: null, bytes: 0, tokens: 0 },
+  };
 
   function appendResponse(text) {
     responseBuffer += text;
