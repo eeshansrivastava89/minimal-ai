@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pc, renderRows, renderSection } from "../ui.mjs";
 import { slugModelId, createRunId, buildToolPrompt } from "./shared.mjs";
+import { parseModelName } from "../model-name.mjs";
 
 function harnessDisplayName(id) {
   if (id === "pi") return "Pi";
@@ -54,7 +55,7 @@ export async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, 
     kind,
     runId,
     benchmark: { id: benchmark.id, title: benchmark.title, description: benchmark.description, prompt: benchmark.prompt },
-    model: { id: modelId, slug: modelSlug },
+    model: { id: modelId, slug: modelSlug, displayName: parseModelName(modelId, modelSource === "ollama" ? "ollama" : modelSource === "omlx" ? "omlx" : "local-gguf").display },
     status: "prepared",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),

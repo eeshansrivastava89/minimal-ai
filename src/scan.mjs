@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadata } from "./gguf.mjs";
+import { parseModelName } from "./model-name.mjs";
 
 // ── Scan for GGUF models and MTP drafters ────────────────────────────────
 
@@ -48,6 +49,7 @@ async function scanOneDir(root) {
     const mmprojPath = mmprojs.find((candidate) => dirname(candidate) === dir) ?? null;
     const name = basename(path).replace(/\.gguf$/i, "");
     const sizeBytes = statSync(path).size;
+    const parsed = parseModelName(name, "local-gguf");
 
     // Read GGUF metadata to detect drafter architecture
     const meta = safeReadGgufMetadata(path);
@@ -57,9 +59,9 @@ async function scanOneDir(root) {
       // This is an MTP drafter model, not a main model
       drafters.push({
         path,
-        label: labelFromName(name),
-        aliasSuggestion: aliasFromName(name),
-        quant: quantFromName(name),
+        label: parsed.display,
+        aliasSuggestion: parsed.id,
+        quant: parsed.quant,
         sizeBytes,
         architecture,
         targetHint: drafterTargetHint(name),
@@ -70,9 +72,9 @@ async function scanOneDir(root) {
       models.push({
         path,
         mmprojPath,
-        label: labelFromName(name),
-        aliasSuggestion: aliasFromName(name),
-        quant: quantFromName(name),
+        label: parsed.display,
+        aliasSuggestion: parsed.id,
+        quant: parsed.quant,
         sizeBytes,
         backend: "llama-cpp",
         source: "local-gguf",
@@ -143,20 +145,7 @@ async function findFiles(root, predicate) {
   return result;
 }
 
-function labelFromName(name) {
-  return name
-    .replace(/-/g, " ")
-    .replace(/\bqwen/i, "Qwen")
-    .replace(/q4_k_m/i, "Q4_K_M");
-}
-
-function aliasFromName(name) {
-  return name.replace(/-Q4_K_M$/i, "-GGUF");
-}
-
-function quantFromName(name) {
-  return name.match(/(Q\d_K_[A-Z]+|Q\d_[01]|UD-[A-Z0-9_]+)/)?.[1];
-}
+// (labelFromName, aliasFromName, quantFromName removed — parseModelName in model-name.mjs is the single path)
 
 
 function safeReadGgufMetadata(path) {

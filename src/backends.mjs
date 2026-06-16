@@ -1,5 +1,6 @@
 import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
+import { parseModelName } from "./model-name.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ async function scanOllamaModels() {
     .filter((model) => isLocalOllamaModel(model))
     .map((model) => ({
       id: model.name,
-      label: ollamaLabel(model.name),
+      label: parseModelName(model.name, "ollama").display,
       aliasSuggestion: model.name,
       sizeBytes: model.size ?? 0,
       quant: model.details?.quantization_level,
@@ -120,7 +121,7 @@ async function scanOmlxModels() {
     .filter((model) => isChatOmlxModel(model))
     .map((model) => ({
       id: model.id,
-      label: omlxLabel(model.id),
+      label: parseModelName(model.id, "omlx").display,
       aliasSuggestion: model.id,
       sizeBytes: 0,
       quant: null,
@@ -147,10 +148,4 @@ function isChatOmlxModel(model) {
   return true;
 }
 
-function ollamaLabel(name) {
-  return name.replace(/[-_]/g, " ").replace(/^gemma\b/i, "Gemma").replace(/^qwen/i, "Qwen");
-}
-
-function omlxLabel(id) {
-  return id.replace(/[-_]/g, " ").replace(/^gemma-4/i, "Gemma 4").replace(/^qwen/i, "Qwen");
-}
+// (ollamaLabel and omlxLabel removed — parseModelName in model-name.mjs is the single path)

@@ -4,6 +4,11 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+let importCounter = 0;
+function freshConfigImport() {
+  return import(`../src/config.mjs?t=${Date.now()}-${++importCounter}`);
+}
+
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
@@ -131,7 +136,7 @@ describe("regressions", () => {
     await writeFile(file, "GGUF\0");
     const caps = detectCapabilities(file, null);
     assert.equal(caps.architecture, null);
-    assert.equal(caps.quant, "q4_k_m");
+    assert.equal(caps.quant, "Q4_K_M");
   });
 
   it("does not treat an available Ollama model as running unless it is loaded", async () => {
@@ -191,7 +196,7 @@ describe("regressions", () => {
     const dir = await mkdtemp(join(tmpdir(), "offgrid-no-config-"));
     process.env.OFFGRID_DIR = dir;
     // Fresh import to pick up OFFGRID_DIR.
-    const mod = await import("../src/config.mjs?t=" + Date.now());
+    const mod = await freshConfigImport();
     const config = await mod.loadConfig();
     assert.equal(config.modelScanDirs.length, 0);
     assert.equal(config.benchmarkRepoPath, null);
@@ -204,7 +209,7 @@ describe("regressions", () => {
     const { mkdir } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });
     await writeFile(configPath, "not valid json {{{");
-    const mod = await import("../src/config.mjs?t=" + Date.now());
+    const mod = await freshConfigImport();
     await assert.rejects(
       () => mod.loadConfig(),
       (err) => err.message.includes("Failed to read config"),

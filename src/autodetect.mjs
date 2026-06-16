@@ -2,13 +2,13 @@ import { basename } from "node:path";
 import { existsSync } from "node:fs";
 import { readGgufMetadata } from "./gguf.mjs";
 import { defaultFlagsForBackend } from "./backends.mjs";
+import { parseModelName } from "./model-name.mjs";
 
 // ── Detect model capabilities from GGUF metadata ──────────────────────────
 
 export function detectCapabilities(modelPath, mmprojPath) {
   const meta = safeReadGgufMetadata(modelPath);
   const mmprojMeta = mmprojPath ? safeReadGgufMetadata(mmprojPath) : {};
-  const name = basename(modelPath).toLowerCase();
   const pathHints = String(modelPath).toLowerCase();
 
   // Architecture
@@ -33,8 +33,11 @@ export function detectCapabilities(modelPath, mmprojPath) {
   // Do not treat all Qwen models as MTP; require an explicit filename or metadata hint.
   const mtp = /\bmtp\b|draft-mtp|multi-token/i.test(pathHints) || Object.keys(meta).some((key) => /mtp|draft|speculative/i.test(key));
 
-  // Quantization
-  const quant = name.match(/(Q\d_K_[A-Z]+|Q\d_[01]|UD-[A-Z0-9_]+)/i)?.[1] ?? null;
+  // Quantization — use parseModelName (single path) for filename-based extraction.
+  // GGUF metadata does not store a standardized quant field, so the filename
+  // is the authoritative source for quant identification.
+  const parsed = parseModelName(basename(modelPath).replace(/\.gguf$/i, ""), "local-gguf");
+  const quant = parsed.quant;
 
   // Context size from metadata, fallback to name hints
   const metaCtx = architecture
