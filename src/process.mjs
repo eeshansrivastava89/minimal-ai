@@ -209,7 +209,7 @@ export async function waitForReady(profile, pid, rawLogPath) {
 
 // ── Internals ──────────────────────────────────────────────────────────────
 
-async function serverModelIds(baseUrl) {
+export async function serverModelIds(baseUrl) {
   const result = await fetchJson(`${baseUrl.replace(/\/+$/u, "")}/models`);
   if (!result.ok) return [];
   return (Array.isArray(result.data?.data) ? result.data.data : [])

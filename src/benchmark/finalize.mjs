@@ -1,7 +1,7 @@
 // ── Unload model from server memory after benchmark ────────────────────────────
 
 import { backendFor } from "../backends.mjs";
-import { apiRootUrl } from "../process.mjs";
+import { apiRootUrl, serverModelIds } from "../process.mjs";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -33,12 +33,60 @@ export async function unloadModelFromServer(profile) {
   }
 
   if (backend.id === "omlx") {
-    // oMLX does not expose a model-unload endpoint. The model stays resident
-    // until the oMLX server process is stopped.
-    return { unloaded: false, backend: backend.id, reason: "no unload API available" };
+    return await unloadOmlxModel(profile);
   }
 
   return { unloaded: false, backend: backend.id, reason: "unsupported backend" };
+}
+
+async function unloadOmlxModel(profile) {
+  const baseUrl = profile.baseUrl?.replace(/\/v1\/?$/u, "") || "";
+  const adminUrl = `${baseUrl}/admin/api/models`;
+  const modelId = profile.modelAlias || profile.omlxModel || profile.id;
+
+  try {
+    const ids = await serverModelIds(profile.baseUrl);
+    const match = ids.find((id) => id.toLowerCase() === modelId.toLowerCase());
+    const targetId = match ?? modelId;
+
+    const response = await fetch(`${adminUrl}/${encodeURIComponent(targetId)}/unload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (response.ok) {
+      return { unloaded: true, backend: "omlx", modelId: targetId };
+    }
+
+    let detail = "";
+    try {
+      const body = await response.json();
+      detail = body?.detail ?? body?.message ?? "";
+    } catch {
+      detail = await response.text().catch(() => "");
+    }
+
+    if (response.status === 400 && /not loaded/i.test(detail)) {
+      return { unloaded: true, backend: "omlx", modelId: targetId, reason: "model was not loaded" };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        unloaded: false,
+        backend: "omlx",
+        modelId: targetId,
+        error: "oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or unload manually from the admin panel.",
+      };
+    }
+
+    return { unloaded: false, backend: "omlx", modelId: targetId, error: `HTTP ${response.status}: ${detail}` };
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") {
+      return { unloaded: false, backend: "omlx", modelId, error: "Unload request timed out. The model may still be unloading in the background." };
+    }
+    return { unloaded: false, backend: "omlx", modelId, error: err.message };
+  }
 }
 
 export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics) {
