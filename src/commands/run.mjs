@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
-import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile } from "../process.mjs";
+import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer } from "../process.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
@@ -32,6 +32,11 @@ export async function runProfile(profile, options = {}) {
   if (isManaged) {
     if (!(await serverReady(profile.baseUrl))) {
       throw new Error(`${backend.label} is not running at ${profile.baseUrl}. Start it and try again.`);
+    }
+    const available = await modelAvailableOnServer(profile);
+    if (!available) {
+      const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+      throw new Error(`${modelId} is not available on ${backend.label} at ${profile.baseUrl}.`);
     }
     console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
   } else {

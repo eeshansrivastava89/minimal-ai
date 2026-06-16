@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import {
   BENCH_COLORS, renderStreamEvent,
-  formatToolCall,
+  formatToolCall, printFinalLine,
 } from "./stream-renderer.mjs";
 import { piModelString } from "./shared.mjs";
 
@@ -211,6 +211,8 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
         resolve(runResult);
         return;
       }
+
+      printFinalLine(BENCH_COLORS.info("Pi benchmark finished"));
 
       if (runResult.exitCode !== 0) {
         runResult.error = { message: `Pi exited with code ${runResult.exitCode}` };

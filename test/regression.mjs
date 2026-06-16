@@ -189,6 +189,65 @@ describe("regressions", () => {
       assert.equal(status.ready, true);
       assert.equal(status.running, false);
       assert.equal(status.modelLoaded, false);
+      assert.equal(status.modelAvailable, true);
+    });
+  });
+
+  it("reports an oMLX model as unavailable when it is not in the discovered model list", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { modelAvailableOnServer, profileRuntimeStatus } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Other-Model-4bit" }] });
+      if (url === "http://127.0.0.1:8000/v1/models/status") {
+        return jsonResponse({ loaded_count: 0, models: [{ id: "Other-Model-4bit", loaded: false }] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      assert.equal(await modelAvailableOnServer(profile), false);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.serverUp, true);
+      assert.equal(status.modelAvailable, false);
+      assert.equal(status.modelLoaded, false);
+    });
+  });
+
+  it("reports an Ollama model as unavailable when it is not in /api/tags", async () => {
+    const profile = managedProfile("ollama", "llama3.2:latest", "http://localhost:11434/v1");
+    const { modelAvailableOnServer, profileRuntimeStatus } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://localhost:11434/v1/models") return jsonResponse({ data: [{ id: "llama3.2:latest" }] });
+      if (url === "http://localhost:11434/api/tags") return jsonResponse({ models: [{ name: "some-other:latest" }] });
+      if (url === "http://localhost:11434/api/ps") return jsonResponse({ models: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      assert.equal(await modelAvailableOnServer(profile), false);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.serverUp, true);
+      assert.equal(status.modelAvailable, false);
+    });
+  });
+
+  it("excludes MarkItDown and other utility models from oMLX scan", async () => {
+    const { BACKENDS } = await import("../src/backends.mjs");
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") {
+        return jsonResponse({
+          data: [
+            { id: "gemma-4-e2b-it-4bit", max_model_len: 131072 },
+            { id: "MarkItDown", max_model_len: null, model_type: "markitdown" },
+            { id: "all-MiniLM-L6-v2", model_type: "embeddings" },
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const models = await BACKENDS.omlx.scanModels();
+      const ids = models.map((m) => m.id);
+      assert.ok(ids.includes("gemma-4-e2b-it-4bit"), "expected chat model to be included");
+      assert.ok(!ids.includes("MarkItDown"), "expected MarkItDown to be excluded");
+      assert.ok(!ids.includes("all-MiniLM-L6-v2"), "expected embedding model to be excluded");
     });
   });
 

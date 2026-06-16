@@ -142,7 +142,6 @@ export function renderStreamEvent(parsed, state, opts = {}) {
     }
     case "agent_end":
       clearStatusLine();
-      printFinalLine(BENCH_COLORS.info("Pi benchmark finished"));
       break;
     default:
       break;

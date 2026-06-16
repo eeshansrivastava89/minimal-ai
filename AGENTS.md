@@ -17,6 +17,7 @@
 - **Terminal output should fit.** Long messages must wrap so cards/tables stay aligned and readable.
 - **Commit workflow.** Propose a focused conventional-commit message and ask for approval before committing. Keep commits small and logical.
 - **Document consolidation.** Completed plans go to `internal-docs/archive/`. Living runbooks go to `internal-docs/reference/`. Active strategy stays in `internal-docs/` root. Keep the README simple; detailed internals live in `internal-docs/`.
+- **Protect user data and live runs.** Never overwrite, move, delete, or truncate files that belong to active user sessions, run directories, logs, or model data. If you need to inspect or reproduce against live data, copy it to a temporary or test location first.
 - **Codebase is the source of truth.** Verify assumptions against current files and tests, not memory or old docs.
 - **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which offgrid-ai`, etc.).
 - **Test and lint before committing.** Run `npm test` and `npm run lint`. Keep the change focused.

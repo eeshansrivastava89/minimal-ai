@@ -132,12 +132,27 @@ export async function modelLoadedOnServer(profile) {
   return matches;
 }
 
+export async function modelAvailableOnServer(profile) {
+  const backend = backendFor(profile.backend);
+  if (backend.id === "ollama") {
+    return modelIdsMatch(await ollamaAvailableModelIds(profile), expectedModelIds(profile));
+  }
+  if (backend.id === "omlx") {
+    // /v1/models lists discovered models; an ID must exist there to be usable.
+    return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
+  }
+  // Local servers are tied to a specific model file via their command argv.
+  return true;
+}
+
 export async function profileRuntimeStatus(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
     const ready = await serverReady(profile.baseUrl);
-    const modelLoaded = ready ? await modelLoadedOnServer(profile) : false;
-    return { state: null, pid: null, running: ready && modelLoaded, ready, serverUp: ready, modelLoaded, rssBytes: null, startedAt: null };
+    const [modelLoaded, modelAvailable] = ready
+      ? await Promise.all([modelLoadedOnServer(profile), modelAvailableOnServer(profile)])
+      : [false, false];
+    return { state: null, pid: null, running: ready && modelLoaded, ready, serverUp: ready, modelLoaded, modelAvailable, rssBytes: null, startedAt: null };
   }
   const state = await readState(profile.id);
   const running = Boolean(state?.pid && pidAlive(state.pid));
@@ -204,6 +219,15 @@ async function serverModelIds(baseUrl) {
 
 async function ollamaLoadedModelIds(profile) {
   const result = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/ps`);
+  if (!result.ok) return [];
+  return (Array.isArray(result.data?.models) ? result.data.models : [])
+    .flatMap((model) => [model?.name, model?.model])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+}
+
+async function ollamaAvailableModelIds(profile) {
+  const result = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/tags`);
   if (!result.ok) return [];
   return (Array.isArray(result.data?.models) ? result.data.models : [])
     .flatMap((model) => [model?.name, model?.model])
