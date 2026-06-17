@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 
 let importCounter = 0;
@@ -229,6 +229,99 @@ describe("regressions", () => {
     });
   });
 
+  it("fails a benchmark before launching Pi when a managed-server model is unavailable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "offgrid-benchmark-missing-model-"));
+    const fakeBin = join(dir, "bin");
+    const runDirectory = join(dir, "run");
+    const piMarker = join(dir, "pi-ran");
+    await mkdir(fakeBin, { recursive: true });
+    await mkdir(runDirectory, { recursive: true });
+    await writeFile(join(runDirectory, "metadata.json"), JSON.stringify({ kind: "visual", status: "prepared", runner: {}, results: {} }, null, 2) + "\n", "utf8");
+    await writeFile(join(fakeBin, "pi"), `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(piMarker)}, "ran");\n`, "utf8");
+    await chmod(join(fakeBin, "pi"), 0o755);
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${fakeBin}${delimiter}${originalPath ?? ""}`;
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+
+    try {
+      await withMockedFetch(async (url) => {
+        if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Other-Model-4bit" }] });
+        throw new Error(`Unexpected fetch: ${url}`);
+      }, async () => {
+        const { runPreparedBenchmark } = await import(`../src/benchmark/flow.mjs?t=${Date.now()}-${++importCounter}`);
+        const metadata = await runPreparedBenchmark(profile, runDirectory);
+        assert.equal(metadata.status, "failed");
+        assert.match(metadata.error.message, /Qwen3-4B-4bit is not available on oMLX/);
+        await assert.rejects(() => readFile(piMarker), /ENOENT/);
+      });
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+
+  it("unloads oMLX benchmark models with the discovered server model id", async () => {
+    const profile = managedProfile("omlx", "qwen3-4b-4bit", "http://127.0.0.1:8000/v1");
+    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+    const calls = [];
+
+    await withMockedFetch(async (url) => {
+      calls.push(url);
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/admin/api/models/Qwen3-4B-4bit/unload") return textResponse("", { ok: true, status: 200 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const result = await unloadModelFromServer(profile);
+      assert.deepEqual(result, { unloaded: true, backend: "omlx", modelId: "Qwen3-4B-4bit" });
+      assert.equal(calls.length, 2);
+    });
+  });
+
+  it("treats an oMLX unload response for an already-unloaded model as success", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/admin/api/models/Qwen3-4B-4bit/unload") {
+        return textResponse(JSON.stringify({ detail: "model is not loaded" }), { ok: false, status: 400 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const result = await unloadModelFromServer(profile);
+      assert.equal(result.unloaded, true);
+      assert.equal(result.reason, "model was not loaded");
+    });
+  });
+
+  it("returns clear oMLX unload errors for auth and network failures", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/admin/api/models/Qwen3-4B-4bit/unload") {
+        return textResponse("forbidden", { ok: false, status: 403 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const result = await unloadModelFromServer(profile);
+      assert.equal(result.unloaded, false);
+      assert.match(result.error, /admin authentication required/);
+    });
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/admin/api/models/Qwen3-4B-4bit/unload") throw new Error("socket closed");
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const result = await unloadModelFromServer(profile);
+      assert.equal(result.unloaded, false);
+      assert.equal(result.error, "socket closed");
+    });
+  });
+
   it("excludes MarkItDown and other utility models from oMLX scan", async () => {
     const { BACKENDS } = await import("../src/backends.mjs");
     await withMockedFetch(async (url) => {
@@ -303,5 +396,14 @@ async function withMockedFetch(fetchImpl, callback) {
 }
 
 function jsonResponse(body, ok = true) {
-  return { ok, json: async () => body };
+  return { ok, status: ok ? 200 : 500, json: async () => body, text: async () => JSON.stringify(body) };
+}
+
+function textResponse(body, { ok, status }) {
+  return {
+    ok,
+    status,
+    json: async () => JSON.parse(body),
+    text: async () => body,
+  };
 }

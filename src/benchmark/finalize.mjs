@@ -59,13 +59,7 @@ async function unloadOmlxModel(profile) {
       return { unloaded: true, backend: "omlx", modelId: targetId };
     }
 
-    let detail = "";
-    try {
-      const body = await response.json();
-      detail = body?.detail ?? body?.message ?? "";
-    } catch {
-      detail = await response.text().catch(() => "");
-    }
+    const detail = await responseErrorDetail(response);
 
     if (response.status === 400 && /not loaded/i.test(detail)) {
       return { unloaded: true, backend: "omlx", modelId: targetId, reason: "model was not loaded" };
@@ -86,6 +80,17 @@ async function unloadOmlxModel(profile) {
       return { unloaded: false, backend: "omlx", modelId, error: "Unload request timed out. The model may still be unloading in the background." };
     }
     return { unloaded: false, backend: "omlx", modelId, error: err.message };
+  }
+}
+
+async function responseErrorDetail(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return "";
+  try {
+    const body = JSON.parse(text);
+    return body?.detail ?? body?.message ?? text;
+  } catch {
+    return text;
   }
 }
 

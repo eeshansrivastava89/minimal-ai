@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { hasPi, hasPiModel, syncPiConfig } from "../harness-pi.mjs";
-import { serverReady, startServer, waitForReady, stopProfile } from "../process.mjs";
+import { serverReady, startServer, waitForReady, stopProfile, modelAvailableOnServer } from "../process.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { pc, createPrompt } from "../ui.mjs";
 import { linkBenchmarkRepo } from "./repo.mjs";
@@ -28,9 +28,20 @@ async function chooseBenchmarkAction(prompt, canRun) {
   return await prompt.choice("Action", canRun ? choices : choices.filter((c) => c.value === "prepare"), canRun ? "run" : "prepare");
 }
 
+function managedModelId(profile) {
+  return profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+}
+
+async function ensureManagedModelAvailableForBenchmark(profile, backend) {
+  if (backend.type !== "managed-server") return;
+  if (await modelAvailableOnServer(profile)) return;
+  throw new Error(`${managedModelId(profile)} is not available on ${backend.label} at ${profile.baseUrl}.`);
+}
+
 async function ensureServerForBenchmark(profile) {
   const backend = backendFor(profile.backend);
   if (await serverReady(profile.baseUrl)) {
+    await ensureManagedModelAvailableForBenchmark(profile, backend);
     console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
     return { started: false };
   }
@@ -52,6 +63,7 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
     options.signal.addEventListener("abort", () => controller.abort(), { once: true });
   }
   let serverStarted = false;
+  let benchmarkStarted = false;
   let metadata = null;
 
   const onSigint = () => {
@@ -72,6 +84,7 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
       await syncPiConfig(profile);
     }
 
+    benchmarkStarted = true;
     const runResult = await runBenchmarkInPi(profile, runDirectory, { signal: controller.signal });
 
     let speedMetrics = null;
@@ -110,11 +123,13 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
         console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
       }
     }
-    const unloadResult = await unloadModelFromServer(profile);
-    if (!unloadResult.unloaded && unloadResult.error) {
-      console.log(pc.yellow(`[unload] ${unloadResult.backend}: ${unloadResult.error}`));
-    } else if (!unloadResult.unloaded && unloadResult.reason) {
-      console.log(pc.dim(`[unload] ${unloadResult.backend}: ${unloadResult.reason}`));
+    if (benchmarkStarted) {
+      const unloadResult = await unloadModelFromServer(profile);
+      if (!unloadResult.unloaded && unloadResult.error) {
+        console.log(pc.yellow(`[unload] ${unloadResult.backend}: ${unloadResult.error}`));
+      } else if (!unloadResult.unloaded && unloadResult.reason) {
+        console.log(pc.dim(`[unload] ${unloadResult.backend}: ${unloadResult.reason}`));
+      }
     }
   }
 
