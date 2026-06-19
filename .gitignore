@@ -4,3 +4,4 @@ node_modules/
 .pi/
 .claude/
 .codex/
+internal-docs/
