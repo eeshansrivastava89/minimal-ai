@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { estimateMemory } from "./estimate.mjs";
@@ -36,6 +37,10 @@ export async function configureLocalProfile(prompt, profile) {
   // so that re-setup can pick up MTP availability, vision changes, etc.
   const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
   let drafterPath = profile.drafterPath ?? null;
+  if (drafterPath && !existsSync(drafterPath)) {
+    // Stored drafter is no longer on disk — drop it and re-scan for a fresh one.
+    drafterPath = null;
+  }
   if (!drafterPath) {
     const { drafters } = await scanGgufModels();
     const drafter = matchDrafter(profile.modelPath, drafters);
@@ -46,6 +51,12 @@ export async function configureLocalProfile(prompt, profile) {
   // If MTP is newly available, switch backend and add drafter path
   if (hasMtp && configured.backend !== "llama-cpp-mtp") {
     configured = { ...configured, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp", drafterPath, capabilities: { ...configured.capabilities, mtp: true } };
+  }
+  // If the profile was MTP but the drafter is now gone (and the model isn't
+  // natively MTP), switch back to plain llama.cpp so the server can start.
+  if (!hasMtp && configured.backend === "llama-cpp-mtp") {
+    console.log(pc.yellow("MTP drafter no longer found — switching to llama.cpp without speculative decoding."));
+    configured = removeMtpDefaults(configured);
   }
   if (drafterPath && !configured.drafterPath) {
     configured = { ...configured, drafterPath };
