@@ -107,6 +107,7 @@ export function renderStreamEvent(parsed, state, opts = {}) {
       };
       resetStatus(state, "exec", parsed.toolName);
       printFinalLine(BENCH_COLORS.tool(formatToolStart(parsed.toolName, parsed.args ?? {}, state)));
+      startExecTimer(state);
       break;
     }
     case "tool_execution_update": {
@@ -114,11 +115,13 @@ export function renderStreamEvent(parsed, state, opts = {}) {
       if (text) {
         if (verbose) process.stdout.write(BENCH_COLORS.toolOutput(text));
         if (state.activeTool) state.activeTool.outputText = text;
-        updateStatusFromDelta(state, text, "exec");
+        state.status.bytes += Buffer.byteLength(text, "utf8");
+        printExecStatus(state);
       }
       break;
     }
     case "tool_execution_end": {
+      stopExecTimer(state);
       const lines = formatToolEnd(parsed, state);
       if (parsed.isError) state.turnHadToolError = true;
       for (const line of lines) printFinalLine(line);
@@ -133,6 +136,7 @@ export function renderStreamEvent(parsed, state, opts = {}) {
       break;
     }
     case "turn_end": {
+      stopExecTimer(state);
       const usage = parsed.message?.usage;
       const tokenPart = usage ? ` · ${formatTokens(usage.output ?? usage.totalTokens ?? 0)} tokens` : "";
       const marker = state.turnHadToolError ? BENCH_COLORS.warning("⚠") : BENCH_COLORS.success("✓");
@@ -141,7 +145,7 @@ export function renderStreamEvent(parsed, state, opts = {}) {
       break;
     }
     case "agent_end":
-      clearStatusLine();
+      stopExecTimer(state);
       break;
     default:
       break;
@@ -170,6 +174,31 @@ export function updateStatusFromDelta(state, delta, mode = state.status.mode) {
   const bytes = formatBytes(state.status.bytes);
   const tokens = formatTokens(state.status.tokens);
   printStatusLine(BENCH_COLORS.dim(`Turn ${state.turn} ${modeLabel}${label} · ${bytes} (~${tokens} tokens)`));
+}
+
+export function startExecTimer(state) {
+  stopExecTimer(state);
+  state.status.execStartedAt = Date.now();
+  state.status.bytes = 0;
+  if (!process.stdout.isTTY) return;
+  printExecStatus(state);
+  state.execTimer = setInterval(() => printExecStatus(state), 1000);
+}
+
+export function stopExecTimer(state) {
+  if (state.execTimer) {
+    clearInterval(state.execTimer);
+    state.execTimer = null;
+  }
+  clearStatusLine();
+}
+
+export function printExecStatus(state) {
+  if (!process.stdout.isTTY) return;
+  const elapsed = state.status.execStartedAt ? Math.floor((Date.now() - state.status.execStartedAt) / 1000) : 0;
+  const tool = state.status.toolName ?? "tool";
+  const bytes = formatBytes(state.status.bytes);
+  printStatusLine(BENCH_COLORS.dim(`Turn ${state.turn} running ${tool}… ${elapsed}s · ${bytes}`));
 }
 
 export function formatToolStart(toolName, args, state) {

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import {
   BENCH_COLORS, renderStreamEvent,
-  formatToolCall, printFinalLine,
+  formatToolCall, printFinalLine, stopExecTimer,
 } from "./stream-renderer.mjs";
 import { piModelString } from "./shared.mjs";
 
@@ -58,7 +58,8 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
     turnHadToolError: false,
     modelPrinted: false,
     activeTool: null,
-    status: { mode: "idle", toolName: null, bytes: 0, tokens: 0 },
+    execTimer: null,
+    status: { mode: "idle", toolName: null, bytes: 0, tokens: 0, execStartedAt: null },
   };
 
   function appendResponse(text) {
@@ -193,6 +194,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   return new Promise((resolve) => {
     child.on("exit", async (code) => {
       if (signal) signal.removeEventListener("abort", abortListener);
+      stopExecTimer(renderState);
       if (streamBuffer.trim()) {
         processLine(streamBuffer);
       }
@@ -225,6 +227,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
 
     child.on("error", async (err) => {
       if (signal) signal.removeEventListener("abort", abortListener);
+      stopExecTimer(renderState);
       await streamHandle.close();
       await stderrHandle.close();
       runResult.error = { message: err.message };
