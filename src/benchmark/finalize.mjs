@@ -94,7 +94,7 @@ async function responseErrorDetail(response) {
   }
 }
 
-export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics) {
+export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics, speedMetricsError = null) {
   const metadataPath = join(runDirectory, "metadata.json");
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   const now = new Date();
@@ -149,6 +149,7 @@ export async function finalizeBenchmarkRun(runDirectory, runResult, speedMetrics
 
   metadata.runner.speedMetrics = speedMetrics;
   metadata.runner.metricSource = speedMetrics?.metricSource ?? null;
+  metadata.runner.speedMetricsError = speedMetricsError ?? null;
 
   metadata.results = {
     wallClockMs: runResult.wallClockMs,
@@ -230,6 +231,10 @@ export function renderBenchmarkSummary(metadata) {
       const tip = wrapText("Tip: This usually means the model returned the answer as chat text instead of writing the file. Try a model with stronger tool-use support, or run the prompt manually.", 64);
       console.log(pc.dim("\n" + tip));
     }
+  }
+
+  if (status === "completed" && !runner?.speedMetrics && runner?.speedMetricsError) {
+    console.log(pc.dim(`\nSpeed metrics unavailable: ${runner.speedMetricsError}`));
   }
 }
 

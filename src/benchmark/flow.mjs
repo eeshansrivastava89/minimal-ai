@@ -88,15 +88,18 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
     const runResult = await runBenchmarkInPi(profile, runDirectory, { signal: controller.signal });
 
     let speedMetrics = null;
+    let speedMetricsError = null;
     if (!runResult.error) {
       try {
         speedMetrics = await queryServerMetrics(profile);
       } catch (err) {
-        runResult.error = { message: `Speed metrics query failed: ${err.message}` };
+        // Non-fatal: speed metrics are a supplementary measurement, not the
+        // benchmark itself. Don't poison the run result; surface it as a note.
+        speedMetricsError = err.message;
       }
     }
 
-    metadata = await finalizeBenchmarkRun(runDirectory, runResult, speedMetrics);
+    metadata = await finalizeBenchmarkRun(runDirectory, runResult, speedMetrics, speedMetricsError);
     renderBenchmarkSummary(metadata);
   } catch (err) {
     const failedResult = {

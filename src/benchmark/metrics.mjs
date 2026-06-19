@@ -4,6 +4,8 @@ import { backendFor } from "../backends.mjs";
 import { apiRootUrl } from "../process.mjs";
 
 const BENCH_SPEED_PROMPT = "Write a one-sentence summary of machine learning.";
+const SPEED_QUERY_TIMEOUT_MS = 120_000;
+const SPEED_QUERY_MAX_TOKENS = 64;
 
 export async function queryServerMetrics(profile) {
   const backend = backendFor(profile.backend);
@@ -26,13 +28,14 @@ async function queryLlamaCppMetrics(profile) {
     model: profile.modelAlias,
     messages: [{ role: "user", content: BENCH_SPEED_PROMPT }],
     stream: false,
+    max_tokens: SPEED_QUERY_MAX_TOKENS,
   };
 
   const response = await fetch(profile.baseUrl.replace(/\/$/u, "") + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(SPEED_QUERY_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -66,13 +69,14 @@ async function queryOmlxMetrics(profile) {
     messages: [{ role: "user", content: BENCH_SPEED_PROMPT }],
     stream: true,
     stream_options: { include_usage: true },
+    max_tokens: SPEED_QUERY_MAX_TOKENS,
   };
 
   const response = await fetch(profile.baseUrl.replace(/\/$/u, "") + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(SPEED_QUERY_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -117,6 +121,7 @@ async function queryOllamaMetrics(profile) {
     model: profile.modelAlias,
     prompt: BENCH_SPEED_PROMPT,
     stream: false,
+    options: { num_predict: SPEED_QUERY_MAX_TOKENS },
   };
 
   const apiBaseUrl = apiRootUrl(profile.baseUrl || backendFor(profile.backend).apiBaseUrl || "");
@@ -125,7 +130,7 @@ async function queryOllamaMetrics(profile) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(SPEED_QUERY_TIMEOUT_MS),
   });
 
   if (!response.ok) {
