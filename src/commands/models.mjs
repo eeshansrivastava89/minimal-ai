@@ -1,7 +1,7 @@
 import { ensureDirs } from "../config.mjs";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, isProfileServerUp, stopProfile } from "../process.mjs";
+import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
@@ -41,14 +41,18 @@ export async function modelCommandCenter(initialCatalog) {
 
   const runningProfilesNow = [];
   const serverUpIds = new Set();
+  const modelMissingIds = new Set();
   for (const profile of normalized.profiles) {
     if (await isProfileRunning(profile)) {
       runningProfilesNow.push(profile);
       continue;
     }
-    if (backendFor(profile.backend).type === "managed-server" && await isProfileServerUp(profile)) serverUpIds.add(profile.id);
+    if (backendFor(profile.backend).type === "managed-server" && await isProfileServerUp(profile)) {
+      if (await modelAvailableOnServer(profile)) serverUpIds.add(profile.id);
+      else modelMissingIds.add(profile.id);
+    }
   }
-  printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds);
+  printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds, modelMissingIds);
   await printBenchmarkLine();
 
   const nameWidth = modelNameWidth(allItems);
@@ -57,6 +61,7 @@ export async function modelCommandCenter(initialCatalog) {
     if (item.type === "profile") {
       if (item.fileMissing) return "missing";
       if (runningProfilesNow.some((profile) => profile.id === item.profile.id)) return "running";
+      if (modelMissingIds.has(item.profile.id)) return "missing";
       if (serverUpIds.has(item.profile.id)) return "serverup";
       return "ready";
     }
@@ -72,8 +77,8 @@ export async function modelCommandCenter(initialCatalog) {
     const bucket = grouped.get(group);
     if (!bucket || bucket.length === 0) continue;
     for (const item of bucket) {
-      const opt = modelSelectOption(item, { runningProfilesNow, serverUpIds, nameWidth });
-      choices.push({ value: opt.value, label: opt.label });
+      const opt = modelSelectOption(item, { runningProfilesNow, serverUpIds, modelMissingIds, nameWidth });
+      choices.push({ value: opt.value, label: opt.label, hint: opt.hint });
     }
   }
 

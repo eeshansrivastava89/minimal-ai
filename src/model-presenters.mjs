@@ -80,12 +80,17 @@ function optionLabel({ status, source, name, ctx, size, nameWidth }) {
   return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, serverUpIds, nameWidth }) {
+export function modelSelectOption(item, { runningProfilesNow, serverUpIds, modelMissingIds, nameWidth }) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
     const serverUp = !running && !item.fileMissing && serverUpIds?.has(item.profile.id);
-    const status = item.fileMissing ? "missing" : running ? "running" : serverUp ? "serverup" : "ready";
+    const modelMissing = !item.fileMissing && modelMissingIds?.has(item.profile.id);
+    const status = item.fileMissing || modelMissing ? "missing" : running ? "running" : serverUp ? "serverup" : "ready";
+    const drafterMissing = Boolean(item.profile.drafterPath) && !existsSync(item.profile.drafterPath);
+    const hint = drafterMissing ? "MTP drafter missing — reconfigure"
+      : modelMissing ? `${backend.label} model no longer available`
+      : undefined;
     return {
       value: itemKey(item),
       label: optionLabel({
@@ -96,6 +101,7 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, nameW
         ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
+      ...(hint ? { hint: pc.red(hint) } : {}),
     };
   }
   if (item.type === "new") {
@@ -125,10 +131,10 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, nameW
   };
 }
 
-export function printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds = new Set()) {
+export function printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds = new Set(), modelMissingIds = new Set()) {
   const profiles = normalized.profiles;
   const isRunning = (p) => runningProfilesNow.some((r) => r.id === p.id);
-  const isMissing = (p) => isProfileFileMissing(p);
+  const isMissing = (p) => isProfileFileMissing(p) || modelMissingIds.has(p.id);
   const readyCount = profiles.filter((p) => !isMissing(p) && !isRunning(p) && !serverUpIds.has(p.id)).length;
   const runningCount = runningProfilesNow.length;
   const serverUpCount = profiles.filter((p) => !isMissing(p) && serverUpIds.has(p.id) && !isRunning(p)).length;
