@@ -23,8 +23,8 @@ This is the recommended workflow:
 ## Core Features
 - Auto-detects available models from LM Studio, oMLX, and HuggingFace
 - Auto-detects MTP (multi-token prediction) or QAT (quantization aware training) models, and applies the correct flags for llama.cpp
-- Auto-applies the optimal flags for the model type in llama.cpp
-- Start / stop llama.cpp server automatically for chat sessions
+- Auto-applies the optimal flags for the model type (llama.cpp server flags, mlx-vlm APC/thinking/context flags)
+- Start / stop local servers automatically for chat sessions (llama-server and mlx-vlm)
 
 ## Quick start
 
