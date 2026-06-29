@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadata } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { inferSourceLabel } from "./mlx-discovery.mjs";
+import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
 
 // ── Scan for GGUF models and MTP drafters ────────────────────────────────
 
@@ -51,7 +51,7 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
     const mmprojPath = mmprojs.find((candidate) => dirname(candidate) === dir) ?? null;
     const name = basename(path).replace(/\.gguf$/i, "");
     const sizeBytes = statSync(path).size;
-    if (sizeBytes < MIN_GGUF_SIZE_BYTES) continue;
+    if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
     const parsed = parseModelName(name, "local-gguf");
 
     // Read GGUF metadata to detect drafter architecture and embeddings
@@ -92,22 +92,6 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
 
 // ── Embedding model filtering ─────────────────────────────────────────────
 
-const MIN_GGUF_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — skip tiny test/embedding GGUFs
-
-const EMBEDDING_ARCHITECTURES = new Set([
-  "bert",
-  "nomic-bert",
-  "nomic_bert",
-  "jina",
-  "e5",
-  "gte",
-  "bge",
-  "all-minilm",
-  "all_minilm",
-  "mpnet",
-  "sentence-transformers",
-]);
-
 const EMBEDDING_FILENAME_PATTERNS = [
   /(?:^|[-_])bge[-_]/i,
   /(?:^|[-_])jina[-_]/i,
@@ -121,7 +105,7 @@ const EMBEDDING_FILENAME_PATTERNS = [
 ];
 
 export function isEmbeddingArchitecture(architecture, filename = "") {
-  if (architecture && EMBEDDING_ARCHITECTURES.has(architecture.toLowerCase())) return true;
+  if (architecture && EMBEDDING_MODEL_TYPES.has(architecture.toLowerCase())) return true;
   const lowerName = filename.toLowerCase();
   return EMBEDDING_FILENAME_PATTERNS.some((pattern) => pattern.test(lowerName));
 }

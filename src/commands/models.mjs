@@ -6,7 +6,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, modelNameWidth, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, modelNameWidth, printGgufModelDetails, printMlxModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 const { stripVTControlCharacters } = await import("node:util");
@@ -156,6 +156,7 @@ async function performAction(prompt, action, item) {
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
+    if (item.model?.format === "mlx") return await printMlxModelDetails(item.model);
     return printGgufModelDetails(item.model, item.drafter);
   }
   if (action === "benchmark") {
@@ -166,20 +167,13 @@ async function performAction(prompt, action, item) {
     const { benchmarkFlow } = await import("../benchmark.mjs");
     return await benchmarkFlow();
   }
-  if (action === "run") return await runItem(prompt, item);
+  if (action === "run") return await runItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item, action);
   if (action === "remove" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
 }
 
-async function runItem(prompt, item) {
-  if (item.type === "profile") return await runProfile(await readProfile(item.profile.id));
-  const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
-  const configured = await configureLocalProfile(prompt, profile);
-  if (!configured) return;
-  await saveProfile(configured);
-  await syncPiConfig(configured);
-  printProfileSaved(configured.id);
-  return await runProfile(configured);
+async function runItem(item) {
+  return await runProfile(await readProfile(item.profile.id));
 }
 
 function printProfileSaved(id) {

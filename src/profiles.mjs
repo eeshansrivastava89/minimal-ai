@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
-import { totalmem } from "node:os";
 import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor, baseUrlForFlags, defaultFlagsForBackend } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { detectMlxCapabilities, defaultMlxContextLength } from "./mlx-discovery.mjs";
+import { detectHardware } from "./hardware.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
 // ── Path helpers ───────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
 export async function createProfileFromMlxModel(model) {
   const { computeMlxVlmFlags, DEFAULT_PORT } = await import("./mlx-flags.mjs");
   const caps = await detectMlxCapabilities(model.filePath);
-  const ctxSize = defaultMlxContextLength(caps.contextLength, totalmem() / (1024 ** 3));
+  const ctxSize = defaultMlxContextLength(caps.contextLength, detectHardware().totalRamBytes / (1024 ** 3));
   const { args } = computeMlxVlmFlags(model.filePath, {
     port: DEFAULT_PORT,
     ctxSize,
@@ -184,6 +184,7 @@ export async function createProfileFromMlxModel(model) {
     modelPath: model.filePath,
     mmprojPath: null,
     drafterPath: null,
+    modelSizeBytes: model.sizeBytes,
     capabilities: caps,
     flags: { host: "127.0.0.1", port: DEFAULT_PORT, ctxSize },
     commandArgv: args,

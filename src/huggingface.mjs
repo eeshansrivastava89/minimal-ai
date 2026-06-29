@@ -5,16 +5,12 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { HF_HUB_DIR } from "./config.mjs";
 
 const execFileAsync = promisify(execFile);
-
-export const HF_CACHE_DIR = process.env.HF_HOME
-  ? process.env.HF_HOME
-  : join(homedir(), ".cache", "huggingface");
 
 const HF_DOWNLOAD_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "resources", "hf-download.py");
 
@@ -140,17 +136,17 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
 }
 
 /**
- * Download a resolved model into the HF cache.
+ * Download a resolved model into the HF hub cache.
  * @param {object} model - from resolveHfDownload
  * @param {object} options
  * @param {function} options.onProgress - ({ downloadedBytes, totalBytes, percentage, file }) => void
  * @returns {Promise<{ localDir: string, format: string }>}
  */
 export async function downloadToHfCache(model, options = {}) {
-  await mkdir(HF_CACHE_DIR, { recursive: true });
+  await mkdir(HF_HUB_DIR, { recursive: true });
 
   const script = HF_DOWNLOAD_SCRIPT;
-  const args = ["--repo", model.repo];
+  const args = ["--repo", model.repo, "--cache-dir", HF_HUB_DIR];
   if (model.format === "gguf") {
     args.push("--file", model.files[0].filename);
   }
@@ -158,43 +154,55 @@ export async function downloadToHfCache(model, options = {}) {
   const onProgress = options.onProgress ?? (() => {});
 
   return new Promise((resolve, reject) => {
-    const child = execFile("python3", [script, ...args], { env: { ...process.env, HF_HOME: HF_CACHE_DIR } });
+    const child = execFile("python3", [script, ...args], { env: process.env });
 
+    let stdoutBuf = "";
     let downloadedBytes = 0;
     let currentFile = null;
 
-    child.stdout?.on("data", (chunk) => {
-      const lines = String(chunk).split("\n").filter(Boolean);
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          if (event.type === "progress") {
-            downloadedBytes = event.downloadedBytes ?? downloadedBytes;
-            currentFile = event.file ?? currentFile;
-            onProgress({
-              downloadedBytes,
-              totalBytes: model.totalSizeBytes,
-              percentage: Math.min(100, Math.round((downloadedBytes / model.totalSizeBytes) * 100)),
-              file: currentFile,
-            });
-          } else if (event.type === "complete") {
-            resolve({ localDir: event.localDir, format: model.format });
-          } else if (event.type === "error") {
-            reject(new Error(event.message));
-          }
-        } catch {
-          // Ignore non-JSON output (progress bars, etc.)
+    // huggingface_hub streams NDJSON progress events to stdout, one per line.
+    // Buffer and split on complete newlines so an event split across chunk
+    // boundaries isn't silently dropped.
+    const handleLine = (line) => {
+      if (!line) return;
+      try {
+        const event = JSON.parse(line);
+        if (event.type === "progress") {
+          downloadedBytes = event.downloadedBytes ?? downloadedBytes;
+          currentFile = event.file ?? currentFile;
+          onProgress({
+            downloadedBytes,
+            totalBytes: model.totalSizeBytes,
+            percentage: Math.min(100, Math.round((downloadedBytes / model.totalSizeBytes) * 100)),
+            file: currentFile,
+          });
+        } else if (event.type === "complete") {
+          resolve({ localDir: event.localDir, format: model.format });
+        } else if (event.type === "error") {
+          reject(new Error(event.message));
         }
+      } catch {
+        // Ignore non-JSON output (progress bars, etc.)
+      }
+    };
+
+    child.stdout?.on("data", (chunk) => {
+      stdoutBuf += String(chunk);
+      let nl;
+      while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
+        handleLine(stdoutBuf.slice(0, nl));
+        stdoutBuf = stdoutBuf.slice(nl + 1);
       }
     });
 
     child.stderr?.on("data", () => {
-      // huggingface_hub prints progress bars to stderr; ignore for now.
-      // We could parse tqdm output here later.
+      // huggingface_hub prints progress bars to stderr; ignore.
     });
 
     child.on("error", reject);
     child.on("exit", (code) => {
+      // Flush any final line that lacked a trailing newline.
+      if (stdoutBuf.trim()) handleLine(stdoutBuf.trim());
       if (code !== 0) reject(new Error(`Download failed with exit code ${code}`));
     });
   });

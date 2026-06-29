@@ -1,12 +1,15 @@
 import { existsSync } from "node:fs";
-import { ensureDirs, findLlamaServer, hasHomebrew } from "../config.mjs";
+import { ensureDirs, findLlamaServer, hasHomebrew, HF_HUB_DIR } from "../config.mjs";
 import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
+import { scanMlxModels } from "../mlx-discovery.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { BACKEND_INSTALL_CHOICES, BACKEND_INSTALLERS } from "../backend-installers.mjs";
-import { installedRamGB, recommendedModel, detectHardware, selectFormat, allFittingModels, hasHuggingfaceHub, resolveHfDownload, downloadToHfCache } from "../recommendations.mjs";
+import { recommendedModel, selectFormat, allFittingModels } from "../recommendations.mjs";
+import { hasHuggingfaceHub, resolveHfDownload, downloadToHfCache } from "../huggingface.mjs";
+import { detectHardware, getFreeDiskBytes, installedRamGB } from "../hardware.mjs";
 import { runCommand } from "../exec.mjs";
 import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt } from "../ui.mjs";
 
@@ -24,13 +27,16 @@ export async function onboardFlow() {
     const llamaBinary = await ensureLlamaRuntime(prompt);
     if (!(await ensurePi(prompt, run))) return;
 
-    const { models: ggufModels } = await scanGgufModels();
-    const managedModels = await scanManagedModels();
+    const [{ models: ggufModels }, managedModels, mlxModels] = await Promise.all([
+      scanGgufModels(),
+      scanManagedModels(),
+      scanMlxModels(),
+    ]);
     const totalManaged = managedModels.reduce((sum, item) => sum + item.models.length, 0);
-    const hasModels = ggufModels.length > 0 || totalManaged > 0;
+    const hasModels = ggufModels.length > 0 || totalManaged > 0 || mlxModels.length > 0;
 
     if (hasModels) {
-      printFoundModels(ggufModels, managedModels, llamaBinary);
+      printFoundModels(ggufModels, managedModels, mlxModels, llamaBinary);
     } else {
       const canDownload = await hasHuggingfaceHub();
       if (canDownload) {
@@ -90,10 +96,13 @@ async function ensurePi(prompt, run) {
   return true;
 }
 
-function printFoundModels(ggufModels, managedModels, llamaBinary) {
+function printFoundModels(ggufModels, managedModels, mlxModels, llamaBinary) {
   if (ggufModels.length > 0) {
     console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"}`));
     if (!llamaBinary) console.log(pc.yellow("Install the managed llama.cpp runtime to run these GGUF models."));
+  }
+  if (mlxModels.length > 0) {
+    console.log(pc.green(`✓ Found ${mlxModels.length} MLX model${mlxModels.length === 1 ? "" : "s"}`));
   }
   for (const { backendId, models, status, reason } of managedModels) {
     if (status === "unavailable") {
@@ -129,6 +138,11 @@ async function offerModelDownload(prompt) {
   try {
     const plan = await resolveHfDownload(hfRef);
     console.log(pc.dim("Total size: " + formatBytes(plan.totalSizeBytes)));
+    const freeBytes = getFreeDiskBytes(HF_HUB_DIR);
+    if (plan.totalSizeBytes > 0 && freeBytes < plan.totalSizeBytes * 1.1) {
+      console.log(pc.red(`Not enough disk space in ${HF_HUB_DIR}: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.`));
+      return false;
+    }
     await downloadToHfCache(plan, {
       onProgress({ percentage }) {
         process.stdout.write(pc.cyan("\r  " + percentage + "% downloaded"));

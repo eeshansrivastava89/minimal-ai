@@ -1,9 +1,9 @@
 // Hardware detection — pure functions, no side effects.
 // Ported from deprecated-offgrid-desktop/src/main/hardware.ts.
 //
-// Used by mlx-vlm backend selection (Apple Silicon → mlx-vlm) and by memory
-// estimation. offgrid-ai previously had no dedicated hardware module; this is
-// the canonical source for hardware facts the model-serving logic needs.
+// This is the canonical source for hardware facts the model-serving logic
+// needs: recommendations, onboarding, MLX context sizing, disk-space guards,
+// and memory estimation.
 
 import { totalmem } from "node:os";
 import { statfsSync, existsSync } from "node:fs";
@@ -19,6 +19,11 @@ export function detectHardware() {
     platform: process.platform,
     arch: process.arch,
   };
+}
+
+/** Installed RAM in GB (integer). */
+export function installedRamGB() {
+  return Math.round(totalmem() / (1024 ** 3));
 }
 
 /**

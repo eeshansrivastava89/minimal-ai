@@ -8,6 +8,7 @@ import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter } from "./scan.mjs";
 import { scanGgufModels } from "./scan.mjs";
+import { estimateMemoryMb } from "./mlx-flags.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -380,8 +381,18 @@ function applyMlxContextSize(profile, ctxSize) {
   return next;
 }
 
-function renderMlxMemoryEstimate() {
-  return renderSection("Memory estimate", pc.dim("MLX memory estimation is coming soon."));
+function renderMlxMemoryEstimate(profile) {
+  const modelBytes = profile.modelSizeBytes || 0;
+  if (!modelBytes) {
+    return renderSection("Memory estimate", pc.dim("Model size unknown — save the profile to estimate."));
+  }
+  const totalMb = estimateMemoryMb(modelBytes);
+  const overheadBytes = Math.max(0, totalMb * 1024 * 1024 - modelBytes);
+  return renderSection("Memory estimate", renderRows([
+    ["Estimated total", pc.bold(`~${formatBytes(totalMb * 1024 * 1024)}`)],
+    ["Model", formatBytes(modelBytes)],
+    ["Overhead", `~${formatBytes(overheadBytes)} (KV cache, APC, runtime)`],
+  ]));
 }
 
 function mlxDetectionSummary(caps) {

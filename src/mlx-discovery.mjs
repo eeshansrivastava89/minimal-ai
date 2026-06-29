@@ -12,9 +12,10 @@
 
 import { readdir, stat, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, basename, dirname } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { getModelScanDirs } from "./config.mjs";
+import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
 
 // ── Folder → backend mapping ──────────────────────────────────────────────
 // The oMLX folder is oMLX-exclusive: models there are served by the oMLX
@@ -25,8 +26,6 @@ const OMLX_MODELS_DIR = join(homedir(), ".omlx", "models");
 function isOmlxFolder(p) {
   return p === OMLX_MODELS_DIR || p.startsWith(OMLX_MODELS_DIR + "/");
 }
-
-const MIN_MLX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — skip tiny test/embedding MLX dirs
 
 // ── MLX directory detection ───────────────────────────────────────────────
 
@@ -57,19 +56,6 @@ async function getMlxDirSizeBytes(dir) {
   }
 }
 
-// ── Source label inference ────────────────────────────────────────────────
-
-/** Infer a human-readable source label from a scan path. */
-export function inferSourceLabel(scanPath) {
-  const name = basename(scanPath).replace(/^\./, "");
-  const parent = basename(dirname(scanPath));
-  // Generic container folders (models, hub, cache) should use the parent name.
-  if (name === "models" || name === "hub" || name === "cache") {
-    return parent.replace(/^\./, "");
-  }
-  return name;
-}
-
 // ── Recursive MLX scanner ─────────────────────────────────────────────────
 
 /**
@@ -92,7 +78,7 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
     // Is this directory itself an MLX model dir? (don't recurse into it)
     if (depth > 0 && await isMlxModelDir(dir)) {
       const sizeBytes = await getMlxDirSizeBytes(dir);
-      if (sizeBytes < MIN_MLX_SIZE_BYTES) return;
+      if (sizeBytes < MIN_MODEL_SIZE_BYTES) return;
       if (await isEmbeddingMlxModel(join(dir, "config.json"))) return;
       models.push(makeMlxModel(dir, basename(dir), sizeBytes, sourceLabel, rootDir));
       return;
@@ -104,7 +90,7 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
       if (entry.isDirectory()) {
         if (await isMlxModelDir(fullPath)) {
           const sizeBytes = await getMlxDirSizeBytes(fullPath);
-          if (sizeBytes < MIN_MLX_SIZE_BYTES) continue;
+          if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
           if (await isEmbeddingMlxModel(join(fullPath, "config.json"))) continue;
           models.push(makeMlxModel(fullPath, entry.name, sizeBytes, sourceLabel, rootDir));
         } else {
@@ -161,7 +147,7 @@ async function scanHfHubForMlx(dir, sourceLabel) {
 
       if (!snapshotPath) continue;
       const sizeBytes = await getMlxDirSizeBytes(snapshotPath);
-      if (sizeBytes < MIN_MLX_SIZE_BYTES) continue;
+      if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
       if (await isEmbeddingMlxModel(join(snapshotPath, "config.json"))) continue;
       models.push({
         id: `${sourceLabel}:${entry.name}`,
@@ -182,29 +168,16 @@ async function scanHfHubForMlx(dir, sourceLabel) {
 
 // ── Embedding model filtering for MLX ─────────────────────────────────────
 
-const MLX_EMBEDDING_MODEL_TYPES = new Set([
-  "bert",
-  "roberta",
-  "mpnet",
-  "nomic_bert",
-  "jina",
-  "e5",
-  "gte",
-  "bge",
-  "all_minilm",
-  "sentence_transformers",
-]);
-
 async function isEmbeddingMlxModel(configPath) {
   if (!existsSync(configPath)) return false;
   try {
     const config = JSON.parse(await readFile(configPath, "utf-8"));
     const textConfig = config.text_config ?? config;
     const modelType = String(textConfig.model_type ?? "").toLowerCase();
-    if (MLX_EMBEDDING_MODEL_TYPES.has(modelType)) return true;
+    if (EMBEDDING_MODEL_TYPES.has(modelType)) return true;
     const arch = Array.isArray(config.architectures) ? config.architectures[0] : "";
     const lowerArch = String(arch).toLowerCase();
-    return MLX_EMBEDDING_MODEL_TYPES.has(lowerArch) || lowerArch.includes("bert");
+    return EMBEDDING_MODEL_TYPES.has(lowerArch) || lowerArch.includes("bert");
   } catch {
     return false;
   }
@@ -252,31 +225,6 @@ export async function scanMlxModels(dirs) {
   });
 }
 
-/**
- * Parse an MLX model's config.json to extract architecture parameters.
- * Looks for `text_config` first (multimodal models), then the top level.
- * @param {string} modelDir - path to the MLX model directory.
- * @returns {Promise<object|null>} architecture params or null.
- */
-export async function parseMlxArchitecture(modelDir) {
-  const configPath = join(modelDir, "config.json");
-  if (!existsSync(configPath)) return null;
-  try {
-    const content = await readFile(configPath, "utf-8");
-    const config = JSON.parse(content);
-    const textConfig = config.text_config ?? config;
-    const numHiddenLayers = textConfig.num_hidden_layers;
-    const hiddenSize = textConfig.hidden_size;
-    const numAttentionHeads = textConfig.num_attention_heads;
-    if (!numHiddenLayers || !hiddenSize || !numAttentionHeads) return null;
-    const numKeyValueHeads = textConfig.num_key_value_heads ?? numAttentionHeads;
-    const headDim = textConfig.head_dim ?? Math.floor(hiddenSize / numAttentionHeads);
-    return { numHiddenLayers, hiddenSize, numAttentionHeads, numKeyValueHeads, headDim };
-  } catch {
-    return null;
-  }
-}
-
 // ── MLX capability detection ─────────────────────────────────────────────
 
 /**
@@ -314,7 +262,7 @@ export function detectMlxCapabilitiesFromConfig(config, modelDir) {
     textModelType.includes("vision")
   );
 
-  const thinking = /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(name + " " + label);
+  const thinking = /qwen3|gemma-4|gemma4|deepseek-r[12]/i.test(name + " " + label);
 
   const architectures = Array.isArray(config.architectures) ? config.architectures : [];
   const architecture = architectures[0] ?? null;

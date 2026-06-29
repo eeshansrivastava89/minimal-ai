@@ -15,9 +15,17 @@ export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
 
 // ── Default scan directories ──────────────────────────────────────────────
 
+// HuggingFace hub cache: $HF_HUB_CACHE, else $HF_HOME/hub, else
+// ~/.cache/huggingface/hub. This is where huggingface_hub stores
+// models--org--name/... and where offgrid-ai scans + downloads. Pointing at the
+// hub (not the HF root) keeps the HF-hub MLX/GGUF scanners and the downloader
+// on the same layout.
+export const HF_HUB_DIR = process.env.HF_HUB_CACHE
+  || (process.env.HF_HOME ? join(process.env.HF_HOME, "hub") : join(homedir(), ".cache", "huggingface", "hub"));
+
 export const DEFAULT_MODEL_DIRS = [
   join(homedir(), ".lmstudio", "models"),
-  process.env.HF_HOME || join(homedir(), ".cache", "huggingface"),
+  HF_HUB_DIR,
 ];
 
 // ── External config paths ─────────────────────────────────────────────────
@@ -65,7 +73,8 @@ export async function saveConfig(config) {
 
 export async function getModelScanDirs() {
   const config = await loadConfig();
-  return [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs];
+  // Dedupe (a user may list a default dir explicitly) so we never scan twice.
+  return [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs].filter((dir, i, arr) => arr.indexOf(dir) === i);
 }
 
 // ── Binary discovery ──────────────────────────────────────────────────────

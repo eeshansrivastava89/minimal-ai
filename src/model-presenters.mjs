@@ -113,12 +113,15 @@ function optionCtxLabel(item) {
 function optionSizeLabel(item, managedModels) {
   if (item.type === "profile") {
     if (item.fileMissing) return "—";
+    if (item.profile.modelSizeBytes) return formatBytes(item.profile.modelSizeBytes);
     if (item.profile.modelPath && existsSync(item.profile.modelPath)) {
-      return formatBytes(statSync(item.profile.modelPath).size);
+      const s = statSync(item.profile.modelPath);
+      // Only stat regular files — a modelPath that is a directory (MLX)
+      // reports the dir entry size, not the model size.
+      if (s.isFile()) return formatBytes(s.size);
     }
     const managedSize = managedProfileSizeBytes(item.profile, managedModels);
     if (managedSize) return formatBytes(managedSize);
-    if (item.profile.modelSizeBytes) return formatBytes(item.profile.modelSizeBytes);
     return "—";
   }
   if (item.type === "new") {
@@ -298,6 +301,29 @@ export function printGgufModelDetails(model, drafter) {
   ];
   if (drafter) detailRows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);
   console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
+}
+
+export async function printMlxModelDetails(model) {
+  const { detectMlxCapabilities } = await import("./mlx-discovery.mjs");
+  const caps = await detectMlxCapabilities(model.filePath ?? model.path);
+  const parts = [];
+  if (caps.architecture) parts.push(caps.architecture);
+  if (caps.thinking) parts.push("thinking");
+  if (caps.vision) parts.push("vision");
+  const summary = parts.length > 0 ? parts.join(pc.dim(" · ")) : "standard MLX";
+  console.log("\n" + renderSection("Downloaded model", renderRows([
+    ["Name", pc.bold(model.label)],
+    ["Status", pc.yellow("Needs one-time setup")],
+    ["Details", summary],
+  ])));
+  console.log("\n" + renderSection("Model details", renderRows([
+    ["Model dir", model.path],
+    ["Backend", "mlx-vlm"],
+    ["Source", formatSourceLabel(model.source)],
+    ["Detected", summary],
+    ["Size", formatBytes(model.sizeBytes)],
+    ["Context", caps.contextLength ? `${caps.contextLength.toLocaleString()} trained` : "unknown"],
+  ]), { columns: 110 }));
 }
 
 export function printManagedModelDetails(model, backend) {

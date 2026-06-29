@@ -1,8 +1,7 @@
-import { totalmem } from "node:os";
-export { hasHuggingfaceHub, resolveHfDownload, downloadToHfCache } from "./huggingface.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detectHardware } from "./hardware.mjs";
 
 const GB = 1024 ** 3;
 
@@ -28,7 +27,11 @@ export function recommendModels(hardware) {
   const fitting = entries.filter((e) => e.minRamGb * GB <= hardware.totalRamBytes);
   if (fitting.length === 0) return [];
   const maxTier = Math.max(...fitting.map((e) => e.minRamGb));
-  return fitting.filter((e) => e.minRamGb === maxTier);
+  // All models at the top fitting tier are genuine alternatives; sort by label
+  // so the pick is deterministic regardless of JSON order.
+  return fitting
+    .filter((e) => e.minRamGb === maxTier)
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Pick the best format for the platform. */
@@ -48,33 +51,9 @@ export function recommendedModel(hardware) {
   return fitting[0] ?? null;
 }
 
-/** All models that fit, sorted best-first. */
+/** All models that fit, sorted best-first (tier desc, then label). */
 export function allFittingModels(hardware) {
   const entries = loadRecommendations();
   const fitting = entries.filter((e) => e.minRamGb * GB <= hardware.totalRamBytes);
-  return fitting.sort((a, b) => b.minRamGb - a.minRamGb);
-}
-
-export function detectHardware() {
-  return {
-    totalRamBytes: totalmem(),
-    platform: process.platform,
-    arch: process.arch,
-  };
-}
-
-export function installedRamGB() {
-  return (totalmem() / (1024 ** 3)).toFixed(0);
-}
-
-/** @deprecated use recommendedModel(hardware) for platform-aware selection. */
-export function legacyRecommendedModel() {
-  const gb = totalmem() / (1024 ** 3);
-  const tiers = [
-    { maxGB: 8, label: "Gemma 4 E2B (2B effective)" },
-    { maxGB: 16, label: "Gemma 4 E4B (4B effective)" },
-    { maxGB: 32, label: "Qwen 3.5 9B" },
-    { maxGB: Infinity, label: "Qwen 3.6 35B-A3B" },
-  ];
-  return tiers.find((tier) => gb <= tier.maxGB) ?? tiers[tiers.length - 1];
+  return fitting.sort((a, b) => b.minRamGb - a.minRamGb || a.label.localeCompare(b.label));
 }
