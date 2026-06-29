@@ -4,11 +4,16 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openSync, closeSync, ftruncateSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 
 const dataDir = await mkdtemp(join(tmpdir(), "offgrid-presenters-"));
 process.env.OFFGRID_DIR = dataDir;
 
 const { modelSelectOption } = await import("../src/model-presenters.mjs");
+
+function plain(opt) {
+  return stripVTControlCharacters(opt.label);
+}
 
 function createSparseFile(path, size) {
   const dir = join(path, "..");
@@ -27,7 +32,7 @@ describe("modelSelectOption", () => {
       label: "mlx-community/gemma-4-e2b-it-4bit",
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
-    assert.match(opt.label, /SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
+    assert.match(plain(opt), /SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
   });
 
   it("infers oMLX source for managed profiles without stored source", () => {
@@ -38,8 +43,8 @@ describe("modelSelectOption", () => {
       fileMissing: false,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
-    assert.match(opt.label, /READY\s+│\s+oMLX\s+│\s+oMLX/);
-    assert.doesNotMatch(opt.label, /GGUF/);
+    assert.match(plain(opt), /READY\s+│\s+oMLX\s+│\s+oMLX/);
+    assert.doesNotMatch(plain(opt), /GGUF/);
   });
 
   it("looks up managed profile size from managedModels", () => {
@@ -51,7 +56,7 @@ describe("modelSelectOption", () => {
     };
     const managedModels = [{ backendId: "omlx", models: [{ id: "Qwen3.6-27B", sizeBytes: 15e9, source: "omlx" }], status: "ok" }];
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels });
-    assert.match(opt.label, /13\.97\s*GB/);
+    assert.match(plain(opt), /13\.97\s*GB/);
   });
 
   it("infers source from model path for old GGUF profiles", async () => {
@@ -66,7 +71,7 @@ describe("modelSelectOption", () => {
       fileMissing: false,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
-    assert.match(opt.label, /LM Studio/);
-    assert.match(opt.label, /11\.00\s*MB/);
+    assert.match(plain(opt), /LM Studio/);
+    assert.match(plain(opt), /11\.00\s*MB/);
   });
 });
