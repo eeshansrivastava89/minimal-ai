@@ -179,7 +179,10 @@ export async function createProfileFromMlxModel(model) {
     label: model.label,
     backend: "mlx-vlm",
     providerId: "mlx-vlm",
-    modelAlias: model.label,
+    // mlx-vlm registers the loaded model with the full --model path as its API
+    // id (verified via /v1/models). Requests must send that exact path, else
+    // mlx-vlm treats the name as a new repo and re-fetches it from HuggingFace.
+    modelAlias: model.filePath,
     source: model.source,
     modelPath: model.filePath,
     mmprojPath: null,
