@@ -161,6 +161,34 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
   });
 }
 
+// ── Auto-create profile from a discovered MLX model ────────────────────────
+
+export async function createProfileFromMlxModel(model) {
+  const { computeMlxVlmFlags, DEFAULT_PORT } = await import("./mlx-flags.mjs");
+  // Sensible defaults for the first runnable slice: thinking on, 8k ctx.
+  // Interactive config (context / thinking toggle) comes after you can feel it.
+  const ctxSize = 8192;
+  const { args } = computeMlxVlmFlags(model.filePath, {
+    port: DEFAULT_PORT,
+    ctxSize,
+    thinkingEnabled: true,
+  });
+  return normalizeProfile({
+    id: slugFromLabel(model.label),
+    label: model.label,
+    backend: "mlx-vlm",
+    providerId: "mlx-vlm",
+    modelAlias: model.label,
+    source: model.source,
+    modelPath: model.filePath,
+    mmprojPath: null,
+    drafterPath: null,
+    capabilities: { thinking: true, vision: false, mtp: false },
+    flags: { host: "127.0.0.1", port: DEFAULT_PORT, ctxSize },
+    commandArgv: args,
+  });
+}
+
 function summarizeCapabilities(caps) {
   return {
     architecture: caps.architecture,

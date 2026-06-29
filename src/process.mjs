@@ -35,11 +35,13 @@ async function startLocalServer(profile) {
 
   // Build argv: binary + command.json args
   const argv = [...commandArgv];
+  // mlx-vlm requires APC_ENABLED=1 (86x TTFT improvement; fixes Metal cache clearing).
+  const env = profile.backend === "mlx-vlm" ? { ...process.env, APC_ENABLED: "1" } : process.env;
 
   const rawFd = openSync(rawLogPath, "a");
   let child;
   try {
-    child = spawn(binary, argv, { detached: true, stdio: ["ignore", rawFd, rawFd] });
+    child = spawn(binary, argv, { detached: true, stdio: ["ignore", rawFd, rawFd], env });
   } finally {
     closeSync(rawFd);
   }

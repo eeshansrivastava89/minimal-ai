@@ -1,6 +1,8 @@
 import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
+import { scanMlxModels } from "./mlx-discovery.mjs";
+import { DEFAULT_PORT as MLX_VLM_PORT } from "./mlx-flags.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
 
@@ -65,6 +67,17 @@ export const BACKENDS = {
     needsCommandFile: false,
     scanModels: () => scanOmlxModels(),
   },
+  "mlx-vlm": {
+    id: "mlx-vlm",
+    label: "mlx-vlm",
+    type: "local-server",
+    providerId: "mlx-vlm",
+    defaultHost: LOCAL_HOST,
+    defaultPort: MLX_VLM_PORT,
+    defaultBaseUrl: baseUrlFor({ port: MLX_VLM_PORT }),
+    needsCommandFile: true,
+    scanModels: async () => scanMlxModels(),
+  },
 };
 
 export function backendFor(backendId) {
@@ -75,6 +88,7 @@ export function backendFor(backendId) {
 
 export async function backendBinaryFor(backendId) {
   const backend = BACKENDS[backendId ?? "llama-cpp"];
+  if (backend.id === "mlx-vlm") return "python3"; // mlx-vlm spawns via python3 + the strict=False wrapper
   if (backend.type === "managed-server") return null;
   const discovered = await findLlamaServer();
   return discovered; // null means "not found — trigger onboarding"

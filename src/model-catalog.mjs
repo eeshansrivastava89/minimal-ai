@@ -1,22 +1,27 @@
 import { scanGgufModels, matchDrafter } from "./scan.mjs";
 import { loadProfiles, normalizeProfile, sanitizeProfileId } from "./profiles.mjs";
 import { scanManagedModels } from "./managed.mjs";
+import { scanMlxModels } from "./mlx-discovery.mjs";
 import { isProfileFileMissing } from "./model-summary.mjs";
 
 export async function loadModelCatalog() {
-  const [profiles, { models: ggufModels, drafters }, managedModels] = await Promise.all([
+  const [profiles, { models: ggufModels, drafters }, managedModels, mlxModels] = await Promise.all([
     loadProfiles(),
     scanGgufModels(),
     scanManagedModels(),
+    scanMlxModels(),
   ]);
-  return normalizeCatalog({ profiles, ggufModels, drafters, managedModels });
+  return normalizeCatalog({ profiles, ggufModels, drafters, managedModels, mlxModels });
 }
 
 export function normalizeCatalog(catalog) {
   if (catalog.newModels && catalog.managedItems) return catalog;
-  const { profiles, ggufModels, drafters, managedModels } = catalog;
+  const { profiles, ggufModels, drafters, managedModels, mlxModels = [] } = catalog;
   const profiledPaths = new Set(profiles.map((profile) => profile.modelPath).filter(Boolean));
-  const newModels = ggufModels.filter((model) => !profiledPaths.has(model.path));
+  const newModels = [
+    ...ggufModels.filter((model) => !profiledPaths.has(model.path)),
+    ...mlxModels.filter((model) => !profiledPaths.has(model.path)),
+  ];
   const managedItems = [];
   for (const { backendId, models, status } of managedModels) {
     if (status === "unavailable") continue;
