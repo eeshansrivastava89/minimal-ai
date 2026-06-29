@@ -63,7 +63,7 @@ async function ensureLlamaRuntime(prompt) {
     ]), { formatBorder: pc.cyan }));
     await offerManagedLlamaRuntimeUpdate(prompt);
     llamaBinary = await findLlamaServer();
-    if (!llamaBinary) console.log(pc.yellow("Skipping llama.cpp for now. You can still use Ollama/oMLX, or run offgrid-ai again to install the managed runtime."));
+    if (!llamaBinary) console.log(pc.yellow("Skipping llama.cpp for now. You can still use oMLX, or run offgrid-ai again to install the managed runtime."));
   }
   if (llamaBinary) console.log(pc.green(`✓ llama-server: ${llamaBinary}`));
   return llamaBinary;

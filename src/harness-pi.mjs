@@ -134,15 +134,14 @@ function modelReasoning(profile) {
 }
 
 function modelFamily(profile) {
-  return [profile.id, profile.label, profile.modelAlias, profile.modelPath, profile.ollamaModel, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
+  return [profile.id, profile.label, profile.modelAlias, profile.modelPath, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
 }
 
-function piApiKey(providerId) {
-  return providerId === "ollama" ? "ollama" : "none";
+function piApiKey() {
+  return "none";
 }
 
-function providerCompat(providerId) {
-  if (providerId === "ollama") return { supportsDeveloperRole: true, supportsReasoningEffort: false };
+function providerCompat() {
   return { supportsDeveloperRole: false, supportsReasoningEffort: false };
 }
 

@@ -42,7 +42,7 @@ export async function statusCommand() {
     const detailRows = [];
     for (const { profile, status } of [...managedUpMissing, ...managedUpNotLoaded]) {
       const backend = backendFor(profile.backend);
-      const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+      const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
       const state = status.modelAvailable
         ? pc.yellow("server up · model not loaded")
         : pc.red("server up · model missing");

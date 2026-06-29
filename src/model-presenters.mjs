@@ -41,7 +41,6 @@ function optionSourceTag(sourceId) {
   const colors = {
     huggingface: pc.cyan,
     lmstudio: pc.blue,
-    ollama: pc.green,
     omlx: pc.magenta,
     "llama.cpp": pc.cyan,
     gguf: pc.cyan,
@@ -57,7 +56,6 @@ function optionBackendTag(backendId) {
   const colors = {
     "llama-cpp": pc.cyan,
     "llama-cpp-mtp": pc.blue,
-    ollama: pc.green,
     omlx: pc.magenta,
     "mlx-vlm": pc.yellow,
   };
@@ -69,7 +67,6 @@ function formatSourceLabel(sourceId) {
   const map = {
     huggingface: "HuggingFace",
     lmstudio: "LM Studio",
-    ollama: "Ollama",
     omlx: "oMLX",
     "llama.cpp": "llama.cpp",
     gguf: "GGUF file",
@@ -203,7 +200,7 @@ function managedProfileSizeBytes(profile, managedModels) {
   const backend = backendFor(profile.backend);
   if (backend.type !== "managed-server") return null;
   const backendModels = managedModels.find((m) => m.backendId === profile.backend)?.models ?? [];
-  const modelId = profile.omlxModel ?? profile.ollamaModel ?? null;
+  const modelId = profile.omlxModel ?? null;
   if (!modelId) return null;
   const model = backendModels.find((m) => m.id === modelId);
   return model?.sizeBytes || null;

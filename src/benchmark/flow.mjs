@@ -16,7 +16,7 @@ import { finalizeBenchmarkRun, renderBenchmarkSummary } from "./finalize.mjs";
 
 function benchmarkModelSource(profile) {
   if (!profile) return "cloud";
-  return profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "ollama" ? "ollama" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+  return profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
 }
 
 async function chooseBenchmarkAction(prompt, canRun) {
@@ -28,7 +28,7 @@ async function chooseBenchmarkAction(prompt, canRun) {
 }
 
 function managedModelId(profile) {
-  return profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+  return profile.omlxModel ?? profile.modelAlias ?? profile.label;
 }
 
 async function ensureManagedModelAvailableForBenchmark(profile, backend) {

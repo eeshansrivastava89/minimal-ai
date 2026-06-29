@@ -145,7 +145,7 @@ async function processGone(pid) {
   }
 }
 
-// ── Unload model from a managed server (oMLX / Ollama) ─────────────────────
+// ── Unload model from a managed server (oMLX) ─────────────────────────────
 // Counterpart to stopProfile for local-server backends: stopProfile kills the
 // server process (which unloads the model); unloadModelFromServer asks a
 // managed server to release the model from memory via its HTTP API, leaving the
@@ -154,22 +154,6 @@ async function processGone(pid) {
 
 export async function unloadModelFromServer(profile) {
   const backend = backendFor(profile.backend);
-
-  if (backend.id === "ollama") {
-    const apiBaseUrl = apiRootUrl(profile.baseUrl || backend.apiBaseUrl || "");
-
-    try {
-      await fetch(`${apiBaseUrl}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: profile.modelAlias, prompt: "", stream: false, keep_alive: 0 }),
-        signal: AbortSignal.timeout(10000),
-      });
-      return { unloaded: true, backend: backend.id };
-    } catch (err) {
-      return { unloaded: false, backend: backend.id, error: err.message };
-    }
-  }
 
   if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
     // llama.cpp unloads when the server process exits; no HTTP unload API exists.
@@ -262,7 +246,6 @@ export async function isProfileServerUp(profile) {
 
 export async function modelLoadedOnServer(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.id === "ollama") return modelIdsMatch(await ollamaLoadedModelIds(profile), expectedModelIds(profile));
   if (backend.id === "omlx") return modelIdsMatch(await omlxLoadedModelIds(profile), expectedModelIds(profile));
   const { matches } = await serverMatchesProfile(profile);
   return matches;
@@ -270,9 +253,6 @@ export async function modelLoadedOnServer(profile) {
 
 export async function modelAvailableOnServer(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.id === "ollama") {
-    return modelIdsMatch(await ollamaAvailableModelIds(profile), expectedModelIds(profile));
-  }
   if (backend.id === "omlx") {
     // /v1/models lists discovered models; an ID must exist there to be usable.
     return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
@@ -353,24 +333,6 @@ export async function serverModelIds(baseUrl) {
     .filter(Boolean);
 }
 
-async function ollamaLoadedModelIds(profile) {
-  const result = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/ps`);
-  if (!result.ok) return [];
-  return (Array.isArray(result.data?.models) ? result.data.models : [])
-    .flatMap((model) => [model?.name, model?.model])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-}
-
-async function ollamaAvailableModelIds(profile) {
-  const result = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/tags`);
-  if (!result.ok) return [];
-  return (Array.isArray(result.data?.models) ? result.data.models : [])
-    .flatMap((model) => [model?.name, model?.model])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-}
-
 async function omlxLoadedModelIds(profile) {
   const statusResult = await fetchJson(`${profile.baseUrl.replace(/\/+$/u, "")}/models/status`);
   const fromStatus = statusResult.ok
@@ -441,7 +403,6 @@ function expectedModelIds(profile) {
   return [
     profile.modelAlias,
     profile.label,
-    profile.ollamaModel,
     profile.omlxModel,
     profile.modelPath,
     fileName,

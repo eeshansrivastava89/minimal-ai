@@ -58,18 +58,6 @@ describe("parseModelName", () => {
     assert.ok(result.tags.includes("it"), `expected 'it' in tags, got: ${result.tags}`);
   });
 
-  it("parses an Ollama model name with tag", () => {
-    const result = parseModelName("gemma3:4b", "ollama");
-    assert.equal(result.publisher, null);
-    assert.ok(result.display.includes("Gemma 3"));
-    assert.ok(result.display.includes("4B"));
-  });
-
-  it("parses an Ollama model name with size variant", () => {
-    const result = parseModelName("qwen3:30b-a3b", "ollama");
-    assert.ok(result.display.includes("Qwen 3"));
-    assert.ok(result.display.includes("30B"));
-  });
 
   it("parses an oMLX model id with publisher", () => {
     const result = parseModelName("mlx-community/gemma-4-12b-it-q4", "omlx");

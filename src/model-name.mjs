@@ -68,9 +68,8 @@ const TAG_TOKENS = [
 /**
  * Parse a raw model identifier into a structured display name.
  *
- * @param {string} rawId  The raw identifier: GGUF filename (no .gguf),
- *                        Ollama model name, or oMLX model id.
- * @param {"local-gguf"|"ollama"|"omlx"} source  Where this name came from.
+ * @param {string} rawId  The raw identifier: GGUF filename (no .gguf) or oMLX model id.
+ * @param {"local-gguf"|"omlx"} source  Where this name came from.
  * @returns {{ publisher: string|null, model: string, params: string|null,
  *             quant: string|null, tags: string[], display: string,
  *             sort: string, id: string }}
@@ -87,18 +86,7 @@ export function parseModelName(rawId, source) {
     name = rawId.slice(slashIdx + 1);
   }
 
-  // 2. For Ollama, split on : to separate model from tag (e.g. "gemma3:4b")
-  //    The tag after : is a model size/variant identifier — not a GGUF quant.
-  let ollamaTag = null;
-  if (source === "ollama") {
-    const colonIdx = name.lastIndexOf(":");
-    if (colonIdx !== -1) {
-      ollamaTag = name.slice(colonIdx + 1);
-      name = name.slice(0, colonIdx);
-    }
-  }
-
-  // 3. Extract quant (GGUF quantization suffix)
+  // 2. Extract quant (GGUF quantization suffix)
   let quant = null;
   for (const pattern of QUANT_PATTERNS) {
     const match = name.match(pattern);
@@ -125,13 +113,7 @@ export function parseModelName(rawId, source) {
   // Clean up leftover separators
   name = name.replace(/[-_]{2,}/g, "-").replace(/^[-_]+|[-_]+$/g, "");
 
-  // 5. For Ollama, re-attach the tag as part of the model name
-  //    (Ollama tags like "4b" or "30b-a3b" are size variants, not quants)
-  if (ollamaTag) {
-    name = name + "-" + ollamaTag;
-  }
-
-  // 6. Title-case the remaining model name
+  // 5. Title-case the remaining model name
   let model = titleCaseModel(name);
 
   // If nothing is left after parsing, fall back to the raw name
@@ -139,13 +121,13 @@ export function parseModelName(rawId, source) {
     model = rawId.includes("/") ? rawId : rawId.replace(/[-_]/g, " ");
   }
 
-  // 7. Extract params (size like 30B, 12B) for sort/filter convenience
+  // 6. Extract params (size like 30B, 12B) for sort/filter convenience
   const params = extractParams(model);
 
-  // 8. Build display string
+  // 7. Build display string
   const display = buildDisplay(publisher, model, tags, quant);
 
-  // 9. Build sort key (lowercase, no publisher, for alphabetical ordering)
+  // 8. Build sort key (lowercase, no publisher, for alphabetical ordering)
   const sort = model.toLowerCase().replace(/[-_]/g, " ");
 
   return { publisher, model, params, quant, tags, display, sort, id };

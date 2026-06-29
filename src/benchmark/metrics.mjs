@@ -1,7 +1,6 @@
 // ── Backend-aware server speed metrics ───────────────────────────────────────
 
 import { backendFor } from "../backends.mjs";
-import { apiRootUrl } from "../process.mjs";
 
 const BENCH_SPEED_PROMPT = "Write a one-sentence summary of machine learning.";
 const SPEED_QUERY_TIMEOUT_MS = 120_000;
@@ -15,9 +14,6 @@ export async function queryServerMetrics(profile) {
   }
   if (backend.id === "omlx") {
     return await queryOmlxMetrics(profile);
-  }
-  if (backend.id === "ollama") {
-    return await queryOllamaMetrics(profile);
   }
 
   throw new Error(`Unsupported backend for benchmark speed metrics: ${backend.id}`);
@@ -113,45 +109,5 @@ async function queryOmlxMetrics(profile) {
     speculativeDecodeAcceptance: null,
     kvCacheTokens: usage.prompt_tokens_details?.cached_tokens ?? null,
     metricSource: "oMLX /v1/chat/completions streaming include_usage",
-  };
-}
-
-async function queryOllamaMetrics(profile) {
-  const body = {
-    model: profile.modelAlias,
-    prompt: BENCH_SPEED_PROMPT,
-    stream: false,
-    options: { num_predict: SPEED_QUERY_MAX_TOKENS },
-  };
-
-  const apiBaseUrl = apiRootUrl(profile.baseUrl || backendFor(profile.backend).apiBaseUrl || "");
-
-  const response = await fetch(`${apiBaseUrl}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(SPEED_QUERY_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Ollama speed query failed: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  const promptEvalNs = data.prompt_eval_duration ?? 0;
-  const evalNs = data.eval_duration ?? 0;
-  const loadNs = data.load_duration ?? 0;
-
-  const promptEvalCount = data.prompt_eval_count ?? 0;
-  const evalCount = data.eval_count ?? 0;
-
-  return {
-    prefillTokensPerSecond: promptEvalNs > 0 ? (promptEvalCount / (promptEvalNs / 1e9)) : null,
-    generationTokensPerSecond: evalNs > 0 ? (evalCount / (evalNs / 1e9)) : null,
-    ttftMs: promptEvalNs / 1e6,
-    modelLoadMs: loadNs / 1e6,
-    speculativeDecodeAcceptance: null,
-    kvCacheTokens: null,
-    metricSource: "Ollama /api/generate",
   };
 }

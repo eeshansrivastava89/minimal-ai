@@ -9,7 +9,6 @@ import { DEFAULT_PORT as MLX_VLM_PORT } from "./mlx-flags.mjs";
 export const LOCAL_HOST = "127.0.0.1";
 export const LLAMA_CPP_PORT = 8080;
 export const LLAMA_CPP_MTP_PORT = 8081;
-export const OLLAMA_PORT = 11434;
 export const OMLX_PORT = 8000;
 
 export function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
@@ -42,18 +41,6 @@ export const BACKENDS = {
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_MTP_PORT }),
     needsCommandFile: true,
     scanModels: async () => (await scanGgufModels()).models,
-  },
-  "ollama": {
-    id: "ollama",
-    label: "Ollama",
-    type: "managed-server",
-    providerId: "ollama",
-    defaultHost: "localhost",
-    defaultPort: OLLAMA_PORT,
-    defaultBaseUrl: baseUrlFor({ host: "localhost", port: OLLAMA_PORT }),
-    apiBaseUrl: baseUrlFor({ host: "localhost", port: OLLAMA_PORT, path: "" }),
-    needsCommandFile: false,
-    scanModels: () => scanOllamaModels(),
   },
   "omlx": {
     id: "omlx",
@@ -99,29 +86,6 @@ export function defaultFlagsForBackend(backendId) {
   return { host: backend.defaultHost ?? LOCAL_HOST, port: backend.defaultPort };
 }
 
-// ── Ollama model discovery ──────────────────────────────────────────────
-
-async function scanOllamaModels() {
-  const response = await fetch(`${BACKENDS.ollama.apiBaseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
-  if (!response.ok) {
-    throw new Error(`Ollama /api/tags returned ${response.status} ${response.statusText}`);
-  }
-  const body = await response.json();
-  if (!Array.isArray(body?.models)) return [];
-  return body.models
-    .filter((model) => isLocalOllamaModel(model))
-    .map((model) => ({
-      id: model.name,
-      label: parseModelName(model.name, "ollama").display,
-      aliasSuggestion: model.name,
-      sizeBytes: model.size ?? 0,
-      quant: model.details?.quantization_level,
-      family: model.details?.family,
-      backend: "ollama",
-      source: "ollama",
-    })).sort((a, b) => a.label.localeCompare(b.label));
-}
-
 // ── oMLX model discovery ───────────────────────────────────────────────
 
 async function scanOmlxModels() {
@@ -147,13 +111,6 @@ async function scanOmlxModels() {
 
 // ── Labels ──────────────────────────────────────────────────────────────
 
-function isLocalOllamaModel(model) {
-  const name = String(model?.name ?? "");
-  if (/:cloud(?:$|\b)/i.test(name)) return false;
-  if (!Number.isFinite(model?.size) || model.size <= 0) return false;
-  return true;
-}
-
 function isChatOmlxModel(model) {
   if (typeof model?.id !== "string" || !model.id.trim()) return false;
   const type = String(model.type ?? model.model_type ?? "").toLowerCase();
@@ -163,3 +120,4 @@ function isChatOmlxModel(model) {
 }
 
 // (ollamaLabel and omlxLabel removed — parseModelName in model-name.mjs is the single path)
+// (Ollama backend removed — offgrid-ai now uses llama-server + mlx-vlm + oMLX)

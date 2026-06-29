@@ -33,7 +33,6 @@ describe("module imports", () => {
     assert.equal(typeof backendFor, "function");
     assert.equal(typeof BACKENDS, "object");
     assert.ok(BACKENDS["llama-cpp"]);
-    assert.ok(BACKENDS.ollama);
     assert.ok(BACKENDS.omlx);
   });
 

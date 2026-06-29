@@ -28,7 +28,7 @@ export function normalizeCatalog(catalog) {
     const profiledAliases = new Set(
       profiles
         .filter((profile) => profile.backend === backendId)
-        .map((profile) => backendId === "ollama" ? `ollama:${profile.ollamaModel ?? profile.modelAlias}` : `omlx:${profile.omlxModel ?? profile.modelAlias}`),
+        .map((profile) => `omlx:${profile.omlxModel ?? profile.modelAlias}`),
     );
     for (const model of models) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
@@ -74,7 +74,6 @@ export function createManagedProfile(model, backendId) {
     source: backendId,
     modelAlias: model.aliasSuggestion,
     modelSizeBytes: model.sizeBytes || 0,
-    ...(backendId === "ollama" ? { ollamaModel: model.id } : {}),
     ...(backendId === "omlx" ? { omlxModel: model.id } : {}),
   });
 }

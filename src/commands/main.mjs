@@ -4,7 +4,7 @@ import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
-import { hasLmStudioInstalled, hasOllamaInstalled, hasOmlxInstalled, scanManagedModels } from "../managed.mjs";
+import { hasLmStudioInstalled, hasOmlxInstalled, scanManagedModels } from "../managed.mjs";
 import { recommendedModel } from "../recommendations.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
@@ -63,9 +63,9 @@ async function printNoModelsHelp(llamaBinary) {
   console.log(pc.yellow("No models found."));
   console.log(pc.dim("You need to download a model to use offgrid-ai.\n"));
 
-  const [ollamaInstalled, omlxInstalled] = await Promise.all([hasOllamaInstalled(), hasOmlxInstalled()]);
+  const omlxInstalled = await hasOmlxInstalled();
   const lmStudioInstalled = hasLmStudioInstalled();
-  const hasBackends = llamaBinary || ollamaInstalled || omlxInstalled || lmStudioInstalled;
+  const hasBackends = llamaBinary || omlxInstalled || lmStudioInstalled;
   if (!hasBackends) {
     console.log(pc.dim("Run offgrid-ai to install a backend and download a model."));
     return;
@@ -73,7 +73,6 @@ async function printNoModelsHelp(llamaBinary) {
 
   console.log(pc.bold("Backend status:"));
   console.log(`  ${lmStudioInstalled ? pc.green("✓") : pc.red("✗")} LM Studio ${lmStudioInstalled ? "— installed" : "— not installed"}`);
-  console.log(`  ${ollamaInstalled ? pc.green("✓") : pc.red("✗")} Ollama ${ollamaInstalled ? "— installed" : "— not installed"}`);
   console.log(`  ${omlxInstalled ? pc.green("✓") : pc.red("✗")} oMLX ${omlxInstalled ? "— installed" : "— not installed"}`);
   console.log(`  ${llamaBinary ? pc.green("✓") : pc.red("✗")} llama-server ${llamaBinary ? "— installed" : "— not installed"}`);
   console.log();
@@ -84,6 +83,5 @@ async function printNoModelsHelp(llamaBinary) {
     console.log("  Open LM Studio → browse models → download");
     console.log(pc.dim(`  Recommended: ${model.label}`));
   }
-  if (ollamaInstalled) console.log(pc.bold(`  ollama pull ${model.ollama}`));
   if (omlxInstalled) console.log(pc.bold("  omlx start"));
 }
