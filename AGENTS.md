@@ -21,3 +21,31 @@
 - **Codebase is the source of truth.** Verify assumptions against current files and tests, not memory or old docs.
 - **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which offgrid-ai`, etc.).
 - **Test and lint before committing.** Run `npm test` and `npm run lint`. Keep the change focused.
+
+## Session Start: Codebase Health Report
+
+At the start of every new session, before other work, run a read-only
+codebase-health snapshot and give a brief interpretive summary. The goal is a
+running sense of direction and early detection of structural drift — **not
+enforcement.** No thresholds, no failing rules.
+
+    node scripts/health-report.mjs
+
+This wraps three established tools and prints a compact terminal report:
+- **scc** (static binary) — size + file-level complexity (with a COCOMO estimate).
+- **madge** (npx) — circular dependencies in the ESM import graph.
+- **jscpd** (npx) — copy-paste duplication.
+
+Generated artifacts (jscpd JSON) land under `reports/` (gitignored), and a
+one-line dated snapshot is appended to `reports/health.log` so trends are
+visible across sessions.
+
+After running it, summarize in 2–3 lines: code size + total complexity, the
+most complex files (and whether any are climbing), circular deps (none, or
+list them), and duplication %. Call out anything that shifted since the last
+report (read the tail of the trend log).
+
+One-time setup: `scc` must be on PATH. It is a static Go binary — download
+the darwin-arm64 build from https://github.com/boyter/scc/releases into
+`~/.local/bin` (on PATH), or `brew install scc` if Homebrew is healthy.
+`madge` and `jscpd` are fetched by `npx` on first use.

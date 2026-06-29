@@ -34,7 +34,7 @@
     "start": "node bin/offgrid-ai.mjs",
     "test": "node --test test/*.mjs",
     "test:integration": "OFFGRID_INTEGRATION=1 node --test test/integration/*.mjs",
-    "lint": "eslint src/*.mjs src/commands/*.mjs src/benchmark/*.mjs bin/*.mjs",
+    "lint": "eslint src/*.mjs src/commands/*.mjs src/benchmark/*.mjs scripts/*.mjs bin/*.mjs",
     "check:privacy": "node scripts/privacy-gate.mjs",
     "release:check": "bash scripts/release-check.sh",
     "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual",
