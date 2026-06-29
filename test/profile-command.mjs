@@ -9,6 +9,7 @@ process.env.OFFGRID_DIR = dataDir;
 
 const { ensureDirs } = await import("../src/config.mjs");
 const { commandJsonPath, readCommandArgv, saveProfile, createProfileFromMlxModel } = await import("../src/profiles.mjs");
+const { piApiModelId } = await import("../src/harness-pi.mjs");
 
 describe("profile command files", () => {
   it("uses command.json argv as the local server source of truth", async () => {
@@ -30,10 +31,7 @@ describe("profile command files", () => {
 });
 
 describe("createProfileFromMlxModel", () => {
-  it("uses the full model path as the API model id (modelAlias), not the label", async () => {
-    // mlx-vlm registers the loaded model with the --model path as its API id.
-    // Requests must send that exact path; sending the repo-id label makes
-    // mlx-vlm unload the local model and re-fetch the repo from HuggingFace.
+  it("keeps the friendly label as modelAlias; the API id is derived at serve time", async () => {
     const modelDir = await mkdtemp(join(tmpdir(), "offgrid-mlx-id-"));
     await writeFile(join(modelDir, "config.json"), JSON.stringify({
       model_type: "qwen3",
@@ -44,10 +42,17 @@ describe("createProfileFromMlxModel", () => {
     const profile = await createProfileFromMlxModel(model);
     assert.equal(profile.backend, "mlx-vlm");
     assert.equal(profile.label, "org/test-mlx");
-    assert.equal(profile.modelAlias, modelDir, "modelAlias must be the model path, not the label");
+    assert.equal(profile.modelAlias, "org/test-mlx", "modelAlias is the friendly label, not the path");
     assert.equal(profile.modelPath, modelDir);
     assert.equal(profile.modelSizeBytes, 1234);
     assert.ok(profile.commandArgv.includes("--model"), "commandArgv must include --model");
     assert.ok(profile.commandArgv.includes(modelDir), "commandArgv must pass the model path to --model");
+    // The id Pi sends must be the model path (what mlx-vlm registers), not the label.
+    assert.equal(piApiModelId(profile), modelDir, "piApiModelId must be the model path for mlx-vlm");
+  });
+
+  it("piApiModelId uses modelAlias for non-mlx-vlm backends", () => {
+    assert.equal(piApiModelId({ backend: "llama-cpp", modelAlias: "friendly", modelPath: "/m.gguf" }), "friendly");
+    assert.equal(piApiModelId({ backend: "omlx", modelAlias: "Qwen3-27B", modelPath: null }), "Qwen3-27B");
   });
 });

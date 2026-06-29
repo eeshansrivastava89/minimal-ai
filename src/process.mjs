@@ -98,16 +98,50 @@ export async function stopProfile(profile) {
     await writeState(profile.id, { ...state, pid: null, stoppedAt: new Date().toISOString(), stopReason: "pid-not-running" });
     return { stopped: false, message: `${profile.id} pid ${state.pid} is no longer running.` };
   }
+  const pid = state.pid;
   try {
-    try {
-      process.kill(-state.pid, "SIGTERM");
-    } catch {
-      process.kill(state.pid, "SIGTERM");
-    }
-    await writeState(profile.id, { ...state, pid: null, stoppedAt: new Date().toISOString(), stopSignal: "SIGTERM" });
-    return { stopped: true, message: `Stopped ${profile.id} pid ${state.pid}` };
+    const signal = await terminateProcess(pid);
+    await writeState(profile.id, { ...state, pid: null, stoppedAt: new Date().toISOString(), stopSignal: signal });
+    return { stopped: true, message: `Stopped ${profile.id} pid ${pid}` };
   } catch (error) {
-    return { stopped: false, message: `Could not stop pid ${state.pid}: ${error.message}` };
+    return { stopped: false, message: `Could not stop pid ${pid}: ${error.message}` };
+  }
+}
+
+// Reliably terminate a detached local-server process group: SIGTERM with a
+// grace period for graceful shutdown (lets mlx-vlm/llama-server release the
+// model), then SIGKILL if still alive. Guarantees the model is unloaded when a
+// profile stops — consistent across backends (llama-server exits on SIGTERM;
+// mlx-vlm/uvicorn often does not, hence the SIGKILL fallback).
+async function terminateProcess(pid) {
+  const signalGroup = (sig) => {
+    try { process.kill(-pid, sig); }
+    catch { process.kill(pid, sig); } // not a group leader — kill the proc itself
+  };
+  signalGroup("SIGTERM");
+  for (let i = 0; i < 50; i++) { // 5s grace for graceful shutdown
+    if (await processGone(pid)) return "SIGTERM";
+    await sleep(100);
+  }
+  signalGroup("SIGKILL");
+  for (let i = 0; i < 30; i++) { // 3s for SIGKILL to take effect
+    if (await processGone(pid)) return "SIGKILL";
+    await sleep(100);
+  }
+  throw new Error(`pid ${pid} did not exit after SIGKILL`);
+}
+
+// True if the process is dead (or a zombie about to be reaped).
+async function processGone(pid) {
+  try { process.kill(pid, 0); }
+  catch { return true; } // no such process
+  // Alive to signal(0) — but a detached setsid child can briefly appear as a
+  // zombie before launchd reaps it. Treat zombie as gone.
+  try {
+    const { stdout } = await execFileAsync("ps", ["-o", "stat=", "-p", String(pid)]);
+    return /^Z/.test(stdout.trim());
+  } catch {
+    return false;
   }
 }
 

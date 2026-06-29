@@ -5,6 +5,18 @@ import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
 import pc from "picocolors";
 
+// ── Pi model id ─────────────────────────────────────────────────────────────
+
+/**
+ * The model id Pi must send in requests. mlx-vlm registers the loaded model
+ * with the full --model path as its API id (verified via /v1/models); sending
+ * the repo-id label instead makes mlx-vlm unload the local model and re-fetch
+ * the repo from HuggingFace. Other backends use the friendly modelAlias.
+ */
+export function piApiModelId(profile) {
+  return profile.backend === "mlx-vlm" ? profile.modelPath : profile.modelAlias;
+}
+
 // ── Sync Pi config ─────────────────────────────────────────────────────────
 
 export async function syncPiConfig(profile) {
@@ -30,26 +42,27 @@ export async function removeFromPiConfig(profile) {
   const provider = config.providers[profile.providerId];
   if (!provider?.models) return { cleaned: false, reason: `no ${profile.providerId} provider in Pi config` };
   const before = provider.models.length;
-  provider.models = provider.models.filter((m) => m.id !== profile.modelAlias);
+  const apiId = piApiModelId(profile);
+  provider.models = provider.models.filter((m) => m.id !== apiId);
   if (provider.models.length === 0) delete config.providers[profile.providerId];
   if (before > provider.models.length) {
     await writeJson(PI_CONFIG, config);
     return { cleaned: true, removed: before - provider.models.length };
   }
-  return { cleaned: false, reason: `${profile.modelAlias} not in Pi config` };
+  return { cleaned: false, reason: `${apiId} not in Pi config` };
 }
 
 // ── Check if Pi has the model ──────────────────────────────────────────────
 
 export async function hasPiModel(profile) {
   const config = await readJson(PI_CONFIG, null);
-  return Boolean(config?.providers?.[profile.providerId]?.models?.some?.((m) => m.id === profile.modelAlias));
+  return Boolean(config?.providers?.[profile.providerId]?.models?.some?.((m) => m.id === piApiModelId(profile)));
 }
 
 // ── Launch Pi ──────────────────────────────────────────────────────────────
 
 export async function launchPi(profile) {
-  const model = profile.harnesses?.pi?.model ?? `${profile.providerId}/${profile.modelAlias}`;
+  const model = `${profile.providerId}/${piApiModelId(profile)}`;
   console.log(pc.bold(`[pi] pi --model ${model}`));
   await runForeground("pi", ["--model", model]);
 }
@@ -88,7 +101,7 @@ function piModelConfig(profile) {
   const compat = modelCompat(profile);
   const reasoning = modelReasoning(profile);
   return {
-    id: profile.modelAlias,
+    id: piApiModelId(profile),
     name: profile.label,
     input: modelInput(profile),
     ...(reasoning === undefined ? {} : { reasoning }),
