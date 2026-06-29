@@ -12,6 +12,7 @@ import { findBenchmarkRepo } from "./benchmark.mjs";
 
 const OPTION_SEPARATOR = pc.dim("  │  ");
 const OPTION_STATUS_WIDTH = 10;
+const OPTION_BACKEND_WIDTH = 14;
 const OPTION_SOURCE_WIDTH = 14;
 const OPTION_CTX_WIDTH = 5;
 
@@ -50,6 +51,19 @@ function optionSourceTag(sourceId) {
   return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
 }
 
+function optionBackendTag(backendId) {
+  const backend = backendId ? backendFor(backendId) : null;
+  const label = backend?.label ?? backendId ?? "unknown";
+  const colors = {
+    "llama-cpp": pc.cyan,
+    "llama-cpp-mtp": pc.blue,
+    ollama: pc.green,
+    omlx: pc.magenta,
+    "mlx-vlm": pc.yellow,
+  };
+  return optionPad(label, colors[backendId] ?? pc.dim, OPTION_BACKEND_WIDTH);
+}
+
 function formatSourceLabel(sourceId) {
   if (!sourceId) return "unknown";
   const map = {
@@ -78,7 +92,9 @@ function inferSourceFromPath(modelPath) {
 }
 
 function discoverySourceForProfile(profile) {
-  if (profile.source) return profile.source;
+  const backend = backendFor(profile.backend);
+  if (backend.type === "managed-server") return backend.id;
+  if (profile.source && profile.source !== "local-gguf") return profile.source;
   return inferSourceFromPath(profile.modelPath);
 }
 
@@ -94,12 +110,15 @@ function optionCtxLabel(item) {
   return optionPad("—", null, OPTION_CTX_WIDTH);
 }
 
-function optionSizeLabel(item) {
+function optionSizeLabel(item, managedModels) {
   if (item.type === "profile") {
     if (item.fileMissing) return "—";
     if (item.profile.modelPath && existsSync(item.profile.modelPath)) {
       return formatBytes(statSync(item.profile.modelPath).size);
     }
+    const managedSize = managedProfileSizeBytes(item.profile, managedModels);
+    if (managedSize) return formatBytes(managedSize);
+    if (item.profile.modelSizeBytes) return formatBytes(item.profile.modelSizeBytes);
     return "—";
   }
   if (item.type === "new") {
@@ -118,12 +137,13 @@ export function modelNameWidth(items) {
   return Math.max(20, maxName + 2);
 }
 
-function optionLabel({ status, source, name, ctx, size, nameWidth }) {
-  return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
+function optionLabel({ status, backend, source, name, ctx, size, nameWidth }) {
+  return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
-  const sourceId = discoverySourceForItem(item) ?? (item.type === "managed" ? item.backendId : "gguf");
+export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, managedModels }) {
+  const sourceId = discoverySourceForItem(item) ?? "unknown";
+  const backendId = inferBackendId(item);
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
@@ -137,11 +157,12 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       value: itemKey(item),
       label: optionLabel({
         status: optionStatusTag(status),
+        backend: optionBackendTag(backendId),
         source: optionSourceTag(sourceId),
         name: item.profile.label,
         nameWidth,
         ctx: optionCtxLabel(item),
-        size: optionSizeLabel(item),
+        size: optionSizeLabel(item, managedModels),
       }),
       ...(hint ? { hint: pc.red(hint) } : {}),
     };
@@ -151,11 +172,12 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       value: itemKey(item),
       label: optionLabel({
         status: optionStatusTag("setup"),
+        backend: optionBackendTag(backendId),
         source: optionSourceTag(sourceId),
         name: item.model.label,
         nameWidth,
         ctx: optionCtxLabel(item),
-        size: optionSizeLabel(item),
+        size: optionSizeLabel(item, managedModels),
       }),
     };
   }
@@ -163,13 +185,34 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
     value: itemKey(item),
     label: optionLabel({
       status: optionStatusTag("setup"),
+      backend: optionBackendTag(backendId),
       source: optionSourceTag(sourceId),
       name: item.model.label,
       nameWidth,
       ctx: optionCtxLabel(item),
-      size: optionSizeLabel(item),
+      size: optionSizeLabel(item, managedModels),
     }),
   };
+}
+
+function managedProfileSizeBytes(profile, managedModels) {
+  if (!managedModels || !Array.isArray(managedModels)) return null;
+  const backend = backendFor(profile.backend);
+  if (backend.type !== "managed-server") return null;
+  const backendModels = managedModels.find((m) => m.backendId === profile.backend)?.models ?? [];
+  const modelId = profile.omlxModel ?? profile.ollamaModel ?? null;
+  if (!modelId) return null;
+  const model = backendModels.find((m) => m.id === modelId);
+  return model?.sizeBytes || null;
+}
+
+function inferBackendId(item) {
+  if (item.type === "profile") return item.profile.backend;
+  if (item.type === "managed") return item.backendId;
+  // new model: derive from format
+  if (item.model?.format === "mlx") return "mlx-vlm";
+  if (item.model?.backend) return item.model.backend;
+  return "llama-cpp";
 }
 
 export function printWorkspaceHeader(normalized, runningProfilesNow, modelMissingIds = new Set()) {

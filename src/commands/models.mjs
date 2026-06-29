@@ -74,7 +74,7 @@ export async function modelCommandCenter(initialCatalog) {
     const bucket = grouped.get(group);
     if (!bucket || bucket.length === 0) continue;
     for (const item of bucket) {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, managedModels: catalog.managedModels });
       choices.push({ value: opt.value, label: opt.label, hint: opt.hint });
     }
   }

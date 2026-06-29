@@ -71,7 +71,9 @@ export function createManagedProfile(model, backendId) {
     id: `${backendId}-${sanitizeProfileId(model.id)}`,
     label: model.label,
     backend: backendId,
+    source: backendId,
     modelAlias: model.aliasSuggestion,
+    modelSizeBytes: model.sizeBytes || 0,
     ...(backendId === "ollama" ? { ollamaModel: model.id } : {}),
     ...(backendId === "omlx" ? { omlxModel: model.id } : {}),
   });
