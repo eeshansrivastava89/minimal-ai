@@ -263,7 +263,7 @@ describe("regressions", () => {
 
   it("unloads oMLX benchmark models with the discovered server model id", async () => {
     const profile = managedProfile("omlx", "qwen3-4b-4bit", "http://127.0.0.1:8000/v1");
-    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+    const { unloadModelFromServer } = await import("../src/process.mjs");
     const calls = [];
 
     await withMockedFetch(async (url) => {
@@ -280,7 +280,7 @@ describe("regressions", () => {
 
   it("treats an oMLX unload response for an already-unloaded model as success", async () => {
     const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
-    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+    const { unloadModelFromServer } = await import("../src/process.mjs");
 
     await withMockedFetch(async (url) => {
       if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
@@ -297,7 +297,7 @@ describe("regressions", () => {
 
   it("returns clear oMLX unload errors for auth and network failures", async () => {
     const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
-    const { unloadModelFromServer } = await import("../src/benchmark/finalize.mjs");
+    const { unloadModelFromServer } = await import("../src/process.mjs");
 
     await withMockedFetch(async (url) => {
       if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
-import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer } from "../process.mjs";
+import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
@@ -116,9 +116,24 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
   try {
     await launchPi(profile);
   } finally {
-    if (!isManaged && !options["keep-server"]) {
-      const result = await stopProfile(profile);
-      console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+    if (!options["keep-server"]) {
+      if (!isManaged) {
+        const result = await stopProfile(profile);
+        console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+      } else {
+        // Managed-server backends (oMLX, Ollama): unload the model from the
+        // server's memory via its HTTP API. The server itself stays running
+        // (offgrid-ai doesn't manage it), but the model is released — same UX
+        // as local-server backends where stopProfile kills the process.
+        const result = await unloadModelFromServer(profile);
+        if (result.unloaded) {
+          console.log(pc.green(`[unload] ${backend.label}: model unloaded`));
+        } else if (result.reason) {
+          console.log(pc.dim(`[unload] ${backend.label}: ${result.reason}`));
+        } else if (result.error) {
+          console.log(pc.yellow(`[unload] ${backend.label}: ${result.error}`));
+        }
+      }
     }
   }
 }

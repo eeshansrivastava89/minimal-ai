@@ -145,6 +145,106 @@ async function processGone(pid) {
   }
 }
 
+// ── Unload model from a managed server (oMLX / Ollama) ─────────────────────
+// Counterpart to stopProfile for local-server backends: stopProfile kills the
+// server process (which unloads the model); unloadModelFromServer asks a
+// managed server to release the model from memory via its HTTP API, leaving the
+// server itself running. Together they give a consistent UX: quitting Pi
+// unloads the model regardless of backend type.
+
+export async function unloadModelFromServer(profile) {
+  const backend = backendFor(profile.backend);
+
+  if (backend.id === "ollama") {
+    const apiBaseUrl = apiRootUrl(profile.baseUrl || backend.apiBaseUrl || "");
+
+    try {
+      await fetch(`${apiBaseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: profile.modelAlias, prompt: "", stream: false, keep_alive: 0 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return { unloaded: true, backend: backend.id };
+    } catch (err) {
+      return { unloaded: false, backend: backend.id, error: err.message };
+    }
+  }
+
+  if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
+    // llama.cpp unloads when the server process exits; no HTTP unload API exists.
+    // If offgrid-ai started the server, stopProfile already handled it.
+    return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+  }
+
+  if (backend.id === "omlx") {
+    return await unloadOmlxModel(profile);
+  }
+
+  if (backend.id === "mlx-vlm") {
+    // mlx-vlm is a local-server backend — stopProfile handles unload by killing
+    // the process. No HTTP unload API.
+    return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+  }
+
+  return { unloaded: false, backend: backend.id, reason: "unsupported backend" };
+}
+
+async function unloadOmlxModel(profile) {
+  const baseUrl = profile.baseUrl?.replace(/\/v1\/?$/u, "") || "";
+  const adminUrl = `${baseUrl}/admin/api/models`;
+  const modelId = profile.modelAlias || profile.omlxModel || profile.id;
+
+  try {
+    const ids = await serverModelIds(profile.baseUrl);
+    const match = ids.find((id) => id.toLowerCase() === modelId.toLowerCase());
+    const targetId = match ?? modelId;
+
+    const response = await fetch(`${adminUrl}/${encodeURIComponent(targetId)}/unload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (response.ok) {
+      return { unloaded: true, backend: "omlx", modelId: targetId };
+    }
+
+    const detail = await responseErrorDetail(response);
+
+    if (response.status === 400 && /not loaded/i.test(detail)) {
+      return { unloaded: true, backend: "omlx", modelId: targetId, reason: "model was not loaded" };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        unloaded: false,
+        backend: "omlx",
+        modelId: targetId,
+        error: "oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or unload manually from the admin panel.",
+      };
+    }
+
+    return { unloaded: false, backend: "omlx", modelId: targetId, error: `HTTP ${response.status}: ${detail}` };
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") {
+      return { unloaded: false, backend: "omlx", modelId, error: "Unload request timed out. The model may still be unloading in the background." };
+    }
+    return { unloaded: false, backend: "omlx", modelId, error: err.message };
+  }
+}
+
+async function responseErrorDetail(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return "";
+  try {
+    const body = JSON.parse(text);
+    return body?.detail ?? body?.message ?? text;
+  } catch {
+    return text;
+  }
+}
+
 // ── Status checks ──────────────────────────────────────────────────────────
 
 export async function isProfileRunning(profile) {

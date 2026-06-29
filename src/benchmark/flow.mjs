@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { hasPi, hasPiModel, syncPiConfig } from "../harness-pi.mjs";
-import { serverReady, startServer, waitForReady, stopProfile, modelAvailableOnServer } from "../process.mjs";
+import { serverReady, startServer, waitForReady, stopProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { pc, createPrompt } from "../ui.mjs";
 import { linkBenchmarkRepo } from "./repo.mjs";
@@ -12,7 +12,6 @@ import { loadBenchmarks } from "./shared.mjs";
 import { prepareBenchmarkRun } from "./prepare.mjs";
 import { runBenchmarkInPi } from "./pi-runner.mjs";
 import { queryServerMetrics } from "./metrics.mjs";
-import { unloadModelFromServer } from "./finalize.mjs";
 import { finalizeBenchmarkRun, renderBenchmarkSummary } from "./finalize.mjs";
 
 function benchmarkModelSource(profile) {
