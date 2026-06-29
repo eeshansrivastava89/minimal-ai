@@ -137,7 +137,7 @@ async function scanOmlxModels() {
       id: model.id,
       label: parseModelName(model.id, "omlx").display,
       aliasSuggestion: model.id,
-      sizeBytes: 0,
+      sizeBytes: model.size ?? 0,
       quant: null,
       family: null,
       backend: "omlx",

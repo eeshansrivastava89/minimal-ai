@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadata } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
+import { inferSourceLabel } from "./mlx-discovery.mjs";
 
 // ── Scan for GGUF models and MTP drafters ────────────────────────────────
 
@@ -13,7 +14,8 @@ export async function scanGgufModels(dirs) {
   const allDrafters = [];
 
   for (const root of scanDirs) {
-    const { models, drafters } = await scanOneDir(root);
+    const sourceLabel = inferSourceLabel(root);
+    const { models, drafters } = await scanOneDir(root, sourceLabel);
     allModels.push(...models);
     allDrafters.push(...drafters);
   }
@@ -36,7 +38,7 @@ export async function scanGgufModels(dirs) {
   return { models, drafters };
 }
 
-async function scanOneDir(root) {
+async function scanOneDir(root, sourceLabel = "local-gguf") {
   const files = await findFiles(root, (path) => path.toLowerCase().endsWith(".gguf"));
   const mmprojs = files.filter((path) => basename(path).toLowerCase().includes("mmproj"));
   const candidates = files.filter((path) => !basename(path).toLowerCase().includes("mmproj"));
@@ -49,11 +51,14 @@ async function scanOneDir(root) {
     const mmprojPath = mmprojs.find((candidate) => dirname(candidate) === dir) ?? null;
     const name = basename(path).replace(/\.gguf$/i, "");
     const sizeBytes = statSync(path).size;
+    if (sizeBytes < MIN_GGUF_SIZE_BYTES) continue;
     const parsed = parseModelName(name, "local-gguf");
 
-    // Read GGUF metadata to detect drafter architecture
+    // Read GGUF metadata to detect drafter architecture and embeddings
     const meta = safeReadGgufMetadata(path);
     const architecture = typeof meta["general.architecture"] === "string" ? meta["general.architecture"] : null;
+
+    if (isEmbeddingArchitecture(architecture, name)) continue;
 
     if (architecture === "gemma4-assistant" || architecture === "gemma4_assistant") {
       // This is an MTP drafter model, not a main model
@@ -66,7 +71,7 @@ async function scanOneDir(root) {
         architecture,
         targetHint: drafterTargetHint(name),
         backend: "llama-cpp",
-        source: "local-gguf",
+        source: sourceLabel,
       });
     } else {
       models.push({
@@ -77,12 +82,48 @@ async function scanOneDir(root) {
         quant: parsed.quant,
         sizeBytes,
         backend: "llama-cpp",
-        source: "local-gguf",
+        source: sourceLabel,
       });
     }
   }
 
   return { models, drafters };
+}
+
+// ── Embedding model filtering ─────────────────────────────────────────────
+
+const MIN_GGUF_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — skip tiny test/embedding GGUFs
+
+const EMBEDDING_ARCHITECTURES = new Set([
+  "bert",
+  "nomic-bert",
+  "nomic_bert",
+  "jina",
+  "e5",
+  "gte",
+  "bge",
+  "all-minilm",
+  "all_minilm",
+  "mpnet",
+  "sentence-transformers",
+]);
+
+const EMBEDDING_FILENAME_PATTERNS = [
+  /(?:^|[-_])bge[-_]/i,
+  /(?:^|[-_])jina[-_]/i,
+  /(?:^|[-_])e5[-_]/i,
+  /(?:^|[-_])gte[-_]/i,
+  /(?:^|[-_])all[-_]minilm/i,
+  /(?:^|[-_])mpnet/i,
+  /(?:^|[-_])nomic[-_]embed/i,
+  /(?:^|[-_])embed/i,
+  /(?:^|[-_])rerank/i,
+];
+
+export function isEmbeddingArchitecture(architecture, filename = "") {
+  if (architecture && EMBEDDING_ARCHITECTURES.has(architecture.toLowerCase())) return true;
+  const lowerName = filename.toLowerCase();
+  return EMBEDDING_FILENAME_PATTERNS.some((pattern) => pattern.test(lowerName));
 }
 
 // ── Match drafters to target models ────────────────────────────────────

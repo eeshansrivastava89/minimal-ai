@@ -40,7 +40,6 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   const runningProfilesNow = [];
-  const serverUpIds = new Set();
   const modelMissingIds = new Set();
   for (const profile of normalized.profiles) {
     if (await isProfileRunning(profile)) {
@@ -48,11 +47,10 @@ export async function modelCommandCenter(initialCatalog) {
       continue;
     }
     if (backendFor(profile.backend).type === "managed-server" && await isProfileServerUp(profile)) {
-      if (await modelAvailableOnServer(profile)) serverUpIds.add(profile.id);
-      else modelMissingIds.add(profile.id);
+      if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
   }
-  printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds, modelMissingIds);
+  printWorkspaceHeader(normalized, runningProfilesNow, modelMissingIds);
   await printBenchmarkLine();
 
   const nameWidth = modelNameWidth(allItems);
@@ -62,13 +60,12 @@ export async function modelCommandCenter(initialCatalog) {
       if (item.fileMissing) return "missing";
       if (runningProfilesNow.some((profile) => profile.id === item.profile.id)) return "running";
       if (modelMissingIds.has(item.profile.id)) return "missing";
-      if (serverUpIds.has(item.profile.id)) return "serverup";
       return "ready";
     }
     return "setup";
   };
 
-  const groupOrder = ["running", "serverup", "ready", "setup", "missing"];
+  const groupOrder = ["running", "ready", "setup", "missing"];
   const grouped = new Map(groupOrder.map((key) => [key, []]));
   for (const item of allItems) grouped.get(statusFor(item)).push(item);
 
@@ -77,7 +74,7 @@ export async function modelCommandCenter(initialCatalog) {
     const bucket = grouped.get(group);
     if (!bucket || bucket.length === 0) continue;
     for (const item of bucket) {
-      const opt = modelSelectOption(item, { runningProfilesNow, serverUpIds, modelMissingIds, nameWidth });
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
       choices.push({ value: opt.value, label: opt.label, hint: opt.hint });
     }
   }

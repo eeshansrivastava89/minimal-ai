@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
-import { BACKENDS, backendFor } from "./backends.mjs";
+import { basename, dirname } from "node:path";
+import { backendFor } from "./backends.mjs";
 import { readCommandArgv } from "./profiles.mjs";
-import { isProfileRunning, isProfileServerUp } from "./process.mjs";
+import { isProfileRunning } from "./process.mjs";
 import { buildPrettyCommand } from "./command.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
@@ -25,7 +26,7 @@ function optionPad(text, color, width) {
 function optionStatusTag(kind) {
   const statuses = {
     running: ["RUNNING", pc.green],
-    serverup: ["SERVER UP", pc.yellow],
+    serverup: ["READY", pc.blue],
     ready: ["READY", pc.blue],
     missing: ["MISSING", pc.red],
     setup: ["SETUP", pc.yellow],
@@ -34,15 +35,56 @@ function optionStatusTag(kind) {
   return optionPad(text, color, OPTION_STATUS_WIDTH);
 }
 
-function optionSourceTag(sourceId, label) {
+function optionSourceTag(sourceId) {
+  const label = formatSourceLabel(sourceId);
   const colors = {
-    "llama-cpp": pc.cyan,
-    "llama-cpp-mtp": pc.blue,
+    huggingface: pc.cyan,
+    lmstudio: pc.blue,
     ollama: pc.green,
     omlx: pc.magenta,
+    "llama.cpp": pc.cyan,
     gguf: pc.cyan,
+    mlx: pc.yellow,
+    "mlx-vlm": pc.yellow,
   };
   return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
+}
+
+function formatSourceLabel(sourceId) {
+  if (!sourceId) return "unknown";
+  const map = {
+    huggingface: "HuggingFace",
+    lmstudio: "LM Studio",
+    ollama: "Ollama",
+    omlx: "oMLX",
+    "llama.cpp": "llama.cpp",
+    gguf: "GGUF file",
+    mlx: "MLX",
+    "mlx-vlm": "MLX",
+  };
+  return map[sourceId] ?? String(sourceId);
+}
+
+function inferSourceFromPath(modelPath) {
+  if (!modelPath) return null;
+  const normalized = modelPath.toLowerCase().replace(/\\/g, "/");
+  if (normalized.includes("/.omlx/models")) return "omlx";
+  if (normalized.includes("/.lmstudio/models")) return "lmstudio";
+  if (normalized.includes("/.cache/huggingface")) return "huggingface";
+  if (normalized.includes("/.cache/llama.cpp")) return "llama.cpp";
+  const parent = basename(dirname(modelPath));
+  if (parent && parent !== ".") return parent.replace(/^\./, "");
+  return null;
+}
+
+function discoverySourceForProfile(profile) {
+  if (profile.source) return profile.source;
+  return inferSourceFromPath(profile.modelPath);
+}
+
+function discoverySourceForItem(item) {
+  if (item.type === "profile") return discoverySourceForProfile(item.profile);
+  return item.model?.source ?? null;
 }
 
 function optionCtxLabel(item) {
@@ -80,13 +122,13 @@ function optionLabel({ status, source, name, ctx, size, nameWidth }) {
   return [status, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, serverUpIds, modelMissingIds, nameWidth }) {
+export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
+  const sourceId = discoverySourceForItem(item) ?? (item.type === "managed" ? item.backendId : "gguf");
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
-    const serverUp = !running && !item.fileMissing && serverUpIds?.has(item.profile.id);
     const modelMissing = !item.fileMissing && modelMissingIds?.has(item.profile.id);
-    const status = item.fileMissing || modelMissing ? "missing" : running ? "running" : serverUp ? "serverup" : "ready";
+    const status = item.fileMissing || modelMissing ? "missing" : running ? "running" : "ready";
     const drafterMissing = Boolean(item.profile.drafterPath) && !existsSync(item.profile.drafterPath);
     const hint = drafterMissing ? "MTP drafter missing — reconfigure"
       : modelMissing ? `${backend.label} model no longer available`
@@ -95,7 +137,7 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, model
       value: itemKey(item),
       label: optionLabel({
         status: optionStatusTag(status),
-        source: optionSourceTag(item.profile.backend, backend.label),
+        source: optionSourceTag(sourceId),
         name: item.profile.label,
         nameWidth,
         ctx: optionCtxLabel(item),
@@ -109,7 +151,7 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, model
       value: itemKey(item),
       label: optionLabel({
         status: optionStatusTag("setup"),
-        source: optionSourceTag("gguf", "GGUF file"),
+        source: optionSourceTag(sourceId),
         name: item.model.label,
         nameWidth,
         ctx: optionCtxLabel(item),
@@ -117,12 +159,11 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, model
       }),
     };
   }
-  const backend = BACKENDS[item.backendId];
   return {
     value: itemKey(item),
     label: optionLabel({
       status: optionStatusTag("setup"),
-      source: optionSourceTag(item.backendId, backend.label),
+      source: optionSourceTag(sourceId),
       name: item.model.label,
       nameWidth,
       ctx: optionCtxLabel(item),
@@ -131,19 +172,17 @@ export function modelSelectOption(item, { runningProfilesNow, serverUpIds, model
   };
 }
 
-export function printWorkspaceHeader(normalized, runningProfilesNow, serverUpIds = new Set(), modelMissingIds = new Set()) {
+export function printWorkspaceHeader(normalized, runningProfilesNow, modelMissingIds = new Set()) {
   const profiles = normalized.profiles;
   const isRunning = (p) => runningProfilesNow.some((r) => r.id === p.id);
   const isMissing = (p) => isProfileFileMissing(p) || modelMissingIds.has(p.id);
-  const readyCount = profiles.filter((p) => !isMissing(p) && !isRunning(p) && !serverUpIds.has(p.id)).length;
+  const readyCount = profiles.filter((p) => !isMissing(p) && !isRunning(p)).length;
   const runningCount = runningProfilesNow.length;
-  const serverUpCount = profiles.filter((p) => !isMissing(p) && serverUpIds.has(p.id) && !isRunning(p)).length;
   const missingCount = profiles.filter(isMissing).length;
   const setupCount = normalized.newModels.length + normalized.managedItems.length;
 
   const countParts = [];
   if (runningCount > 0) countParts.push(pc.green(`${runningCount} running`));
-  if (serverUpCount > 0) countParts.push(pc.yellow(`${serverUpCount} server up, model not loaded`));
   if (readyCount > 0) countParts.push(pc.blue(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
   if (missingCount > 0) countParts.push(pc.red(`${missingCount} model${missingCount === 1 ? "" : "s"} missing`));
   if (setupCount > 0) countParts.push(pc.yellow(`${setupCount} model${setupCount === 1 ? "" : "s"} need${setupCount === 1 ? "s" : ""} setup`));
@@ -166,11 +205,10 @@ export async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
   const running = await isProfileRunning(profile);
-  const serverUp = !running && isManaged && await isProfileServerUp(profile);
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   console.log("\n" + renderSection("Model overview", renderRows([
     ["Name", pc.bold(profile.label)],
-    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : serverUp ? pc.yellow("Server up, model not loaded") : pc.blue("Ready")],
+    ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : pc.blue("Ready")],
     ["Details", profileDetailParts(profile, { fileMissing }).join(pc.dim(" · "))],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
   ])));

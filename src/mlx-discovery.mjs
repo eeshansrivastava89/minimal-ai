@@ -26,6 +26,8 @@ function isOmlxFolder(p) {
   return p === OMLX_MODELS_DIR || p.startsWith(OMLX_MODELS_DIR + "/");
 }
 
+const MIN_MLX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — skip tiny test/embedding MLX dirs
+
 // ── MLX directory detection ───────────────────────────────────────────────
 
 /** True if dir contains config.json + at least one .safetensors file. */
@@ -57,14 +59,15 @@ async function getMlxDirSizeBytes(dir) {
 
 // ── Source label inference ────────────────────────────────────────────────
 
-/** Infer a human-readable source label from a scan path's parent folder. */
-function inferSourceLabel(scanPath) {
+/** Infer a human-readable source label from a scan path. */
+export function inferSourceLabel(scanPath) {
+  const name = basename(scanPath).replace(/^\./, "");
   const parent = basename(dirname(scanPath));
-  const grandparent = basename(dirname(dirname(scanPath)));
-  const candidate = parent === "models" || parent === "hub" || parent === "cache"
-    ? grandparent
-    : parent;
-  return candidate.replace(/^\./, "");
+  // Generic container folders (models, hub, cache) should use the parent name.
+  if (name === "models" || name === "hub" || name === "cache") {
+    return parent.replace(/^\./, "");
+  }
+  return name;
 }
 
 // ── Recursive MLX scanner ─────────────────────────────────────────────────
@@ -89,6 +92,8 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
     // Is this directory itself an MLX model dir? (don't recurse into it)
     if (depth > 0 && await isMlxModelDir(dir)) {
       const sizeBytes = await getMlxDirSizeBytes(dir);
+      if (sizeBytes < MIN_MLX_SIZE_BYTES) return;
+      if (await isEmbeddingMlxModel(join(dir, "config.json"))) return;
       models.push(makeMlxModel(dir, basename(dir), sizeBytes, sourceLabel, rootDir));
       return;
     }
@@ -99,6 +104,8 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
       if (entry.isDirectory()) {
         if (await isMlxModelDir(fullPath)) {
           const sizeBytes = await getMlxDirSizeBytes(fullPath);
+          if (sizeBytes < MIN_MLX_SIZE_BYTES) continue;
+          if (await isEmbeddingMlxModel(join(fullPath, "config.json"))) continue;
           models.push(makeMlxModel(fullPath, entry.name, sizeBytes, sourceLabel, rootDir));
         } else {
           await walk(fullPath, depth + 1);
@@ -154,6 +161,8 @@ async function scanHfHubForMlx(dir, sourceLabel) {
 
       if (!snapshotPath) continue;
       const sizeBytes = await getMlxDirSizeBytes(snapshotPath);
+      if (sizeBytes < MIN_MLX_SIZE_BYTES) continue;
+      if (await isEmbeddingMlxModel(join(snapshotPath, "config.json"))) continue;
       models.push({
         id: `${sourceLabel}:${entry.name}`,
         label,
@@ -169,6 +178,36 @@ async function scanHfHubForMlx(dir, sourceLabel) {
     // Can't read — return what we have.
   }
   return models;
+}
+
+// ── Embedding model filtering for MLX ─────────────────────────────────────
+
+const MLX_EMBEDDING_MODEL_TYPES = new Set([
+  "bert",
+  "roberta",
+  "mpnet",
+  "nomic_bert",
+  "jina",
+  "e5",
+  "gte",
+  "bge",
+  "all_minilm",
+  "sentence_transformers",
+]);
+
+async function isEmbeddingMlxModel(configPath) {
+  if (!existsSync(configPath)) return false;
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf-8"));
+    const textConfig = config.text_config ?? config;
+    const modelType = String(textConfig.model_type ?? "").toLowerCase();
+    if (MLX_EMBEDDING_MODEL_TYPES.has(modelType)) return true;
+    const arch = Array.isArray(config.architectures) ? config.architectures[0] : "";
+    const lowerArch = String(arch).toLowerCase();
+    return MLX_EMBEDDING_MODEL_TYPES.has(lowerArch) || lowerArch.includes("bert");
+  } catch {
+    return false;
+  }
 }
 
 // ── MLX model entry builder ───────────────────────────────────────────────
@@ -193,9 +232,9 @@ function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir) {
  * Reads scan dirs from config.mjs getModelScanDirs() — same paths GGUF uses
  * (LM Studio, HF hub, user-added). Returns a flat, deduplicated list.
  */
-export async function scanMlxModels() {
+export async function scanMlxModels(dirs) {
   // mlx-vlm scans every configured dir EXCEPT the oMLX folder (oMLX-exclusive).
-  const scanDirs = (await getModelScanDirs()).filter((d) => !isOmlxFolder(d));
+  const scanDirs = (dirs ?? await getModelScanDirs()).filter((d) => !isOmlxFolder(d));
   const results = await Promise.all(
     scanDirs.map(async (dir) => {
       const label = inferSourceLabel(dir);
