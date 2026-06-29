@@ -99,7 +99,9 @@ function piModelConfig(profile) {
 }
 
 function modelInput(profile) {
-  return profile.mmprojPath && existsSync(profile.mmprojPath) ? ["text", "image"] : ["text"];
+  if (profile.mmprojPath && existsSync(profile.mmprojPath)) return ["text", "image"];
+  if (profile.capabilities?.vision) return ["text", "image"];
+  return ["text"];
 }
 
 function modelCompat(profile) {

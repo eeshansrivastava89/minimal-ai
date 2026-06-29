@@ -148,8 +148,10 @@ async function scanHfHubForMlx(dir, sourceLabel) {
       let snapshotPath = null;
       for (const snap of candidates) {
         const sp = join(snapshotsDir, snap.name);
-        if (await isMlxModelDir(sp)) { snapshotPath = sp; break; }
+        const st = await stat(sp).catch(() => null);
+        if (st?.isDirectory() && await isMlxModelDir(sp)) { snapshotPath = sp; break; }
       }
+
       if (!snapshotPath) continue;
       const sizeBytes = await getMlxDirSizeBytes(snapshotPath);
       models.push({
@@ -234,4 +236,68 @@ export async function parseMlxArchitecture(modelDir) {
   } catch {
     return null;
   }
+}
+
+// ── MLX capability detection ─────────────────────────────────────────────
+
+/**
+ * Detect MLX model capabilities from its config.json.
+ * Returns { architecture, thinking, vision, contextLength }.
+ */
+export async function detectMlxCapabilities(modelDir) {
+  const configPath = join(modelDir, "config.json");
+  if (!existsSync(configPath)) return { thinking: false, vision: false, contextLength: null, architecture: null };
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf-8"));
+    return detectMlxCapabilitiesFromConfig(config, modelDir);
+  } catch {
+    return { thinking: false, vision: false, contextLength: null, architecture: null };
+  }
+}
+
+export function detectMlxCapabilitiesFromConfig(config, modelDir) {
+  const textConfig = config.text_config ?? config;
+  const rawName = config._name_or_path ?? basename(modelDir ?? "");
+  const name = String(rawName).toLowerCase();
+  const label = String(rawName);
+
+  const modelType = String(config.model_type ?? "").toLowerCase();
+  const textModelType = String(textConfig.model_type ?? "").toLowerCase();
+
+  const vision = Boolean(
+    config.vision_config ||
+    config.image_token_id != null ||
+    config.video_token_id != null ||
+    config.vision_start_token_id != null ||
+    modelType.includes("vl") ||
+    modelType.includes("vision") ||
+    textModelType.includes("vl") ||
+    textModelType.includes("vision")
+  );
+
+  const thinking = /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(name + " " + label);
+
+  const architectures = Array.isArray(config.architectures) ? config.architectures : [];
+  const architecture = architectures[0] ?? null;
+
+  const candidates = [
+    textConfig.max_position_embeddings,
+    textConfig.sliding_window,
+    config.max_position_embeddings,
+    config.sliding_window,
+  ].filter((v) => typeof v === "number" && v > 0);
+  const contextLength = candidates.length > 0 ? Math.max(...candidates) : null;
+
+  return { thinking, vision, contextLength, architecture };
+}
+
+/**
+ * Pick a sensible default context length for an MLX model, capping by RAM.
+ */
+export function defaultMlxContextLength(trainedCtx, ramGb) {
+  if (!trainedCtx || trainedCtx <= 0) return 8192;
+  if (ramGb < 12) return Math.min(trainedCtx, 4096);
+  if (ramGb < 16) return Math.min(trainedCtx, 8192);
+  if (ramGb < 32) return Math.min(trainedCtx, 16384);
+  return trainedCtx;
 }

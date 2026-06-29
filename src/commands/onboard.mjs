@@ -6,9 +6,9 @@ import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { BACKEND_INSTALL_CHOICES, BACKEND_INSTALLERS } from "../backend-installers.mjs";
-import { installedRamGB, recommendedModel } from "../recommendations.mjs";
+import { installedRamGB, recommendedModel, detectHardware, selectFormat, allFittingModels, hasHuggingfaceHub, resolveHfDownload, downloadToHfCache } from "../recommendations.mjs";
 import { runCommand } from "../exec.mjs";
-import { pc, renderRows, renderSection, startInteractive, createPrompt } from "../ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt } from "../ui.mjs";
 
 export async function onboardFlow() {
   await ensureDirs();
@@ -32,6 +32,11 @@ export async function onboardFlow() {
     if (hasModels) {
       printFoundModels(ggufModels, managedModels, llamaBinary);
     } else {
+      const canDownload = await hasHuggingfaceHub();
+      if (canDownload) {
+        const downloaded = await offerModelDownload(prompt);
+        if (downloaded) return;
+      }
       await offerBackendInstall(prompt, run);
       return;
     }
@@ -96,6 +101,45 @@ function printFoundModels(ggufModels, managedModels, llamaBinary) {
     } else if (models.length > 0) {
       console.log(pc.green(`✓ ${BACKENDS[backendId].label}: ${models.length} model${models.length === 1 ? "" : "s"}`));
     }
+  }
+}
+
+async function offerModelDownload(prompt) {
+  const hardware = detectHardware();
+  const candidates = allFittingModels(hardware)
+    .map((entry) => ({ entry, format: selectFormat(entry, hardware) }))
+    .filter((item) => item.format != null);
+  if (candidates.length === 0) {
+    console.log(pc.yellow("No curated models fit your hardware."));
+    return false;
+  }
+
+  const primary = candidates[0];
+  console.log(renderSection("Download a recommended model", renderRows([
+    ["Model", pc.bold(primary.entry.label)],
+    ["Format", primary.format],
+    ["Minimum RAM", String(primary.entry.minRamGb) + " GB"],
+    ["Your RAM", installedRamGB() + " GB"],
+  ]), { formatBorder: pc.cyan }));
+
+  const shouldDownload = await prompt.yesNo("Download " + primary.entry.label + " (" + primary.format + ")?", true);
+  if (!shouldDownload) return false;
+
+  const hfRef = primary.format === "mlx" ? primary.entry.mlx : primary.entry.gguf;
+  try {
+    const plan = await resolveHfDownload(hfRef);
+    console.log(pc.dim("Total size: " + formatBytes(plan.totalSizeBytes)));
+    await downloadToHfCache(plan, {
+      onProgress({ percentage }) {
+        process.stdout.write(pc.cyan("\r  " + percentage + "% downloaded"));
+      },
+    });
+    process.stdout.write("\n");
+    console.log(pc.green("✓ Download complete. Run offgrid-ai to use the model."));
+    return true;
+  } catch (err) {
+    console.log(pc.red("Download failed: " + err.message));
+    return false;
   }
 }
 

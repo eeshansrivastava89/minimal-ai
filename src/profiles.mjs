@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
+import { totalmem } from "node:os";
 import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor, baseUrlForFlags, defaultFlagsForBackend } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
+import { detectMlxCapabilities, defaultMlxContextLength } from "./mlx-discovery.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
 // ── Path helpers ───────────────────────────────────────────────────────────
@@ -165,13 +167,12 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
 
 export async function createProfileFromMlxModel(model) {
   const { computeMlxVlmFlags, DEFAULT_PORT } = await import("./mlx-flags.mjs");
-  // Sensible defaults for the first runnable slice: thinking on, 8k ctx.
-  // Interactive config (context / thinking toggle) comes after you can feel it.
-  const ctxSize = 8192;
+  const caps = await detectMlxCapabilities(model.filePath);
+  const ctxSize = defaultMlxContextLength(caps.contextLength, totalmem() / (1024 ** 3));
   const { args } = computeMlxVlmFlags(model.filePath, {
     port: DEFAULT_PORT,
     ctxSize,
-    thinkingEnabled: true,
+    thinkingEnabled: caps.thinking,
   });
   return normalizeProfile({
     id: slugFromLabel(model.label),
@@ -183,7 +184,7 @@ export async function createProfileFromMlxModel(model) {
     modelPath: model.filePath,
     mmprojPath: null,
     drafterPath: null,
-    capabilities: { thinking: true, vision: false, mtp: false },
+    capabilities: caps,
     flags: { host: "127.0.0.1", port: DEFAULT_PORT, ctxSize },
     commandArgv: args,
   });

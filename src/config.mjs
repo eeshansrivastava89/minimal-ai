@@ -17,7 +17,7 @@ export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
 
 export const DEFAULT_MODEL_DIRS = [
   join(homedir(), ".lmstudio", "models"),
-  join(homedir(), ".cache", "huggingface", "hub"),
+  process.env.HF_HOME || join(homedir(), ".cache", "huggingface"),
 ];
 
 // ── External config paths ─────────────────────────────────────────────────

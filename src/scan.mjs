@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadata } from "./gguf.mjs";
@@ -137,8 +137,14 @@ async function findFiles(root, predicate) {
     }
     for (const entry of entries) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile() && predicate(path)) result.push(path);
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        // Follow symlinks (HF cache uses them) and avoid recursion loops.
+        const stats = await stat(path).catch(() => null);
+        if (stats?.isDirectory()) await walk(path);
+        else if (stats?.isFile() && predicate(path)) result.push(path);
+      } else if (entry.isFile() && predicate(path)) {
+        result.push(path);
+      }
     }
   }
   await walk(root);

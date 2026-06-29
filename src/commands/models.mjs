@@ -205,14 +205,16 @@ async function setupItem(prompt, item, action) {
     printProfileSaved(profile.id);
     return;
   }
-  // MLX models: build a mlx-vlm profile (python3 + wrapper + APC_ENABLED at spawn).
-  // Skips the GGUF interactive config for now — defaults get you running; tune later.
+  // MLX models: build a mlx-vlm profile and run interactive config.
   if (item.model.format === "mlx") {
     const { createProfileFromMlxModel } = await import("../profiles.mjs");
+    const { configureMlxProfile } = await import("../profile-setup.mjs");
     const profile = await createProfileFromMlxModel(item.model);
-    await saveProfile(profile, { writeCommand: true });
-    await syncPiConfig(profile);
-    printProfileSaved(profile.id);
+    const configured = await configureMlxProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured, { writeCommand: true });
+    await syncPiConfig(configured);
+    printProfileSaved(configured.id);
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);

@@ -12,6 +12,8 @@
     "src/*.mjs",
     "src/commands/*.mjs",
     "src/benchmark/*.mjs",
+    "resources/*.py",
+    "resources/recommendations.json",
     "install.sh"
   ],
   "publishConfig": {
