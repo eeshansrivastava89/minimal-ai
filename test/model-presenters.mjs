@@ -34,8 +34,10 @@ describe("modelSelectOption", () => {
       contextLength: 131072,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
-    assert.match(plain(opt), /131k/);
+    assert.match(plain(opt), /NEEDS SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
+    // SETUP items show size but not context window
+    assert.match(plain(opt), /3e\+9|2\.79\s*GB/); // size is shown
+    assert.doesNotMatch(plain(opt), /131k/); // context is not shown for SETUP
   });
 
   it("infers oMLX source for managed profiles without stored source", () => {

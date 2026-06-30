@@ -11,7 +11,7 @@ import { DATA_DIR } from "./config.mjs";
 import { findBenchmarkRepo } from "./benchmark.mjs";
 
 const OPTION_SEPARATOR = pc.dim("  │  ");
-const OPTION_STATUS_WIDTH = 10;
+const OPTION_STATUS_WIDTH = 12;
 const OPTION_BACKEND_WIDTH = 14;
 const OPTION_SOURCE_WIDTH = 14;
 const OPTION_CTX_WIDTH = 5;
@@ -30,7 +30,7 @@ function optionStatusTag(kind) {
     serverup: ["READY", pc.blue],
     ready: ["READY", pc.blue],
     missing: ["MISSING", pc.red],
-    setup: ["SETUP", pc.yellow],
+    setup: ["NEEDS SETUP", pc.yellow],
   };
   const [text, color] = statuses[kind] ?? [kind, pc.dim];
   return optionPad(text, color, OPTION_STATUS_WIDTH);
@@ -101,6 +101,9 @@ function discoverySourceForItem(item) {
 }
 
 function optionCtxLabel(item) {
+  // Context window is a configured value — only profiles (READY/RUNNING)
+  // have one. SETUP items (new/managed) show "—".
+  if (item.type !== "profile") return optionPad("—", null, OPTION_CTX_WIDTH);
   if (item.contextLength) {
     return optionPad(`${(item.contextLength / 1000).toFixed(0)}k`, null, OPTION_CTX_WIDTH);
   }

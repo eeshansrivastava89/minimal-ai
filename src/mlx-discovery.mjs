@@ -292,3 +292,50 @@ export function defaultMlxContextLength(trainedCtx, ramGb) {
   if (ramGb < 32) return Math.min(trainedCtx, 16384);
   return trainedCtx;
 }
+
+// ── oMLX model size lookup (from disk) ────────────────────────────────────
+
+/**
+ * Scan the oMLX models directory (~/.omlx/models/) for MLX model directories
+ * and return a Map of basename → sizeBytes.  The oMLX API doesn't return model
+ * sizes, so we compute them from the safetensors files on disk.
+ */
+export async function scanOmlxModelSizes() {
+  if (!existsSync(OMLX_MODELS_DIR)) return new Map();
+  const sizeByBasename = new Map();
+
+  async function walk(dir) {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = join(dir, entry.name);
+      if (await isMlxModelDir(fullPath)) {
+        const sizeBytes = await getMlxDirSizeBytes(fullPath);
+        if (sizeBytes > 0) sizeByBasename.set(entry.name, sizeBytes);
+      } else {
+        await walk(fullPath);
+      }
+    }
+  }
+
+  await walk(OMLX_MODELS_DIR);
+  return sizeByBasename;
+}
+
+/**
+ * Look up a model's size by its oMLX API id.  Tries exact match, then the
+ * segment after `--` (oMLX org--name format), then after `/` (HF format).
+ */
+export function lookupOmlxModelSize(modelId, sizeMap) {
+  if (sizeMap.has(modelId)) return sizeMap.get(modelId);
+  const dashIdx = modelId.indexOf("--");
+  if (dashIdx >= 0 && sizeMap.has(modelId.slice(dashIdx + 2))) return sizeMap.get(modelId.slice(dashIdx + 2));
+  const slashIdx = modelId.indexOf("/");
+  if (slashIdx >= 0 && sizeMap.has(modelId.slice(slashIdx + 1))) return sizeMap.get(modelId.slice(slashIdx + 1));
+  return null;
+}

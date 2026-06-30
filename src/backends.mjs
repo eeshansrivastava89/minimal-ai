@@ -1,7 +1,7 @@
 import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { scanMlxModels } from "./mlx-discovery.mjs";
+import { scanMlxModels, scanOmlxModelSizes, lookupOmlxModelSize } from "./mlx-discovery.mjs";
 import { DEFAULT_PORT as MLX_VLM_PORT } from "./mlx-flags.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
@@ -95,19 +95,26 @@ async function scanOmlxModels() {
   }
   const body = await response.json();
   if (!Array.isArray(body?.data)) return [];
+
+  // The oMLX API doesn't return model sizes — look them up from disk.
+  const sizeMap = await scanOmlxModelSizes();
+
   return body.data
     .filter((model) => isChatOmlxModel(model))
-    .map((model) => ({
-      id: model.id,
-      label: parseModelName(model.id, "omlx").display,
-      aliasSuggestion: model.id,
-      sizeBytes: model.size ?? 0,
-      contextLength: model.max_model_len ?? null,
-      quant: null,
-      family: null,
-      backend: "omlx",
-      source: "omlx",
-    })).sort((a, b) => a.label.localeCompare(b.label));
+    .map((model) => {
+      const sizeFromDisk = lookupOmlxModelSize(model.id, sizeMap);
+      return {
+        id: model.id,
+        label: parseModelName(model.id, "omlx").display,
+        aliasSuggestion: model.id,
+        sizeBytes: sizeFromDisk ?? (model.size ?? 0),
+        contextLength: model.max_model_len ?? null,
+        quant: null,
+        family: null,
+        backend: "omlx",
+        source: "omlx",
+      };
+    }).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────
