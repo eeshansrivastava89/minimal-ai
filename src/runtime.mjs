@@ -26,7 +26,7 @@ export async function offerManagedLlamaRuntimeUpdate(prompt, { fetchImpl = globa
     ["Source", "official GitHub release binary"],
   ]), { formatBorder: pc.cyan }));
 
-  const shouldInstall = await prompt.yesNo(installed ? "Update llama.cpp runtime?" : "Install llama.cpp runtime?", true);
+  const shouldInstall = await prompt.yesNo(installed ? "Update llama.cpp runtime?" : "Install llama.cpp runtime?", false);
   if (!shouldInstall) return false;
 
   await installLlamaRelease(latest, { fetchImpl });
