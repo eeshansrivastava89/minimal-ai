@@ -14,6 +14,7 @@ const OPTION_SEPARATOR = pc.dim("  │  ");
 const OPTION_STATUS_WIDTH = 12;
 const OPTION_BACKEND_WIDTH = 14;
 const OPTION_SOURCE_WIDTH = 14;
+const OPTION_QUANT_WIDTH = 10;
 const OPTION_CTX_WIDTH = 5;
 
 const { stripVTControlCharacters } = await import("node:util");
@@ -100,6 +101,11 @@ function discoverySourceForItem(item) {
   return item.model?.source ?? null;
 }
 
+function optionQuantLabel(item) {
+  if (item.quant) return optionPad(item.quant, null, OPTION_QUANT_WIDTH);
+  return optionPad("—", null, OPTION_QUANT_WIDTH);
+}
+
 function optionCtxLabel(item) {
   // Context window is a configured value — only profiles (READY/RUNNING)
   // have one. SETUP items (new/managed) show "—".
@@ -123,8 +129,8 @@ export function modelNameWidth(items) {
   return Math.max(20, maxName + 2);
 }
 
-function optionLabel({ status, backend, source, name, ctx, size, nameWidth }) {
-  return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
+function optionLabel({ status, backend, source, name, quant, ctx, size, nameWidth }) {
+  return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), quant, ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
 export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
@@ -145,8 +151,9 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
         status: optionStatusTag(status),
         backend: optionBackendTag(backendId),
         source: optionSourceTag(sourceId),
-        name: item.profile.label,
+        name: item.label,
         nameWidth,
+        quant: optionQuantLabel(item),
         ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
@@ -160,8 +167,9 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
         status: optionStatusTag("setup"),
         backend: optionBackendTag(backendId),
         source: optionSourceTag(sourceId),
-        name: item.model.label,
+        name: item.label,
         nameWidth,
+        quant: optionQuantLabel(item),
         ctx: optionCtxLabel(item),
         size: optionSizeLabel(item),
       }),
@@ -173,8 +181,9 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       status: optionStatusTag("setup"),
       backend: optionBackendTag(backendId),
       source: optionSourceTag(sourceId),
-      name: item.model.label,
+      name: item.label,
       nameWidth,
+      quant: optionQuantLabel(item),
       ctx: optionCtxLabel(item),
       size: optionSizeLabel(item),
     }),

@@ -16,6 +16,7 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { getModelScanDirs } from "./config.mjs";
 import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
+import { parseModelName } from "./model-name.mjs";
 
 // ── Folder → backend mapping ──────────────────────────────────────────────
 // The oMLX folder is oMLX-exclusive: models there are served by the oMLX
@@ -81,7 +82,8 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
       if (sizeBytes < MIN_MODEL_SIZE_BYTES) return;
       if (await isEmbeddingMlxModel(join(dir, "config.json"))) return;
       const caps = await detectMlxCapabilities(dir);
-      models.push(makeMlxModel(dir, basename(dir), sizeBytes, sourceLabel, rootDir, caps.contextLength));
+      const { display, quant } = parseModelName(basename(dir), sourceLabel);
+      models.push(makeMlxModel(dir, display, sizeBytes, sourceLabel, rootDir, caps.contextLength, quant));
       return;
     }
 
@@ -94,7 +96,12 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
           if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
           if (await isEmbeddingMlxModel(join(fullPath, "config.json"))) continue;
           const caps = await detectMlxCapabilities(fullPath);
-          models.push(makeMlxModel(fullPath, entry.name, sizeBytes, sourceLabel, rootDir, caps.contextLength));
+          // Extract publisher from parent dir (LM Studio: publisher/model-dir)
+          const relParts = fullPath.slice(rootDir.length + 1).split("/");
+          const publisher = (sourceLabel === "lmstudio" && relParts.length >= 2) ? relParts[0] : null;
+          const rawLabel = publisher ? `${publisher}/${entry.name}` : entry.name;
+          const { display, quant } = parseModelName(rawLabel, sourceLabel);
+          models.push(makeMlxModel(fullPath, display, sizeBytes, sourceLabel, rootDir, caps.contextLength, quant));
         } else {
           await walk(fullPath, depth + 1);
         }
@@ -151,13 +158,16 @@ async function scanHfHubForMlx(dir, sourceLabel) {
       const sizeBytes = await getMlxDirSizeBytes(snapshotPath);
       if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
       if (await isEmbeddingMlxModel(join(snapshotPath, "config.json"))) continue;
+      const caps = await detectMlxCapabilities(snapshotPath);
+      const { display, quant } = parseModelName(label, sourceLabel);
       models.push({
         id: `${sourceLabel}:${entry.name}`,
-        label,
+        label: display,
         path: snapshotPath,
         filePath: snapshotPath,
         sizeBytes,
-        contextLength: (await detectMlxCapabilities(snapshotPath)).contextLength,
+        contextLength: caps.contextLength,
+        quant,
         backend: "mlx-vlm",
         format: "mlx",
         source: sourceLabel,
@@ -188,7 +198,7 @@ async function isEmbeddingMlxModel(configPath) {
 
 // ── MLX model entry builder ───────────────────────────────────────────────
 
-function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir, contextLength = null) {
+function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir, contextLength = null, quant = null) {
   return {
     id: `${sourceLabel}:${dir.replace(rootDir + "/", "")}`,
     label,
@@ -196,6 +206,7 @@ function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir, contextLength
     filePath: dir,
     sizeBytes,
     contextLength,
+    quant,
     backend: "mlx-vlm",
     format: "mlx",
     source: sourceLabel,

@@ -54,6 +54,7 @@ const QUANT_PATTERNS = [
   /[-_]Q\d_[01]/i,
   /[-_]F(?:16|32)/i,
   /[-_]BF16/i,
+  /[-_]\d+bit\b/i,
 ];
 
 // ── Tag tokens extracted from the name ──────────────────────────────────
@@ -77,13 +78,20 @@ const TAG_TOKENS = [
 export function parseModelName(rawId, source) {
   const id = rawId; // never modify the raw id
 
-  // 1. Extract publisher (anything before the first /)
+  // 1. Extract publisher (anything before the first /, or -- for oMLX)
   let publisher = null;
   let name = rawId;
   const slashIdx = rawId.indexOf("/");
   if (slashIdx !== -1) {
     publisher = rawId.slice(0, slashIdx);
     name = rawId.slice(slashIdx + 1);
+  } else if (source === "omlx") {
+    // oMLX uses org--name format
+    const dashIdx = rawId.indexOf("--");
+    if (dashIdx !== -1) {
+      publisher = rawId.slice(0, dashIdx);
+      name = rawId.slice(dashIdx + 2);
+    }
   }
 
   // 2. Extract quant (GGUF quantization suffix)
@@ -125,7 +133,7 @@ export function parseModelName(rawId, source) {
   const params = extractParams(model);
 
   // 7. Build display string
-  const display = buildDisplay(publisher, model, tags, quant);
+  const display = buildDisplay(publisher, model, tags);
 
   // 8. Build sort key (lowercase, no publisher, for alphabetical ordering)
   const sort = model.toLowerCase().replace(/[-_]/g, " ");
@@ -135,20 +143,12 @@ export function parseModelName(rawId, source) {
 
 // ── Display builder ────────────────────────────────────────────────────
 
-function buildDisplay(publisher, model, tags, quant) {
-  const parts = [];
-  if (publisher) {
-    parts.push(publisher);
-  }
+function buildDisplay(publisher, model, tags) {
   let modelPart = model;
   if (tags.length > 0) {
     modelPart += ` (${tags.join(", ")})`;
   }
-  parts.push(modelPart);
-  if (quant) {
-    parts.push(quant);
-  }
-  return parts.join(" › ");
+  return publisher ? `${publisher}/${modelPart}` : modelPart;
 }
 
 // ── Params extraction ──────────────────────────────────────────────────

@@ -29,14 +29,15 @@ describe("modelSelectOption", () => {
     const item = {
       type: "new",
       model: { label: "mlx-community/gemma-4-e2b-it-4bit", sizeBytes: 3e9, source: "huggingface", format: "mlx" },
-      label: "mlx-community/gemma-4-e2b-it-4bit",
+      label: "mlx-community/Gemma 4 E2B IT",
       sizeBytes: 3e9,
       contextLength: 131072,
+      quant: "4bit",
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /NEEDS SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
-    // SETUP items show size but not context window
-    assert.match(plain(opt), /3e\+9|2\.79\s*GB/); // size is shown
+    assert.match(plain(opt), /4bit/);  // quant column
+    assert.match(plain(opt), /2\.79\s*GB/); // size is shown
     assert.doesNotMatch(plain(opt), /131k/); // context is not shown for SETUP
   });
 
@@ -48,6 +49,7 @@ describe("modelSelectOption", () => {
       fileMissing: false,
       sizeBytes: null,
       contextLength: null,
+      quant: null,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /READY\s+│\s+oMLX\s+│\s+oMLX/);
@@ -62,6 +64,7 @@ describe("modelSelectOption", () => {
       fileMissing: false,
       sizeBytes: 15e9,
       contextLength: null,
+      quant: null,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /13\.97\s*GB/);
@@ -79,9 +82,11 @@ describe("modelSelectOption", () => {
       fileMissing: false,
       sizeBytes: 11 * 1024 * 1024,
       contextLength: null,
+      quant: "Q8_0",
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /LM Studio/);
     assert.match(plain(opt), /11\.00\s*MB/);
+    assert.match(plain(opt), /Q8_0/); // quant column
   });
 });

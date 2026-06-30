@@ -72,6 +72,27 @@ export function buildCatalogItems(normalized) {
   const profileItems = profiles.map((profile) => {
     const item = { type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) };
 
+    // Resolve label + quant from scan data (re-parse for consistency)
+    let quant = profile.capabilities?.quant ?? null;
+    if (profile.modelPath) {
+      const scanModel = scanByPath.get(profile.modelPath);
+      if (scanModel) {
+        item.label = scanModel.label;  // re-parsed label (publisher/model-name)
+        if (scanModel.quant) quant = scanModel.quant;
+      }
+    }
+    if (!quant) {
+      const backend = backendFor(profile.backend);
+      if (backend.type === "managed-server" && profile.omlxModel) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+        if (managedModel) {
+          item.label = managedModel.label;
+          if (managedModel.quant) quant = managedModel.quant;
+        }
+      }
+    }
+    item.quant = quant;
+
     // Resolve size: profile.modelSizeBytes → scan lookup → managed lookup
     let sizeBytes = profile.modelSizeBytes || 0;
     if (!sizeBytes && profile.modelPath) {
@@ -115,6 +136,7 @@ export function buildCatalogItems(normalized) {
       drafter: matchDrafter(model.path, drafters),
       sizeBytes: model.sizeBytes || null,
       contextLength: model.contextLength ?? null,
+      quant: model.quant ?? null,
     })),
     ...managedItems.map(({ model, backendId }) => ({
       type: "managed",
@@ -123,6 +145,7 @@ export function buildCatalogItems(normalized) {
       label: model.label,
       sizeBytes: model.sizeBytes || null,
       contextLength: model.contextLength ?? null,
+      quant: model.quant ?? null,
     })),
   ];
 }

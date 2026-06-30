@@ -52,14 +52,18 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
     const name = basename(path).replace(/\.gguf$/i, "");
     const sizeBytes = statSync(path).size;
     if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
-    const parsed = parseModelName(name, "local-gguf");
-
     // Read GGUF metadata to detect drafter architecture and embeddings
     const meta = safeReadGgufMetadata(path);
     const architecture = typeof meta["general.architecture"] === "string" ? meta["general.architecture"] : null;
     const contextLength = architecture && typeof meta[`${architecture}.context_length`] === "number"
       ? meta[`${architecture}.context_length`]
       : null;
+
+    // Extract publisher from GGUF metadata (repo_url or quantized_by),
+    // falling back to directory structure (LM Studio: publisher/model-dir/file).
+    const publisher = publisherFromGgufMeta(meta) ?? publisherFromPath(path, root, sourceLabel);
+
+    const parsed = parseModelName(publisher ? `${publisher}/${name}` : name, sourceLabel);
 
     if (isEmbeddingArchitecture(architecture, name)) continue;
 
@@ -189,4 +193,37 @@ function safeReadGgufMetadata(path) {
   } catch {
     return {};
   }
+}
+
+// ── Publisher extraction ─────────────────────────────────────────────────
+
+/** Extract publisher from GGUF metadata (repo_url or quantized_by). */
+function publisherFromGgufMeta(meta) {
+  const repoUrl = meta["general.repo_url"];
+  if (typeof repoUrl === "string") {
+    const match = repoUrl.match(/huggingface\.co\/([^/?#]+)/i);
+    if (match) return match[1];
+  }
+  const quantizedBy = meta["general.quantized_by"];
+  if (typeof quantizedBy === "string" && quantizedBy.trim()) {
+    return quantizedBy.trim().toLowerCase();
+  }
+  return null;
+}
+
+/** Extract publisher from directory structure relative to the scan root. */
+function publisherFromPath(filePath, scanRoot, sourceLabel) {
+  const rel = filePath.slice(scanRoot.length + 1).replace(/\\/g, "/");
+  const parts = rel.split("/");
+  if (parts.length === 0) return null;
+  // HF hub: models--org--name/snapshots/hash/file
+  if (parts[0]?.startsWith("models--")) {
+    const after = parts[0].slice("models--".length);
+    const dashIdx = after.indexOf("--");
+    if (dashIdx > 0) return after.slice(0, dashIdx);
+    return null;
+  }
+  // LM Studio: publisher/model-dir/file.gguf (3+ parts)
+  if (sourceLabel === "lmstudio" && parts.length >= 3) return parts[0];
+  return null;
 }

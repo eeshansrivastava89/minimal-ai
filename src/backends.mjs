@@ -103,13 +103,14 @@ async function scanOmlxModels() {
     .filter((model) => isChatOmlxModel(model))
     .map((model) => {
       const sizeFromDisk = lookupOmlxModelSize(model.id, sizeMap);
+      const parsed = parseModelName(model.id, "omlx");
       return {
         id: model.id,
-        label: parseModelName(model.id, "omlx").display,
+        label: parsed.display,
         aliasSuggestion: model.id,
         sizeBytes: sizeFromDisk ?? (model.size ?? 0),
         contextLength: model.max_model_len ?? null,
-        quant: null,
+        quant: parsed.quant,
         family: null,
         backend: "omlx",
         source: "omlx",

@@ -9,7 +9,7 @@ describe("parseModelName", () => {
     assert.equal(result.quant, "Q4_K_M");
     assert.equal(result.id, "unsloth/Qwen3-30B-A3B-Q4_K_M");
     assert.ok(result.display.includes("Qwen 3"));
-    assert.ok(result.display.includes("Q4_K_M"));
+    assert.ok(result.display.includes("unsloth"));
   });
 
   it("differentiates Q4 and Q5 quants", () => {
@@ -17,7 +17,7 @@ describe("parseModelName", () => {
     const q5 = parseModelName("unsloth/Qwen3-30B-A3B-Q5_K_M", "local-gguf");
     assert.equal(q4.quant, "Q4_K_M");
     assert.equal(q5.quant, "Q5_K_M");
-    assert.notEqual(q4.display, q5.display);
+    assert.notEqual(q4.quant, q5.quant);
   });
 
   it("parses a GGUF name with it tag", () => {
@@ -63,6 +63,22 @@ describe("parseModelName", () => {
     const result = parseModelName("mlx-community/gemma-4-12b-it-q4", "omlx");
     assert.equal(result.publisher, "mlx-community");
     assert.ok(result.display.includes("Gemma 4"));
+  });
+
+  it("extracts MLX-style 4bit quant", () => {
+    const result = parseModelName("mlx-community/gemma-4-e2b-it-4bit", "huggingface");
+    assert.equal(result.publisher, "mlx-community");
+    assert.equal(result.quant, "4bit");
+    assert.ok(result.display.includes("Gemma"));
+    assert.ok(!result.display.includes("4bit"));
+  });
+
+  it("handles oMLX org--name format", () => {
+    const result = parseModelName("mlx-community--Qwen3.6-35B-A3B-OptiQ-4bit", "omlx");
+    assert.equal(result.publisher, "mlx-community");
+    assert.equal(result.quant, "4bit");
+    assert.ok(result.display.includes("Qwen"));
+    assert.ok(result.display.includes("mlx-community/"));
   });
 
   it("preserves the raw id without modification", () => {
@@ -115,12 +131,10 @@ describe("parseModelName", () => {
     }
   });
 
-  it("uses › separator in display between publisher, model, and quant", () => {
+  it("uses / separator in display between publisher and model", () => {
     const result = parseModelName("unsloth/Qwen3-30B-A3B-Q4_K_M", "local-gguf");
-    const parts = result.display.split(" › ");
-    assert.ok(parts.length >= 2, `expected at least 2 parts separated by ›, got: ${result.display}`);
-    assert.equal(parts[0], "unsloth");
-    assert.ok(parts[parts.length - 1].includes("Q4_K_M"), `last part should contain quant, got: ${parts[parts.length - 1]}`);
+    assert.ok(result.display.includes("unsloth/"), `expected publisher/model format, got: ${result.display}`);
+    assert.ok(!result.display.includes("Q4_K_M"), `quant should not be in display, got: ${result.display}`);
   });
 
   it("extracts active params like A3B", () => {
