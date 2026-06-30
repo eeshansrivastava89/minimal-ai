@@ -80,7 +80,8 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
       const sizeBytes = await getMlxDirSizeBytes(dir);
       if (sizeBytes < MIN_MODEL_SIZE_BYTES) return;
       if (await isEmbeddingMlxModel(join(dir, "config.json"))) return;
-      models.push(makeMlxModel(dir, basename(dir), sizeBytes, sourceLabel, rootDir));
+      const caps = await detectMlxCapabilities(dir);
+      models.push(makeMlxModel(dir, basename(dir), sizeBytes, sourceLabel, rootDir, caps.contextLength));
       return;
     }
 
@@ -92,7 +93,8 @@ async function scanDirRecursiveForMlx(rootDir, sourceLabel, maxDepth = 3) {
           const sizeBytes = await getMlxDirSizeBytes(fullPath);
           if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
           if (await isEmbeddingMlxModel(join(fullPath, "config.json"))) continue;
-          models.push(makeMlxModel(fullPath, entry.name, sizeBytes, sourceLabel, rootDir));
+          const caps = await detectMlxCapabilities(fullPath);
+          models.push(makeMlxModel(fullPath, entry.name, sizeBytes, sourceLabel, rootDir, caps.contextLength));
         } else {
           await walk(fullPath, depth + 1);
         }
@@ -155,6 +157,7 @@ async function scanHfHubForMlx(dir, sourceLabel) {
         path: snapshotPath,
         filePath: snapshotPath,
         sizeBytes,
+        contextLength: (await detectMlxCapabilities(snapshotPath)).contextLength,
         backend: "mlx-vlm",
         format: "mlx",
         source: sourceLabel,
@@ -185,13 +188,14 @@ async function isEmbeddingMlxModel(configPath) {
 
 // ── MLX model entry builder ───────────────────────────────────────────────
 
-function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir) {
+function makeMlxModel(dir, label, sizeBytes, sourceLabel, rootDir, contextLength = null) {
   return {
     id: `${sourceLabel}:${dir.replace(rootDir + "/", "")}`,
     label,
     path: dir,
     filePath: dir,
     sizeBytes,
+    contextLength,
     backend: "mlx-vlm",
     format: "mlx",
     source: sourceLabel,

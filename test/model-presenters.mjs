@@ -30,9 +30,12 @@ describe("modelSelectOption", () => {
       type: "new",
       model: { label: "mlx-community/gemma-4-e2b-it-4bit", sizeBytes: 3e9, source: "huggingface", format: "mlx" },
       label: "mlx-community/gemma-4-e2b-it-4bit",
+      sizeBytes: 3e9,
+      contextLength: 131072,
     };
-    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
+    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
+    assert.match(plain(opt), /131k/);
   });
 
   it("infers oMLX source for managed profiles without stored source", () => {
@@ -41,21 +44,24 @@ describe("modelSelectOption", () => {
       profile: { id: "omlx-qwen", label: "Qwen oMLX", backend: "omlx", omlxModel: "Qwen3.6-27B", flags: {} },
       label: "Qwen oMLX",
       fileMissing: false,
+      sizeBytes: null,
+      contextLength: null,
     };
-    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
+    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /READY\s+│\s+oMLX\s+│\s+oMLX/);
     assert.doesNotMatch(plain(opt), /GGUF/);
   });
 
-  it("looks up managed profile size from managedModels", () => {
+  it("displays pre-computed size for managed profiles", () => {
     const item = {
       type: "profile",
       profile: { id: "omlx-qwen", label: "Qwen oMLX", backend: "omlx", omlxModel: "Qwen3.6-27B", flags: {} },
       label: "Qwen oMLX",
       fileMissing: false,
+      sizeBytes: 15e9,
+      contextLength: null,
     };
-    const managedModels = [{ backendId: "omlx", models: [{ id: "Qwen3.6-27B", sizeBytes: 15e9, source: "omlx" }], status: "ok" }];
-    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels });
+    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /13\.97\s*GB/);
   });
 
@@ -69,8 +75,10 @@ describe("modelSelectOption", () => {
       profile: { id: "gguf-old", label: "Old model", backend: "llama-cpp", modelPath: file, source: "local-gguf", flags: {} },
       label: "Old model",
       fileMissing: false,
+      sizeBytes: 11 * 1024 * 1024,
+      contextLength: null,
     };
-    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40, managedModels: [] });
+    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
     assert.match(plain(opt), /LM Studio/);
     assert.match(plain(opt), /11\.00\s*MB/);
   });

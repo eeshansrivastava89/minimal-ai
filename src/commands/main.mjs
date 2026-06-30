@@ -1,6 +1,7 @@
 import { findLlamaServer, ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
+import { scanMlxModels } from "../mlx-discovery.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
@@ -26,9 +27,10 @@ export async function mainFlow() {
   const llamaBinary = await findLlamaServer();
   const { models: ggufModels, drafters } = await scanGgufModels();
   const managedModels = await scanManagedModels();
+  const mlxModels = await scanMlxModels();
   const profiles = await loadProfiles();
   const hasAnyBackend = llamaBinary || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
-  const hasAnyModels = ggufModels.length > 0 || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
+  const hasAnyModels = ggufModels.length > 0 || mlxModels.length > 0 || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
 
   const piInstalled = await hasPi();
   const needsLlama = ggufModels.length > 0 || profiles.some((profile) => backendFor(profile.backend).type === "local-server");
@@ -56,7 +58,7 @@ export async function mainFlow() {
   if (!process.stdin.isTTY) return await statusCommand();
 
   startInteractive("offgrid-ai");
-  return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
+  return await modelCommandCenter({ profiles, ggufModels, managedModels, mlxModels, drafters });
 }
 
 async function printNoModelsHelp(llamaBinary) {

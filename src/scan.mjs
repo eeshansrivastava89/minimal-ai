@@ -57,6 +57,9 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
     // Read GGUF metadata to detect drafter architecture and embeddings
     const meta = safeReadGgufMetadata(path);
     const architecture = typeof meta["general.architecture"] === "string" ? meta["general.architecture"] : null;
+    const contextLength = architecture && typeof meta[`${architecture}.context_length`] === "number"
+      ? meta[`${architecture}.context_length`]
+      : null;
 
     if (isEmbeddingArchitecture(architecture, name)) continue;
 
@@ -81,6 +84,7 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
         aliasSuggestion: parsed.id,
         quant: parsed.quant,
         sizeBytes,
+        contextLength,
         backend: "llama-cpp",
         source: sourceLabel,
       });

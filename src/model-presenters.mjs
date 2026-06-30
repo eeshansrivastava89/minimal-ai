@@ -101,32 +101,15 @@ function discoverySourceForItem(item) {
 }
 
 function optionCtxLabel(item) {
-  if (item.type === "profile" && item.profile.flags?.ctxSize) {
-    return optionPad(`${(item.profile.flags.ctxSize / 1000).toFixed(0)}k`, null, OPTION_CTX_WIDTH);
+  if (item.contextLength) {
+    return optionPad(`${(item.contextLength / 1000).toFixed(0)}k`, null, OPTION_CTX_WIDTH);
   }
   return optionPad("—", null, OPTION_CTX_WIDTH);
 }
 
-function optionSizeLabel(item, managedModels) {
-  if (item.type === "profile") {
-    if (item.fileMissing) return "—";
-    if (item.profile.modelSizeBytes) return formatBytes(item.profile.modelSizeBytes);
-    if (item.profile.modelPath && existsSync(item.profile.modelPath)) {
-      const s = statSync(item.profile.modelPath);
-      // Only stat regular files — a modelPath that is a directory (MLX)
-      // reports the dir entry size, not the model size.
-      if (s.isFile()) return formatBytes(s.size);
-    }
-    const managedSize = managedProfileSizeBytes(item.profile, managedModels);
-    if (managedSize) return formatBytes(managedSize);
-    return "—";
-  }
-  if (item.type === "new") {
-    return formatBytes(item.model.sizeBytes);
-  }
-  // managed
-  if (item.model.sizeBytes) return formatBytes(item.model.sizeBytes);
-  if (item.model.quant) return item.model.quant;
+function optionSizeLabel(item) {
+  if (item.type === "profile" && item.fileMissing) return "—";
+  if (item.sizeBytes) return formatBytes(item.sizeBytes);
   return "—";
 }
 
@@ -141,7 +124,7 @@ function optionLabel({ status, backend, source, name, ctx, size, nameWidth }) {
   return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, managedModels }) {
+export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
   const sourceId = discoverySourceForItem(item) ?? "unknown";
   const backendId = inferBackendId(item);
   if (item.type === "profile") {
@@ -162,7 +145,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
         name: item.profile.label,
         nameWidth,
         ctx: optionCtxLabel(item),
-        size: optionSizeLabel(item, managedModels),
+        size: optionSizeLabel(item),
       }),
       ...(hint ? { hint: pc.red(hint) } : {}),
     };
@@ -177,7 +160,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
         name: item.model.label,
         nameWidth,
         ctx: optionCtxLabel(item),
-        size: optionSizeLabel(item, managedModels),
+        size: optionSizeLabel(item),
       }),
     };
   }
@@ -190,20 +173,9 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       name: item.model.label,
       nameWidth,
       ctx: optionCtxLabel(item),
-      size: optionSizeLabel(item, managedModels),
+      size: optionSizeLabel(item),
     }),
   };
-}
-
-function managedProfileSizeBytes(profile, managedModels) {
-  if (!managedModels || !Array.isArray(managedModels)) return null;
-  const backend = backendFor(profile.backend);
-  if (backend.type !== "managed-server") return null;
-  const backendModels = managedModels.find((m) => m.backendId === profile.backend)?.models ?? [];
-  const modelId = profile.omlxModel ?? null;
-  if (!modelId) return null;
-  const model = backendModels.find((m) => m.id === modelId);
-  return model?.sizeBytes || null;
 }
 
 function inferBackendId(item) {
@@ -266,7 +238,7 @@ export async function printProfileDetails(profile) {
     detailRows.push(
       ["Local file", fileMissing ? pc.red(`${profile.modelPath} (not found)`) : profile.modelPath ?? "unknown"],
       ["Vision file", profile.mmprojPath ? (existsSync(profile.mmprojPath) ? profile.mmprojPath : pc.red(`${profile.mmprojPath} (not found)`)) : "none"],
-      ["Model size", profile.modelPath && existsSync(profile.modelPath) ? formatBytes(statSync(profile.modelPath).size) : "unknown"],
+      ["Model size", profile.modelSizeBytes ? formatBytes(profile.modelSizeBytes) : (profile.modelPath && existsSync(profile.modelPath) && statSync(profile.modelPath).isFile() ? formatBytes(statSync(profile.modelPath).size) : "unknown")],
     );
     if (profile.drafterPath) {
       detailRows.push(["Drafter", existsSync(profile.drafterPath) ? profile.drafterPath : pc.red(`${profile.drafterPath} (not found)`)]);

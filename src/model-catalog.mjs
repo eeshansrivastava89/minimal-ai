@@ -3,6 +3,7 @@ import { loadProfiles, normalizeProfile, sanitizeProfileId } from "./profiles.mj
 import { scanManagedModels } from "./managed.mjs";
 import { scanMlxModels } from "./mlx-discovery.mjs";
 import { isProfileFileMissing } from "./model-summary.mjs";
+import { backendFor } from "./backends.mjs";
 
 export async function loadModelCatalog() {
   const [profiles, { models: ggufModels, drafters }, managedModels, mlxModels] = await Promise.all([
@@ -34,7 +35,7 @@ export function normalizeCatalog(catalog) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
     }
   }
-  return { profiles, ggufModels, drafters, managedModels, newModels, managedItems };
+  return { profiles, ggufModels, drafters, managedModels, mlxModels, newModels, managedItems };
 }
 
 export function itemKey(item) {
@@ -56,13 +57,73 @@ function compareRecency(a, b) {
 }
 
 export function buildCatalogItems(normalized) {
-  const { profiles, newModels, managedItems, drafters } = normalized;
-  const profileItems = profiles.map((profile) => ({ type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) }));
+  const { profiles, newModels, managedItems, drafters, ggufModels = [], mlxModels = [], managedModels = [] } = normalized;
+
+  // Lookup maps for enriching profile items with scan data (size + context).
+  const scanByPath = new Map();
+  for (const m of ggufModels) scanByPath.set(m.path, m);
+  for (const m of mlxModels) scanByPath.set(m.filePath ?? m.path, m);
+
+  const managedByKey = new Map();
+  for (const { backendId, models } of managedModels) {
+    for (const m of models) managedByKey.set(`${backendId}:${m.id}`, m);
+  }
+
+  const profileItems = profiles.map((profile) => {
+    const item = { type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) };
+
+    // Resolve size: profile.modelSizeBytes → scan lookup → managed lookup
+    let sizeBytes = profile.modelSizeBytes || 0;
+    if (!sizeBytes && profile.modelPath) {
+      const scanModel = scanByPath.get(profile.modelPath);
+      if (scanModel?.sizeBytes) sizeBytes = scanModel.sizeBytes;
+    }
+    if (!sizeBytes) {
+      const backend = backendFor(profile.backend);
+      if (backend.type === "managed-server" && profile.omlxModel) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+        if (managedModel?.sizeBytes) sizeBytes = managedModel.sizeBytes;
+      }
+    }
+    item.sizeBytes = sizeBytes || null;
+
+    // Resolve context: flags.ctxSize (configured) → capabilities.ctxSize (trained) → scan → managed
+    let contextLength = profile.flags?.ctxSize ?? null;
+    if (!contextLength) contextLength = profile.capabilities?.ctxSize ?? null;
+    if (!contextLength && profile.modelPath) {
+      const scanModel = scanByPath.get(profile.modelPath);
+      if (scanModel?.contextLength) contextLength = scanModel.contextLength;
+    }
+    if (!contextLength) {
+      const backend = backendFor(profile.backend);
+      if (backend.type === "managed-server" && profile.omlxModel) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+        if (managedModel?.contextLength) contextLength = managedModel.contextLength;
+      }
+    }
+    item.contextLength = contextLength;
+
+    return item;
+  });
   profileItems.sort(compareRecency);
   return [
     ...profileItems,
-    ...newModels.map((model) => ({ type: "new", model, label: model.label, drafter: matchDrafter(model.path, drafters) })),
-    ...managedItems.map(({ model, backendId }) => ({ type: "managed", model, backendId, label: model.label })),
+    ...newModels.map((model) => ({
+      type: "new",
+      model,
+      label: model.label,
+      drafter: matchDrafter(model.path, drafters),
+      sizeBytes: model.sizeBytes || null,
+      contextLength: model.contextLength ?? null,
+    })),
+    ...managedItems.map(({ model, backendId }) => ({
+      type: "managed",
+      model,
+      backendId,
+      label: model.label,
+      sizeBytes: model.sizeBytes || null,
+      contextLength: model.contextLength ?? null,
+    })),
   ];
 }
 
