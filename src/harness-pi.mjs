@@ -104,6 +104,7 @@ function piModelConfig(profile) {
     id: piApiModelId(profile),
     name: profile.label,
     input: modelInput(profile),
+    maxTokens: 16384,
     ...(reasoning === undefined ? {} : { reasoning }),
     ...(compat ? { compat } : {}),
     ...(profile.flags?.ctxSize ? { contextWindow: profile.flags.ctxSize } : {}),
