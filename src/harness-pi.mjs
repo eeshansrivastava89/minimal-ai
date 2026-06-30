@@ -143,7 +143,7 @@ function piApiKey() {
 }
 
 function providerCompat() {
-  return { supportsDeveloperRole: false, supportsReasoningEffort: false };
+  return { supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: "max_tokens" };
 }
 
 function runForeground(cmd, argv) {
