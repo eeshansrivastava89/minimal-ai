@@ -142,4 +142,9 @@ describe("parseModelName", () => {
     assert.ok(result.display.includes("A22B"), `expected A22B in display, got: ${result.display}`);
     assert.equal(result.params, "235B");
   });
+
+  it("title-cases effective params like E2B", () => {
+    const result = parseModelName("gemma-4-e2b-it-4bit", "huggingface");
+    assert.ok(result.display.includes("E2B"), `expected E2B in display, got: ${result.display}`);
+  });
 });

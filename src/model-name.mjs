@@ -195,6 +195,9 @@ function titleCaseModel(name) {
   // Title-case standalone aXb patterns (A3B, A12B — active parameters)
   result = result.replace(/\ba(\d+)\s*b\b/gi, (_, num) => `A${num}B`);
 
+  // Title-case eXb patterns (E2B, E12B — effective parameters)
+  result = result.replace(/\be(\d+)\s*b\b/gi, (_, num) => `E${num}B`);
+
   // Clean up extra spaces
   result = result.replace(/\s{2,}/g, " ").trim();
 

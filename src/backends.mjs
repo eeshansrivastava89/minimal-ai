@@ -1,7 +1,7 @@
 import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { scanMlxModels, scanOmlxModelSizes, lookupOmlxModelSize } from "./mlx-discovery.mjs";
+import { scanMlxModels, scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
 import { DEFAULT_PORT as MLX_VLM_PORT } from "./mlx-flags.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
@@ -96,19 +96,23 @@ async function scanOmlxModels() {
   const body = await response.json();
   if (!Array.isArray(body?.data)) return [];
 
-  // The oMLX API doesn't return model sizes — look them up from disk.
-  const sizeMap = await scanOmlxModelSizes();
+  // The oMLX API doesn't return model sizes or publishers — look them up from disk.
+  const infoMap = await scanOmlxModelSizes();
 
   return body.data
     .filter((model) => isChatOmlxModel(model))
     .map((model) => {
-      const sizeFromDisk = lookupOmlxModelSize(model.id, sizeMap);
-      const parsed = parseModelName(model.id, "omlx");
+      const info = lookupOmlxModelInfo(model.id, infoMap);
+      // If the API ID doesn't already include a publisher (no / or --),
+      // prepend the publisher found on disk.
+      const hasPublisher = model.id.includes("/") || model.id.includes("--");
+      const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
+      const parsed = parseModelName(fullName, "omlx");
       return {
         id: model.id,
         label: parsed.display,
         aliasSuggestion: model.id,
-        sizeBytes: sizeFromDisk ?? (model.size ?? 0),
+        sizeBytes: info?.sizeBytes ?? (model.size ?? 0),
         contextLength: model.max_model_len ?? null,
         quant: parsed.quant,
         family: null,

@@ -308,14 +308,14 @@ export function defaultMlxContextLength(trainedCtx, ramGb) {
 
 /**
  * Scan the oMLX models directory (~/.omlx/models/) for MLX model directories
- * and return a Map of basename → sizeBytes.  The oMLX API doesn't return model
- * sizes, so we compute them from the safetensors files on disk.
+ * and return a Map of basename → { sizeBytes, publisher }.  The oMLX API
+ * doesn't return model sizes or publishers, so we compute them from disk.
  */
 export async function scanOmlxModelSizes() {
   if (!existsSync(OMLX_MODELS_DIR)) return new Map();
-  const sizeByBasename = new Map();
+  const infoByBasename = new Map();
 
-  async function walk(dir) {
+  async function walk(dir, publisher) {
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -327,26 +327,27 @@ export async function scanOmlxModelSizes() {
       const fullPath = join(dir, entry.name);
       if (await isMlxModelDir(fullPath)) {
         const sizeBytes = await getMlxDirSizeBytes(fullPath);
-        if (sizeBytes > 0) sizeByBasename.set(entry.name, sizeBytes);
+        if (sizeBytes > 0) infoByBasename.set(entry.name, { sizeBytes, publisher });
       } else {
-        await walk(fullPath);
+        // First-level directories under ~/.omlx/models/ are publishers
+        await walk(fullPath, publisher ?? entry.name);
       }
     }
   }
 
-  await walk(OMLX_MODELS_DIR);
-  return sizeByBasename;
+  await walk(OMLX_MODELS_DIR, null);
+  return infoByBasename;
 }
 
 /**
- * Look up a model's size by its oMLX API id.  Tries exact match, then the
+ * Look up a model's info by its oMLX API id.  Tries exact match, then the
  * segment after `--` (oMLX org--name format), then after `/` (HF format).
  */
-export function lookupOmlxModelSize(modelId, sizeMap) {
-  if (sizeMap.has(modelId)) return sizeMap.get(modelId);
+export function lookupOmlxModelInfo(modelId, infoMap) {
+  if (infoMap.has(modelId)) return infoMap.get(modelId);
   const dashIdx = modelId.indexOf("--");
-  if (dashIdx >= 0 && sizeMap.has(modelId.slice(dashIdx + 2))) return sizeMap.get(modelId.slice(dashIdx + 2));
+  if (dashIdx >= 0 && infoMap.has(modelId.slice(dashIdx + 2))) return infoMap.get(modelId.slice(dashIdx + 2));
   const slashIdx = modelId.indexOf("/");
-  if (slashIdx >= 0 && sizeMap.has(modelId.slice(slashIdx + 1))) return sizeMap.get(modelId.slice(slashIdx + 1));
+  if (slashIdx >= 0 && infoMap.has(modelId.slice(slashIdx + 1))) return infoMap.get(modelId.slice(slashIdx + 1));
   return null;
 }
