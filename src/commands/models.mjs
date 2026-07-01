@@ -4,7 +4,7 @@ import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profil
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
-import { pc, startInteractive, createPrompt } from "../ui.mjs";
+import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, printGgufModelDetails, printMlxModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
@@ -66,22 +66,29 @@ export async function modelCommandCenter(initialCatalog) {
   };
 
   const groupOrder = ["running", "ready", "setup", "missing"];
+  const groupLabels = {
+    running: "Running now",
+    ready: "Ready",
+    setup: "Needs setup",
+    missing: "Missing files",
+  };
   const grouped = new Map(groupOrder.map((key) => [key, []]));
   for (const item of allItems) grouped.get(statusFor(item)).push(item);
 
-  const choices = [];
+  const groups = [];
   for (const group of groupOrder) {
     const bucket = grouped.get(group);
     if (!bucket || bucket.length === 0) continue;
-    for (const item of bucket) {
+    const items = bucket.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
-      choices.push({ value: opt.value, label: opt.label, hint: opt.hint });
-    }
+      return { value: opt.value, label: opt.label, description: opt.hint };
+    });
+    groups.push({ separator: `  ${groupLabels[group]} (${bucket.length})`, items });
   }
 
   const prompt = createPrompt();
   try {
-    const selected = await prompt.choice("Select a model", choices);
+    const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
     if (!selected) return;
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;

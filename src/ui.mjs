@@ -1,8 +1,12 @@
-import { box, cancel, confirm, intro, isCancel, select, text } from "@clack/prompts";
+import { select as inquirerSelect, input, confirm, number, Separator } from "@inquirer/prompts";
 import pc from "picocolors";
 import { stripVTControlCharacters } from "node:util";
 
 export { pc };
+export { Separator };
+
+// ── Formatting helpers (no prompt dependency) ───────────────────────────────
+
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -10,42 +14,6 @@ export function formatBytes(bytes) {
   let unit = 0;
   while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
   return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
-}
-
-export function startInteractive(title = "offgrid-ai") {
-  if (process.stdin.isTTY) console.clear();
-  intro(title);
-}
-
-export function createPrompt() {
-  return {
-    async text(label, defaultValue) {
-      const value = await text({ message: label, initialValue: defaultValue === undefined ? undefined : String(defaultValue) });
-      return handleCancel(value)?.trim() || String(defaultValue ?? "");
-    },
-    async number(label, defaultValue, min, max) {
-      const value = await text({
-        message: label, initialValue: String(defaultValue),
-        validate(input) { const n = Number(input); if (!Number.isFinite(n) || n < min || n > max) return `Enter a number from ${min} to ${max}.`; },
-      });
-      return Number(handleCancel(value));
-    },
-    async yesNo(label, defaultValue) {
-      return handleCancel(await confirm({ message: label, initialValue: defaultValue }));
-    },
-    async choice(label, choices, defaultValue) {
-      return handleCancel(await select({
-        message: label, initialValue: defaultValue,
-        options: choices.map((c) => ({ value: c.value, label: c.label ?? c.value, hint: c.hint, disabled: c.disabled })),
-      }));
-    },
-    close() {},
-  };
-}
-
-function handleCancel(value) {
-  if (isCancel(value)) { cancel("Cancelled."); process.exit(0); }
-  return value;
 }
 
 export function renderRows(rows) {
@@ -57,25 +25,44 @@ export function renderRows(rows) {
   }).join("\n");
 }
 
+// ── Box renderer ────────────────────────────────────────────────────────────
+
+function visibleLen(text) {
+  return stripVTControlCharacters(String(text)).length;
+}
+
+function padVisible(text, width) {
+  const pad = Math.max(0, width - visibleLen(text));
+  return text + " ".repeat(pad);
+}
+
 export function renderCard(title, body, options = {}) {
-  let output = "";
-  box(String(body ?? ""), title, {
-    output: captureOutput((chunk) => { output += chunk; }, options.columns),
-    withGuide: false,
-    width: "auto",
-    contentPadding: options.contentPadding ?? 1,
-    titlePadding: options.titlePadding ?? 1,
-    rounded: options.rounded ?? true,
-    titleAlign: options.titleAlign ?? "left",
-    contentAlign: options.contentAlign ?? "left",
-    formatBorder: options.formatBorder ?? pc.magenta,
-  });
-  return output.trimEnd();
+  const borderColor = options.formatBorder ?? pc.magenta;
+  const maxCols = options.columns ?? process.stdout.columns ?? 88;
+  const lines = String(body ?? "").split("\n");
+  const titleStr = title ? ` ${title} ` : "";
+  const innerWidth = Math.max(
+    visibleLen(titleStr),
+    ...lines.map(visibleLen),
+  );
+  const width = Math.min(innerWidth + 2, maxCols - 2);
+
+  const topTitle = title ? `╭${pc.reset(titleStr)}` : "╭";
+  const topFill = "─".repeat(Math.max(0, width + 2 - visibleLen(titleStr)));
+  const top = `${topTitle}${topFill}╮`;
+
+  const middle = lines.map((line) => `│ ${padVisible(line, width)} │`);
+
+  const bottom = `╰${"─".repeat(width + 2)}╯`;
+
+  return [top, ...middle, bottom].map((l) => borderColor(l)).join("\n");
 }
 
 export function renderSection(title, body, options = {}) {
   return renderCard(title, body, { formatBorder: pc.magenta, ...options });
 }
+
+// ── Status / capability helpers ─────────────────────────────────────────────
 
 export function humanCapabilitySummary(caps = {}) {
   const parts = [];
@@ -97,12 +84,92 @@ export function statusText(kind, text) {
   return color(text);
 }
 
-function captureOutput(write, columns) {
+// ── Interactive prompt factory ──────────────────────────────────────────────
+
+export function startInteractive(title = "offgrid-ai") {
+  if (process.stdin.isTTY) console.clear();
+  console.log(pc.magenta(`◆ ${title}`));
+}
+
+export function createPrompt() {
   return {
-    columns: Math.min(columns ?? process.stdout.columns ?? 88, 120),
-    write,
+    async text(label, defaultValue) {
+      const value = await input({
+        message: label,
+        default: defaultValue === undefined ? undefined : String(defaultValue),
+      });
+      return value?.trim() || String(defaultValue ?? "");
+    },
+
+    async number(label, defaultValue, min, max) {
+      const value = await number({
+        message: label,
+        default: defaultValue,
+        validate(input) {
+          if (!Number.isFinite(input) || input < min || input > max) {
+            return `Enter a number from ${min} to ${max}.`;
+          }
+        },
+      });
+      return Number(value);
+    },
+
+    async yesNo(label, defaultValue) {
+      return await confirm({ message: label, default: defaultValue });
+    },
+
+    async choice(label, choices, defaultValue) {
+      const mapped = choices.map((c) => {
+        if (c instanceof Separator) return c;
+        return {
+          value: c.value,
+          name: c.label ?? c.value,
+          description: c.hint,
+          disabled: c.disabled || undefined,
+        };
+      });
+      return await inquirerSelect({
+        message: label,
+        default: defaultValue,
+        choices: mapped,
+        pageSize: 20,
+      });
+    },
+
+    close() {},
   };
 }
+
+// ── Model picker with grouped select ────────────────────────────────────────
+
+export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
+  const choices = [];
+  for (const group of groups) {
+    if (group.separator) {
+      choices.push(new Separator(group.separator));
+    }
+    for (const item of group.items) {
+      if (item.separator) {
+        choices.push(new Separator(item.separator));
+        continue;
+      }
+      choices.push({
+        value: item.value,
+        name: item.label ?? item.value,
+        description: item.description,
+        disabled: item.disabled || undefined,
+      });
+    }
+  }
+  return await inquirerSelect({
+    message: label,
+    default: defaultKey,
+    choices,
+    pageSize,
+  });
+}
+
+// ── Option parsing (no prompt dependency) ────────────────────────────────────
 
 export function parseOptions(argv) {
   const positional = [];

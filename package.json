@@ -42,10 +42,10 @@
     "pretest": "npm run lint"
   },
   "dependencies": {
-    "@clack/prompts": "^1.4.0",
     "@earendil-works/pi-agent-core": "^0.80.3",
     "@earendil-works/pi-ai": "^0.80.3",
     "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@inquirer/prompts": "^8.5.2",
     "picocolors": "^1.1.0"
   },
   "keywords": [
