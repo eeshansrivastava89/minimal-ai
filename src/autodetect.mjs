@@ -50,7 +50,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
 
 // ── Compute llama-server flags from capabilities ───────────────────────────
 
-export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath) {
+export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath, flagOverrides = {}) {
   const { thinking, mtp, quant } = capabilities;
   const isLowMem = quant && /[Qq]4[_0]/i.test(quant);
 
@@ -69,6 +69,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     repeatPenalty: thinking ? 1.1 : 1.0,
     parallel: 1,
     batchSize: 512,
+    ...flagOverrides,
   };
 
   // Thinking mode

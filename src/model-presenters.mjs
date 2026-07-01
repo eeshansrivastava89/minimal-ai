@@ -1,9 +1,8 @@
 import { existsSync, statSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { backendFor } from "./backends.mjs";
-import { readCommandArgv } from "./profiles.mjs";
-import { isProfileRunning } from "./process.mjs";
-import { buildPrettyCommand } from "./command.mjs";
+import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
+import { profileDir } from "./profiles.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
@@ -260,9 +259,16 @@ export async function printProfileDetails(profile) {
 
   if (fileMissing) console.log("\n" + pc.red("⚠ This model's file is no longer on disk. Remove this setup or move the file back."));
 
-  if (!isManaged && profile.commandArgv) {
-    const commandArgv = await readCommandArgv(profile);
-    console.log("\n" + renderSection("llama-server command", pc.dim(buildPrettyCommand({ ...profile, commandArgv })), { columns: 120 }));
+  if (!isManaged) {
+    const command = await computeServerCommand(profile);
+    if (command) {
+      const script = buildStartScript(profile, command);
+      const scriptPath = join(profileDir(profile.id), "start.sh");
+      console.log("\n" + renderSection("Server command", renderRows([
+        ["Run manually", pc.cyan(`bash ${scriptPath}`)],
+        ["Command", pc.dim(script)],
+      ]), { columns: 120 }));
+    }
   }
 }
 

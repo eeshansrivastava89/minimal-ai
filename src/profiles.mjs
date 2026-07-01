@@ -69,14 +69,9 @@ export async function saveProfile(profile, options = {}) {
   };
   await writeJson(profileJsonPath(id), saved);
 
-  // Write JSON command file for llama-server backends
-  const backend = backendFor(saved.backend);
-  if (backend.needsCommandFile) {
-    const cmdPath = commandJsonPath(id);
-    if (options.writeCommand || !existsSync(cmdPath)) {
-      await writeJson(cmdPath, { argv: saved.commandArgv ?? [] });
-    }
-  }
+  // Note: command.json is no longer written — the server command is computed
+  // fresh from the profile config at launch time (see computeServerCommand in
+  // process.mjs).  commandArgv is kept in the profile for backwards compat.
 
   if (!existsSync(notesPath(id))) {
     await writeFile(notesPath(id), `# ${saved.label}\n\nNotes for this model profile.\n`, "utf8");
