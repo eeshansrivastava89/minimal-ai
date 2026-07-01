@@ -18,10 +18,6 @@ export function createRunId(date = new Date()) {
   return date.toISOString().replace(/:/gu, "-").replace(/\./gu, "-");
 }
 
-export function buildToolPrompt(benchmark) {
-  return benchmark.prompt;
-}
-
 export async function loadBenchmarks(benchDir) {
   const entries = await readdir(benchDir);
   const markdownFiles = entries.filter((f) => f.endsWith(".md")).sort();
@@ -47,8 +43,4 @@ export async function loadBenchmarks(benchDir) {
     benchmarks.push({ id, title, description, prompt: content, kind });
   }
   return benchmarks;
-}
-
-export function piModelString(profile) {
-  return profile.harnesses?.pi?.model ?? `${profile.providerId}/${profile.modelAlias}`;
 }

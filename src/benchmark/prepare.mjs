@@ -3,7 +3,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pc, renderRows, renderSection } from "../ui.mjs";
-import { slugModelId, createRunId, buildToolPrompt } from "./shared.mjs";
+import { slugModelId, createRunId } from "./shared.mjs";
 import { parseModelName } from "../model-name.mjs";
 
 function harnessDisplayName(id) {
@@ -30,7 +30,7 @@ function printBenchmarkNextSteps({ repoPath, runDirectory, profile, modelId, run
 }
 
 export async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps = true }) {
-  const toolPrompt = buildToolPrompt(benchmark);
+  const toolPrompt = benchmark.prompt;
   const now = new Date();
   const runId = createRunId(now);
   const modelSlug = slugModelId(modelId);

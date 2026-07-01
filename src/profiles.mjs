@@ -18,10 +18,6 @@ export function profileJsonPath(id) {
   return join(profileDir(id), "profile.json");
 }
 
-export function commandJsonPath(id) {
-  return join(profileDir(id), "command.json");
-}
-
 export function notesPath(id) {
   return join(profileDir(id), "notes.md");
 }
@@ -202,11 +198,6 @@ function summarizeCapabilities(caps) {
 }
 
 // ── State files (for running servers) ──────────────────────────────────────
-
-export async function readCommandArgv(profile) {
-  const command = await readJson(commandJsonPath(profile.id), null);
-  return Array.isArray(command?.argv) ? command.argv.map(String) : (profile.commandArgv ?? []).map(String);
-}
 
 export async function readState(id) {
   return readJson(statePath(id), null);

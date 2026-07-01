@@ -3,7 +3,6 @@ import { promisify } from "node:util";
 import { closeSync, openSync } from "node:fs";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { quoteShell } from "./command.mjs";
 import { LOG_DIR } from "./config.mjs";
 import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
@@ -501,4 +500,9 @@ function timestampForFile() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function quoteShell(value) {
+  const text = String(value);
+  return /^[A-Za-z0-9_/@%+=:,.-]+$/u.test(text) ? text : `'${text.replace(/'/gu, ` '"'"'`)}'`;
 }
