@@ -159,6 +159,43 @@ export function statusText(kind, text) {
   return color(text);
 }
 
+// ── Escape-to-cancel helper ─────────────────────────────────────────────────
+
+function withEscape() {
+  const controller = new AbortController();
+  let escapeTimer = null;
+  const onData = (data) => {
+    // Standalone Escape = 0x1b byte alone (arrow keys send 0x1b + more bytes)
+    if (data.length === 1 && data[0] === 0x1b) {
+      escapeTimer = setTimeout(() => controller.abort(), 50);
+    } else if (escapeTimer) {
+      clearTimeout(escapeTimer);
+      escapeTimer = null;
+    }
+  };
+  process.stdin.on("data", onData);
+  const cleanup = () => {
+    process.stdin.removeListener("data", onData);
+    if (escapeTimer) clearTimeout(escapeTimer);
+  };
+  return { signal: controller.signal, cleanup };
+}
+
+async function runPrompt(fn, config) {
+  const { signal, cleanup } = withEscape();
+  try {
+    return await fn(config, { signal });
+  } catch (err) {
+    if (err.name === "AbortPromptError") {
+      console.log(pc.dim("\nCancelled."));
+      process.exit(0);
+    }
+    throw err;
+  } finally {
+    cleanup();
+  }
+}
+
 // ── Interactive prompt factory ──────────────────────────────────────────────
 
 export function startInteractive(title = "offgrid-ai") {
@@ -169,7 +206,7 @@ export function startInteractive(title = "offgrid-ai") {
 export function createPrompt() {
   return {
     async text(label, defaultValue) {
-      const value = await input({
+      const value = await runPrompt(input, {
         message: label,
         default: defaultValue === undefined ? undefined : String(defaultValue),
       });
@@ -177,7 +214,7 @@ export function createPrompt() {
     },
 
     async number(label, defaultValue, min, max) {
-      const value = await number({
+      const value = await runPrompt(number, {
         message: label,
         default: defaultValue,
         validate(input) {
@@ -190,7 +227,7 @@ export function createPrompt() {
     },
 
     async yesNo(label, defaultValue) {
-      return await confirm({ message: label, default: defaultValue });
+      return await runPrompt(confirm, { message: label, default: defaultValue });
     },
 
     async choice(label, choices, defaultValue) {
@@ -203,7 +240,7 @@ export function createPrompt() {
           disabled: c.disabled || undefined,
         };
       });
-      return await inquirerSelect({
+      return await runPrompt(inquirerSelect, {
         message: label,
         default: defaultValue,
         choices: mapped,
@@ -241,7 +278,7 @@ export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } =
       });
     }
   }
-  return await inquirerSelect({
+  return await runPrompt(inquirerSelect, {
     message: label,
     default: defaultKey,
     choices,
