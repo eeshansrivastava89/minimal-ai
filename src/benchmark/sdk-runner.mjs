@@ -48,6 +48,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   let turnToolCalls = 0;
   let responseBuffer = "";
   const verbose = Boolean(process.env.OFFGRID_BENCHMARK_VERBOSE);
+  const toolArgsByCallId = new Map();
 
   const agent = new Agent({
     initialState: {
@@ -63,6 +64,14 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   // ── Event handler: render + collect metrics ──────────────────────────────
 
   agent.subscribe((event) => {
+    try {
+      handleEvent(event);
+    } catch (err) {
+      console.error(C.error(`[renderer error] ${err.message}`));
+    }
+  });
+
+  function handleEvent(event) {
     switch (event.type) {
       case "turn_start": {
         runResult.agentTurns += 1;
@@ -104,12 +113,14 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       }
 
       case "tool_execution_start": {
+        toolArgsByCallId.set(event.toolCallId, event.args);
         console.log(C.tool(formatToolStart(event.toolName, event.args, runDirectory)));
         break;
       }
 
       case "tool_execution_end": {
-        const { toolName, result, isError, args } = event;
+        const { toolName, result, isError, toolCallId } = event;
+        const args = toolArgsByCallId.get(toolCallId) ?? {};
         const marker = isError ? C.error("✗") : C.success("✓");
         console.log(`${marker} ${toolSummary(toolName, result, isError, args, runDirectory)}`);
         runResult.toolResults += 1;
@@ -117,7 +128,9 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       }
 
       case "turn_end": {
-        const usage = event.message?.usage;
+        const msg = event.message;
+        const isFailure = msg?.role === "assistant" && (msg.stopReason === "error" || msg.stopReason === "aborted");
+        const usage = !isFailure ? msg?.usage : null;
         if (usage) {
           runResult.promptTokens += usage.input ?? 0;
           runResult.completionTokens += usage.output ?? 0;
@@ -149,7 +162,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
         break;
       }
     }
-  });
+  }
 
   // ── Wire abort signal ────────────────────────────────────────────────────
 
