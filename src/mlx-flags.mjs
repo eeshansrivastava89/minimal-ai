@@ -89,5 +89,12 @@ export function computeMlxVlmFlags(modelPath, options = {}) {
     args.push("--max-kv-size", String(ctxSize));
   }
 
+  // Default max output tokens — used when the client doesn't specify max_tokens
+  // in the request. Pi's OpenAI completions provider never sends max_tokens
+  // (it doesn't fall back to model.maxTokens like the Anthropic provider does).
+  // llama-server defaults high; mlx-vlm defaults to 2048 which is too low for
+  // coding tasks. Set a generous server-side default.
+  args.push("--max-tokens", "16384");
+
   return { args, port };
 }
