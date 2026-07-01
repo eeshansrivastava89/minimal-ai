@@ -233,12 +233,8 @@ export function createPrompt() {
     async choice(label, choices, defaultValue) {
       const mapped = choices.map((c) => {
         if (c instanceof Separator) return c;
-        return {
-          value: c.value,
-          name: c.label ?? c.value,
-          description: c.hint,
-          disabled: c.disabled || undefined,
-        };
+        const name = c.hint ? `${c.label ?? c.value} ${pc.dim(`(${c.hint})`)}` : (c.label ?? c.value);
+        return { value: c.value, name, disabled: c.disabled || undefined };
       });
       return await runPrompt(inquirerSelect, {
         message: label,
@@ -272,8 +268,7 @@ export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } =
       }
       choices.push({
         value: item.value,
-        name: item.label ?? item.value,
-        description: item.description,
+        name: item.description ? `${item.label ?? item.value} ${item.description}` : (item.label ?? item.value),
         disabled: item.disabled || undefined,
       });
     }
