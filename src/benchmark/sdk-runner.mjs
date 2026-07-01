@@ -50,6 +50,37 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   const verbose = Boolean(process.env.OFFGRID_BENCHMARK_VERBOSE);
   const toolArgsByCallId = new Map();
 
+  // ── Status line state ────────────────────────────────────────────────────
+  let statusBytes = 0;
+  let streamedText = false;
+  let execTimer = null;
+  let execStartedAt = null;
+
+  function clearStatusLine() {
+    if (process.stdout.isTTY) process.stdout.write("\r\x1b[K");
+  }
+
+  function printStatusLine(text) {
+    if (process.stdout.isTTY) process.stdout.write(`\r\x1b[K${text}`);
+  }
+
+  function stopExecTimer() {
+    if (execTimer) { clearInterval(execTimer); execTimer = null; }
+    clearStatusLine();
+  }
+
+  function startExecTimer(toolName) {
+    stopExecTimer();
+    execStartedAt = Date.now();
+    if (!process.stdout.isTTY) return;
+    const update = () => {
+      const elapsed = Math.floor((Date.now() - execStartedAt) / 1000);
+      printStatusLine(C.dim(`running ${toolName}… ${elapsed}s`));
+    };
+    update();
+    execTimer = setInterval(update, 1000);
+  }
+
   const agent = new Agent({
     initialState: {
       systemPrompt,
@@ -74,6 +105,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
   function handleEvent(event) {
     switch (event.type) {
       case "turn_start": {
+        stopExecTimer();
         runResult.agentTurns += 1;
         currentTurnStartMs = lastTurnEndMs ?? runStartMs;
         turnToolCalls = 0;
@@ -86,16 +118,31 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
         const evt = event.assistantMessageEvent;
         if (!evt) break;
         const sub = String(evt.type ?? "").replace(/_/gu, "");
-        if (sub === "thinkingdelta" && verbose) {
-          process.stdout.write(C.thinking(evt.delta || ""));
+        if (sub === "thinkingstart") {
+          statusBytes = 0;
+        } else if (sub === "thinkingdelta") {
+          statusBytes += Buffer.byteLength(evt.delta || "", "utf8");
+          const tokens = Math.max(1, Math.ceil(statusBytes / 4));
+          printStatusLine(C.dim(`thinking… ${formatBytes(statusBytes)} (~${formatTokens(tokens)} tokens)`));
+          if (verbose) process.stdout.write(C.thinking(evt.delta || ""));
+        } else if (sub === "textstart") {
+          clearStatusLine();
+          statusBytes = 0;
         } else if (sub === "textdelta") {
-          if (verbose) process.stdout.write(C.text(evt.delta || ""));
+          process.stdout.write(evt.delta || "");
           responseBuffer += evt.delta || "";
+          streamedText = true;
+        } else if (sub === "toolcallstart") {
+          clearStatusLine();
         }
         break;
       }
 
       case "message_end": {
+        if (streamedText) {
+          console.log("");
+          streamedText = false;
+        }
         if (event.message?.role === "assistant") {
           for (const item of event.message.content ?? []) {
             if (item.type === "toolCall") {
@@ -113,12 +160,15 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       }
 
       case "tool_execution_start": {
+        clearStatusLine();
         toolArgsByCallId.set(event.toolCallId, event.args);
         console.log(C.tool(formatToolStart(event.toolName, event.args, runDirectory)));
+        startExecTimer(event.toolName);
         break;
       }
 
       case "tool_execution_end": {
+        stopExecTimer();
         const { toolName, result, isError, toolCallId } = event;
         const args = toolArgsByCallId.get(toolCallId) ?? {};
         const marker = isError ? C.error("✗") : C.success("✓");
@@ -128,6 +178,8 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       }
 
       case "turn_end": {
+        stopExecTimer();
+        clearStatusLine();
         const msg = event.message;
         const isFailure = msg?.role === "assistant" && (msg.stopReason === "error" || msg.stopReason === "aborted");
         const usage = !isFailure ? msg?.usage : null;
