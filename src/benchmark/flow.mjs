@@ -10,7 +10,7 @@ import { pc, createPrompt } from "../ui.mjs";
 import { linkBenchmarkRepo } from "./repo.mjs";
 import { loadBenchmarks } from "./shared.mjs";
 import { prepareBenchmarkRun } from "./prepare.mjs";
-import { runBenchmarkInPi } from "./pi-runner.mjs";
+import { runBenchmarkInPi } from "./sdk-runner.mjs";
 import { queryServerMetrics } from "./metrics.mjs";
 import { finalizeBenchmarkRun, renderBenchmarkSummary } from "./finalize.mjs";
 

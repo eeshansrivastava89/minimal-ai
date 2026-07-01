@@ -46,9 +46,6 @@ export async function prepareBenchmarkRun({ repoPath, benchmark, kind, modelId, 
   const baseAssets = {
     metadata: "metadata.json",
     prompt: "prompt.md",
-    rawResponse: "response.raw.txt",
-    stream: "stream.ndjson",
-    stderr: "stderr.log",
   };
   const metadata = {
     schemaVersion: 1,

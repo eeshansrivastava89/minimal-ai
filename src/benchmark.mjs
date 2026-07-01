@@ -4,7 +4,7 @@
 export { slugModelId, createRunId, buildToolPrompt, loadBenchmarks, piModelString } from "./benchmark/shared.mjs";
 export { findBenchmarkRepo, linkBenchmarkRepo } from "./benchmark/repo.mjs";
 export { prepareBenchmarkRun } from "./benchmark/prepare.mjs";
-export { runBenchmarkInPi } from "./benchmark/pi-runner.mjs";
+export { runBenchmarkInPi } from "./benchmark/sdk-runner.mjs";
 export { queryServerMetrics } from "./benchmark/metrics.mjs";
 // unloadModelFromServer now lives in src/process.mjs (managed-server counterpart to stopProfile).
 export { unloadModelFromServer } from "./process.mjs";
