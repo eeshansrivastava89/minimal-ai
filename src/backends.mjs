@@ -99,21 +99,25 @@ async function scanOmlxModels() {
   // The oMLX API doesn't return model sizes or publishers — look them up from disk.
   const infoMap = await scanOmlxModelSizes();
 
-  // The oMLX API can return the same model twice — once loaded (with
-  // max_model_len) and once available (without). Deduplicate by ID,
-  // keeping the entry with context window info.
-  const byId = new Map();
+  // The oMLX API can return the same model multiple times with different
+  // ID formats (e.g. "Qwen3.6-35B-A3B-OptiQ-4bit" and
+  // "mlx-community--Qwen3.6-35B-A3B-OptiQ-4bit"). Deduplicate by the
+  // normalized full name (publisher/model), keeping the first entry
+  // (which has the most complete metadata from the loaded model).
+  const seen = new Set();
+  const deduped = [];
   for (const model of body.data.filter(isChatOmlxModel)) {
-    const existing = byId.get(model.id);
-    if (existing && existing.max_model_len) continue; // keep loaded entry
-    byId.set(model.id, model);
+    const info = lookupOmlxModelInfo(model.id, infoMap);
+    const hasPublisher = model.id.includes("/") || model.id.includes("--");
+    const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
+    if (seen.has(fullName)) continue;
+    seen.add(fullName);
+    deduped.push(model);
   }
 
-  return Array.from(byId.values())
+  return deduped
     .map((model) => {
       const info = lookupOmlxModelInfo(model.id, infoMap);
-      // If the API ID doesn't already include a publisher (no / or --),
-      // prepend the publisher found on disk.
       const hasPublisher = model.id.includes("/") || model.id.includes("--");
       const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
       const parsed = parseModelName(fullName, "omlx");
