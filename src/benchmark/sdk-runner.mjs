@@ -6,7 +6,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { createCodingTools } from "@earendil-works/pi-coding-agent";
 import { pc, formatBytes } from "../ui.mjs";
-import { piApiModelId } from "../harness-pi.mjs";
+import { piApiModelId, modelReasoning, modelCompat } from "../harness-pi.mjs";
 
 const C = {
   thinking: pc.magenta,
@@ -257,16 +257,8 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
 // ── Model construction ──────────────────────────────────────────────────────
 
 function buildModel(profile) {
-  const text = [profile.id, profile.label, profile.modelAlias, profile.modelPath, profile.omlxModel]
-    .filter(Boolean).join(" ").toLowerCase();
-  const reasoning = profile.reasoning !== undefined
-    ? Boolean(profile.reasoning)
-    : /qwen|gemma-4|gemma 4/i.test(text);
-  const hasCompat = profile.compat
-    ? profile.compat
-    : /qwen|gemma-4|gemma 4/i.test(text)
-      ? { thinkingFormat: "qwen-chat-template" }
-      : null;
+  const reasoning = modelReasoning(profile) ?? false;
+  const compat = modelCompat(profile);
 
   return {
     id: piApiModelId(profile),
@@ -283,7 +275,7 @@ function buildModel(profile) {
       supportsDeveloperRole: false,
       supportsReasoningEffort: false,
       maxTokensField: "max_tokens",
-      ...(hasCompat ?? {}),
+      ...(compat ?? {}),
     },
   };
 }

@@ -26,8 +26,6 @@ describe("createProfileFromMlxModel", () => {
     assert.equal(profile.modelAlias, "org/test-mlx", "modelAlias is the friendly label, not the path");
     assert.equal(profile.modelPath, modelDir);
     assert.equal(profile.modelSizeBytes, 1234);
-    assert.ok(profile.commandArgv.includes("--model"), "commandArgv must include --model");
-    assert.ok(profile.commandArgv.includes(modelDir), "commandArgv must pass the model path to --model");
     // The id Pi sends must be the model path (what mlx-vlm registers), not the label.
     assert.equal(piApiModelId(profile), modelDir, "piApiModelId must be the model path for mlx-vlm");
   });

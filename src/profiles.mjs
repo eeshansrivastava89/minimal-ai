@@ -65,9 +65,8 @@ export async function saveProfile(profile, options = {}) {
   };
   await writeJson(profileJsonPath(id), saved);
 
-  // Note: command.json is no longer written — the server command is computed
-  // fresh from the profile config at launch time (see computeServerCommand in
-  // process.mjs).  commandArgv is kept in the profile for backwards compat.
+  // Note: commandArgv is no longer stored — computeServerCommand computes
+  // the full command fresh from profile config at launch time.
 
   if (!existsSync(notesPath(id))) {
     await writeFile(notesPath(id), `# ${saved.label}\n\nNotes for this model profile.\n`, "utf8");
@@ -130,7 +129,7 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
   // If a drafter is provided, this model supports MTP regardless of filename
   const hasMtp = caps.mtp || Boolean(drafterPath);
   const backend = backendId ?? (hasMtp ? "llama-cpp-mtp" : "llama-cpp");
-  const { flags, argv } = computeFlags(
+  const { flags } = computeFlags(
     { ...caps, mtp: hasMtp },
     model.path,
     model.mmprojPath,
@@ -150,21 +149,15 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
     capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp }),
     preset: null, // no presets — auto-detected
     flags,
-    commandArgv: argv,
   });
 }
 
 // ── Auto-create profile from a discovered MLX model ────────────────────────
 
 export async function createProfileFromMlxModel(model) {
-  const { computeMlxVlmFlags, DEFAULT_PORT } = await import("./mlx-flags.mjs");
+  const { DEFAULT_PORT } = await import("./mlx-flags.mjs");
   const caps = await detectMlxCapabilities(model.filePath);
   const ctxSize = defaultMlxContextLength(caps.contextLength, detectHardware().totalRamBytes / (1024 ** 3));
-  const { args } = computeMlxVlmFlags(model.filePath, {
-    port: DEFAULT_PORT,
-    ctxSize,
-    thinkingEnabled: caps.thinking,
-  });
   return normalizeProfile({
     id: slugFromLabel(model.label),
     label: model.label,
@@ -178,7 +171,6 @@ export async function createProfileFromMlxModel(model) {
     modelSizeBytes: model.sizeBytes,
     capabilities: caps,
     flags: { host: "127.0.0.1", port: DEFAULT_PORT, ctxSize },
-    commandArgv: args,
   });
 }
 

@@ -62,8 +62,6 @@ describe("GGUF model pipeline", { skip: !runIntegration }, () => {
       assert.ok(profile.label, `missing profile.label for ${model.label}`);
       assert.ok(profile.backend, `missing profile.backend for ${model.label}`);
       assert.ok(profile.modelPath, `missing profile.modelPath for ${model.label}`);
-      assert.ok(profile.commandArgv, `missing profile.commandArgv for ${model.label}`);
-      assert.ok(profile.commandArgv.length > 0, `empty commandArgv for ${model.label}`);
       assert.ok(profile.baseUrl, `missing profile.baseUrl for ${model.label}`);
     }
   });

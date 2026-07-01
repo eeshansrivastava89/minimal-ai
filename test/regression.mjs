@@ -102,7 +102,6 @@ describe("regressions", () => {
       drafterPath: "/tmp/drafter.gguf",
       capabilities: { mtp: true },
       flags: { host: "127.0.0.1", port: 8081, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
-      commandArgv: ["--model", "/tmp/model.gguf", "--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--spec-draft-model", "/tmp/drafter.gguf"],
     };
 
     const updated = removeMtpDefaults(profile);
@@ -111,23 +110,18 @@ describe("regressions", () => {
     assert.equal(updated.drafterPath, null);
     assert.equal(updated.capabilities.mtp, false);
     assert.equal(updated.flags.port, 8080);
-    assert.equal(updated.commandArgv.includes("--spec-type"), false);
-    assert.equal(updated.commandArgv.includes("--spec-draft-n-max"), false);
-    assert.equal(updated.commandArgv.includes("--spec-draft-model"), false);
   });
 
-  it("updates first-run profile flags and command argv together", () => {
+  it("updates first-run profile flags together", () => {
     const profile = {
       flags: { host: "127.0.0.1", port: 8080, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
-      commandArgv: ["--model", "/tmp/model.gguf", "--ctx-size", "32768", "--cache-type-k", "bf16", "--cache-type-v", "bf16"],
     };
 
     const updated = applyRuntimeFlagOverrides(profile, { ctxSize: 65536, cacheTypeK: "q8_0", cacheTypeV: "q8_0" });
     assert.equal(updated.flags.ctxSize, 65536);
     assert.equal(updated.baseUrl, "http://127.0.0.1:8080/v1");
-    assert.equal(optionValue(updated.commandArgv, "--ctx-size"), "65536");
-    assert.equal(optionValue(updated.commandArgv, "--cache-type-k"), "q8_0");
-    assert.equal(optionValue(updated.commandArgv, "--cache-type-v"), "q8_0");
+    assert.equal(updated.flags.cacheTypeK, "q8_0");
+    assert.equal(updated.flags.cacheTypeV, "q8_0");
   });
 
   it("treats corrupt .gguf files as unknown metadata instead of crashing", async () => {
@@ -318,11 +312,6 @@ describe("regressions", () => {
     );
   });
 });
-
-function optionValue(argv, flag) {
-  const index = argv.indexOf(flag);
-  return index === -1 ? undefined : argv[index + 1];
-}
 
 function managedProfile(backend, modelId, baseUrl) {
   return {

@@ -4,7 +4,6 @@ import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
 import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
-import { removeOption } from "../profile-setup.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
 import { pc, formatBytes, renderRows, renderSection, parseOptions } from "../ui.mjs";
@@ -150,7 +149,6 @@ function textOnlyProfile(profile) {
     mmprojPath: null,
     disabledMmprojPath: profile.disabledMmprojPath ?? profile.mmprojPath,
     capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: "unsupported-mmproj" },
-    commandArgv: removeOption(profile.commandArgv ?? [], "--mmproj"),
   });
 }
 

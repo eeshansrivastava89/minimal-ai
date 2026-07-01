@@ -152,16 +152,12 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
 
 export function applyMtpDefaults(profile) {
   const flags = { ...profile.flags, port: LLAMA_CPP_MTP_PORT };
-  const edits = {
-    values: { "--spec-type": "draft-mtp", "--spec-draft-n-max": 4 },
-  };
-  if (profile.drafterPath) edits.values["--spec-draft-model"] = profile.drafterPath;
   return applyProfileFlags({
     ...profile,
     backend: "llama-cpp-mtp",
     providerId: "llama-cpp-mtp",
     capabilities: { ...(profile.capabilities ?? {}), mtp: true },
-  }, flags, edits);
+  }, flags);
 }
 
 export function removeMtpDefaults(profile) {
@@ -172,9 +168,7 @@ export function removeMtpDefaults(profile) {
     providerId: "llama-cpp",
     drafterPath: null,
     capabilities: { ...(profile.capabilities ?? {}), mtp: false },
-  }, flags, {
-    remove: ["--spec-type", "--spec-draft-n-max", "--spec-draft-model"],
-  });
+  }, flags);
 }
 
 function applyVisionDefaults(profile) {
@@ -202,10 +196,10 @@ function applyThinkingDefaults(profile) {
 function removeThinkingDefaults(profile) {
   const flags = { ...profile.flags, ...GENERAL_DEFAULTS };
   delete flags.chatTemplateKwargs;
-  return applyProfileFlags(profile, flags, { remove: ["--chat-template-kwargs"] });
+  return applyProfileFlags(profile, flags);
 }
 
-function applyProfileFlags(profile, flags, edits = {}) {
+function applyProfileFlags(profile, flags) {
   const next = {
     ...profile,
     flags,
@@ -215,43 +209,9 @@ function applyProfileFlags(profile, flags, edits = {}) {
       pi: { ...(profile.harnesses?.pi ?? {}), enabled: true, model: `${profile.providerId ?? profile.backend}/${profile.modelAlias ?? profile.id}` },
     },
   };
-  next.commandArgv = updateArgv(profile.commandArgv ?? [], {
-    "--host": flags.host,
-    "--port": flags.port,
-    "--ctx-size": flags.ctxSize,
-    "--cache-type-k": flags.cacheTypeK,
-    "--cache-type-v": flags.cacheTypeV,
-    "--top-k": flags.topK,
-    "--presence-penalty": flags.presencePenalty,
-    "--repeat-penalty": flags.repeatPenalty,
-    ...(flags.chatTemplateKwargs ? { "--chat-template-kwargs": JSON.stringify(flags.chatTemplateKwargs) } : {}),
-  }, edits);
   return next;
 }
 
-function updateArgv(argv, values, edits = {}) {
-  let next = [...argv];
-  for (const flag of edits.remove ?? []) next = removeOption(next, flag);
-  for (const [flag, value] of Object.entries({ ...values, ...(edits.values ?? {}) })) {
-    if (value === undefined) continue;
-    const index = next.indexOf(flag);
-    if (index === -1) next.push(flag, String(value));
-    else next[index + 1] = String(value);
-  }
-  return next;
-}
-
-export function removeOption(argv, flag) {
-  const next = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === flag) {
-      if (argv[i + 1] && !argv[i + 1].startsWith("--")) i += 1;
-      continue;
-    }
-    next.push(argv[i]);
-  }
-  return next;
-}
 
 function renderMemoryEstimate(profile) {
   try {
@@ -331,7 +291,7 @@ export async function configureMlxProfile(prompt, profile) {
     ["Backend", configured.backend],
     ["Endpoint", configured.baseUrl],
     ["Context", String(configured.flags.ctxSize) + " tokens"],
-    ["Thinking", configured.capabilities.thinking && configured.commandArgv.includes("--enable-thinking") ? "on" : "off"],
+    ["Thinking", configured.capabilities?.thinking ? "on" : "off"],
     ["Vision", configured.capabilities.vision ? "yes" : "no"],
   ])));
 
@@ -341,33 +301,19 @@ export async function configureMlxProfile(prompt, profile) {
 
 async function applyMlxThinkingToggle(profile, enabled) {
   if (!profile.capabilities.thinking) return profile;
-  const { computeMlxVlmFlags } = await import("./mlx-flags.mjs");
-  const { args } = computeMlxVlmFlags(profile.modelPath, {
-    port: profile.flags.port,
-    ctxSize: profile.flags.ctxSize,
-    thinkingEnabled: enabled,
-  });
   return {
     ...profile,
-    commandArgv: args,
     capabilities: { ...profile.capabilities, thinkingEnabled: enabled },
   };
 }
 
 function applyMlxContextSize(profile, ctxSize) {
   const flags = { ...profile.flags, ctxSize };
-  const next = {
+  return {
     ...profile,
     flags,
     baseUrl: baseUrlForFlags(flags),
   };
-  const idx = next.commandArgv.indexOf("--max-kv-size");
-  if (idx !== -1 && next.commandArgv[idx + 1] != null) {
-    next.commandArgv[idx + 1] = String(ctxSize);
-  } else if (ctxSize && ctxSize > 0) {
-    next.commandArgv.push("--max-kv-size", String(ctxSize));
-  }
-  return next;
 }
 
 function renderMlxMemoryEstimate(profile) {
