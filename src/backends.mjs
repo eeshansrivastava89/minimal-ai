@@ -99,8 +99,17 @@ async function scanOmlxModels() {
   // The oMLX API doesn't return model sizes or publishers — look them up from disk.
   const infoMap = await scanOmlxModelSizes();
 
-  return body.data
-    .filter((model) => isChatOmlxModel(model))
+  // The oMLX API can return the same model twice — once loaded (with
+  // max_model_len) and once available (without). Deduplicate by ID,
+  // keeping the entry with context window info.
+  const byId = new Map();
+  for (const model of body.data.filter(isChatOmlxModel)) {
+    const existing = byId.get(model.id);
+    if (existing && existing.max_model_len) continue; // keep loaded entry
+    byId.set(model.id, model);
+  }
+
+  return Array.from(byId.values())
     .map((model) => {
       const info = lookupOmlxModelInfo(model.id, infoMap);
       // If the API ID doesn't already include a publisher (no / or --),
