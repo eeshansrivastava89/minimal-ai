@@ -177,7 +177,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
     const full = `${item.label} · ${backendLabel}`;
     return {
       value: itemKey(item),
-      label: [pc.yellow(pc.bold(optionPad(full, null, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+      label: [pc.yellow("○"), pc.yellow(pc.bold(optionPad(full, null, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
     };
   }
 

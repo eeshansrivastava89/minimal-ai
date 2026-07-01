@@ -144,7 +144,10 @@ export function createPrompt() {
 
 export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
   const choices = [];
-  for (const group of groups) {
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    // Add blank line before each group (except the first)
+    if (i > 0) choices.push(new Separator(""));
     if (group.separator) {
       choices.push(new Separator(group.separator));
     }

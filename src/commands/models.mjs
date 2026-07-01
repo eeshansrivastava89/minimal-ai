@@ -85,9 +85,7 @@ export async function modelCommandCenter(initialCatalog) {
   for (const { backendId, sourceId, items } of byBackend.values()) {
     const backendLabel = backendFor(backendId)?.label ?? backendId;
     const sourceLabel = formatSourceLabel(sourceId);
-    const sep = sourceLabel && sourceLabel !== backendLabel
-      ? `${backendLabel} · ${sourceLabel} (${items.length})`
-      : `${backendLabel} (${items.length})`;
+    const sep = `Inference: ${backendLabel} via Download Source: ${sourceLabel} (${items.length})`;
     const groupItems = items.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
