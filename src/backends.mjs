@@ -102,16 +102,18 @@ async function scanOmlxModels() {
   // The oMLX API can return the same model multiple times with different
   // ID formats (e.g. "Qwen3.6-35B-A3B-OptiQ-4bit" and
   // "mlx-community--Qwen3.6-35B-A3B-OptiQ-4bit"). Deduplicate by the
-  // normalized full name (publisher/model), keeping the first entry
-  // (which has the most complete metadata from the loaded model).
+  // normalized full name (publisher/model with / separator), keeping
+  // the first entry (which has the most complete metadata).
   const seen = new Set();
   const deduped = [];
   for (const model of body.data.filter(isChatOmlxModel)) {
     const info = lookupOmlxModelInfo(model.id, infoMap);
     const hasPublisher = model.id.includes("/") || model.id.includes("--");
     const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
-    if (seen.has(fullName)) continue;
-    seen.add(fullName);
+    // Normalize: convert -- separator to / for dedup comparison
+    const normalized = fullName.replace(/--/g, "/");
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
     deduped.push(model);
   }
 

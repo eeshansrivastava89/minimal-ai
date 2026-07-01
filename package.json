@@ -1,6 +1,6 @@
 {
   "name": "offgrid-ai",
-  "version": "0.15.4",
+  "version": "0.15.5",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, benchmark",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
