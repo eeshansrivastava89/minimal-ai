@@ -82,10 +82,17 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   const groups = [];
+  const backendColors = {
+    "mlx-vlm": pc.yellow,
+    "llama-cpp": pc.cyan,
+    "llama-cpp-mtp": pc.blue,
+    omlx: pc.magenta,
+  };
   for (const { backendId, sourceId, items } of byBackend.values()) {
     const backendLabel = backendFor(backendId)?.label ?? backendId;
     const sourceLabel = formatSourceLabel(sourceId);
-    const sep = `Inference: ${backendLabel} via Download Source: ${sourceLabel} (${items.length})`;
+    const color = backendColors[backendId] ?? pc.dim;
+    const sep = `Inference: ${pc.bold(color(backendLabel))} ${pc.dim("|")} Source: ${sourceLabel} (${items.length})`;
     const groupItems = items.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
@@ -98,7 +105,7 @@ export async function modelCommandCenter(initialCatalog) {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `  Needs setup (${setupItems.length})`, items: groupItems });
+    groups.push({ separator: `  ${pc.bold(pc.yellow(`Needs setup (${setupItems.length})`))}`, items: groupItems });
   }
 
   const prompt = createPrompt();
