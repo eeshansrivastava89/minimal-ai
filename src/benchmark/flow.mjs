@@ -3,14 +3,13 @@
 import { join } from "node:path";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
-import { hasPi, hasPiModel, syncPiConfig } from "../harness-pi.mjs";
 import { serverReady, startServer, waitForReady, stopProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { pc, createPrompt } from "../ui.mjs";
 import { linkBenchmarkRepo } from "./repo.mjs";
 import { loadBenchmarks } from "./shared.mjs";
 import { prepareBenchmarkRun } from "./prepare.mjs";
-import { runBenchmarkInPi } from "./pi-runner.mjs";
+import { runBenchmarkInPi } from "./sdk-runner.mjs";
 import { queryServerMetrics } from "./metrics.mjs";
 import { finalizeBenchmarkRun, renderBenchmarkSummary } from "./finalize.mjs";
 
@@ -63,7 +62,7 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
   }
   let serverStarted = false;
   let benchmarkStarted = false;
-  let metadata = null;
+  let metadata;
 
   const onSigint = () => {
     controller.abort();
@@ -71,17 +70,8 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
   process.on("SIGINT", onSigint);
 
   try {
-    if (!(await hasPi())) {
-      console.log(pc.yellow("\nPi is not installed. Run prepared for manual execution."));
-      return metadata;
-    }
-
     const serverState = await ensureServerForBenchmark(profile);
     serverStarted = serverState.started;
-
-    if (!(await hasPiModel(profile))) {
-      await syncPiConfig(profile);
-    }
 
     benchmarkStarted = true;
     const runResult = await runBenchmarkInPi(profile, runDirectory, { signal: controller.signal });
@@ -168,7 +158,7 @@ export async function benchmarkForProfile(profile) {
     const modelSource = benchmarkModelSource(profile);
     const backendLabel = backendFor(profile.backend).label;
 
-    const canRun = (await hasPi()) && modelSource !== "cloud";
+    const canRun = modelSource !== "cloud";
     const action = await chooseBenchmarkAction(prompt, canRun);
 
     const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps: action === "prepare" });
@@ -238,7 +228,7 @@ export async function benchmarkFlow() {
       modelSource = "cloud";
     }
 
-    const canRun = (await hasPi()) && modelSource !== "cloud" && profile != null;
+    const canRun = modelSource !== "cloud" && profile != null;
     const action = await chooseBenchmarkAction(prompt, canRun);
 
     const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark: selectedBenchmark, kind, modelId, modelSource, backendLabel, profile, showNextSteps: action === "prepare" });
