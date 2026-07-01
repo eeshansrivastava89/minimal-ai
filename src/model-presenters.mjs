@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+import { pc, formatBytes, renderSectionRows } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 import { DATA_DIR } from "./config.mjs";
@@ -239,12 +239,12 @@ export async function printProfileDetails(profile) {
   const isManaged = backend.type === "managed-server";
   const running = await isProfileRunning(profile);
   const fileMissing = !isManaged && isProfileFileMissing(profile);
-  console.log("\n" + renderSection("Model overview", renderRows([
+  console.log("\n" + renderSectionRows("Model overview", [
     ["Name", pc.bold(profile.label)],
     ["Status", fileMissing ? pc.red("File missing") : running ? pc.green("Running now") : pc.blue("Ready")],
     ["Details", profileDetailParts(profile, { fileMissing }).join(pc.dim(" · "))],
     ["Server", fileMissing ? pc.red(profile.baseUrl) : profile.baseUrl],
-  ])));
+  ]));
 
   const detailRows = [
     ["Setup ID", profile.id],
@@ -262,7 +262,7 @@ export async function printProfileDetails(profile) {
       detailRows.push(["Drafter", existsSync(profile.drafterPath) ? profile.drafterPath : pc.red(`${profile.drafterPath} (not found)`)]);
     }
   }
-  console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
+  console.log("\n" + renderSectionRows("Model details", detailRows, { columns: Math.min(process.stdout.columns ?? 110, 140) }));
 
   if (fileMissing) console.log("\n" + pc.red("⚠ This model's file is no longer on disk. Remove this setup or move the file back."));
 
@@ -271,10 +271,10 @@ export async function printProfileDetails(profile) {
     if (command) {
       const script = buildStartScript(profile, command);
       const scriptPath = join(profileDir(profile.id), "start.sh");
-      console.log("\n" + renderSection("Server command", renderRows([
+      console.log("\n" + renderSectionRows("Server command", [
         ["Run manually", pc.cyan(`bash ${scriptPath}`)],
         ["Command", pc.dim(script)],
-      ]), { columns: 120 }));
+      ], { columns: Math.min(process.stdout.columns ?? 120, 140) }));
     }
   }
 }
@@ -282,11 +282,11 @@ export async function printProfileDetails(profile) {
 export function printGgufModelDetails(model, drafter) {
   const { caps, parts } = ggufDetailParts(model, drafter);
   parts.push(formatBytes(model.model.sizeBytes));
-  console.log("\n" + renderSection("Downloaded model", renderRows([
+  console.log("\n" + renderSectionRows("Downloaded model", [
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],
     ["Details", parts.join(pc.dim(" · "))],
-  ])));
+  ]));
   const detailRows = [
     ["Local file", model.path],
     ["Vision file", model.mmprojPath ?? "none"],
@@ -294,7 +294,7 @@ export function printGgufModelDetails(model, drafter) {
     ["Quant", model.quant ?? "unknown"],
   ];
   if (drafter) detailRows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);
-  console.log("\n" + renderSection("Model details", renderRows(detailRows), { columns: 110 }));
+  console.log("\n" + renderSectionRows("Model details", detailRows, { columns: Math.min(process.stdout.columns ?? 110, 140) }));
 }
 
 export async function printMlxModelDetails(model) {
@@ -305,27 +305,27 @@ export async function printMlxModelDetails(model) {
   if (caps.thinking) parts.push("thinking");
   if (caps.vision) parts.push("vision");
   const summary = parts.length > 0 ? parts.join(pc.dim(" · ")) : "standard MLX";
-  console.log("\n" + renderSection("Downloaded model", renderRows([
+  console.log("\n" + renderSectionRows("Downloaded model", [
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],
     ["Details", summary],
-  ])));
-  console.log("\n" + renderSection("Model details", renderRows([
+  ]));
+  console.log("\n" + renderSectionRows("Model details", [
     ["Model dir", model.path],
     ["Backend", "mlx-vlm"],
     ["Source", formatSourceLabel(model.source)],
     ["Detected", summary],
     ["Size", formatBytes(model.sizeBytes)],
     ["Context", caps.contextLength ? `${caps.contextLength.toLocaleString()} trained` : "unknown"],
-  ]), { columns: 110 }));
+  ], { columns: Math.min(process.stdout.columns ?? 110, 140) }));
 }
 
 export function printManagedModelDetails(model, backend) {
-  console.log("\n" + renderSection(`${backend.label} model`, renderRows([
+  console.log("\n" + renderSectionRows(`${backend.label} model`, [
     ["Name", pc.bold(model.label)],
     ["Status", pc.green(`Local model via ${backend.label}`)],
     ["Model ID", pc.cyan(model.id)],
     ["Quant", model.quant ?? "unknown"],
     ["Family", model.family ?? "unknown"],
-  ])));
+  ]));
 }

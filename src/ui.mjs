@@ -16,13 +16,47 @@ export function formatBytes(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 }
 
-export function renderRows(rows) {
+export function renderRows(rows, { wrapWidth } = {}) {
   if (rows.length === 0) return "";
   const width = Math.max(...rows.map(([key]) => stripVTControlCharacters(String(key)).length));
   return rows.map(([key, value]) => {
     const visible = stripVTControlCharacters(String(key)).length;
-    return `${key}${" ".repeat(Math.max(1, width - visible + 2))}${value}`;
+    const indent = " ".repeat(Math.max(1, width - visible + 2));
+    const valStr = String(value ?? "");
+    // If wrapWidth is set and the full line exceeds it, wrap the value
+    if (wrapWidth) {
+      const prefix = `${key}${indent}`;
+      const prefixLen = stripVTControlCharacters(prefix).length;
+      const availWidth = wrapWidth - prefixLen;
+      if (stripVTControlCharacters(valStr).length > availWidth) {
+        const lines = wrapText(valStr, availWidth);
+        return [prefix + lines[0], ...lines.slice(1).map((l) => " ".repeat(prefixLen) + l)].join("\n");
+      }
+    }
+    return `${key}${indent}${valStr}`;
   }).join("\n");
+}
+
+function wrapText(text, width) {
+  const words = String(text).split(/(\s+)/u);
+  const lines = [];
+  let current = "";
+  for (let word of words) {
+    // Hard-break long unbreakable strings (file paths, etc.)
+    while (stripVTControlCharacters(word).length > width) {
+      if (current.trim()) { lines.push(current.trimEnd()); current = ""; }
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    if (stripVTControlCharacters(current + word).length > width && current.trim()) {
+      lines.push(current.trimEnd());
+      current = word.trimStart();
+    } else {
+      current += word;
+    }
+  }
+  if (current.trim()) lines.push(current.trimEnd());
+  return lines.length > 0 ? lines : [text];
 }
 
 // ── Box renderer ────────────────────────────────────────────────────────────
@@ -39,23 +73,64 @@ function padVisible(text, width) {
 export function renderCard(title, body, options = {}) {
   const borderColor = options.formatBorder ?? pc.magenta;
   const maxCols = options.columns ?? process.stdout.columns ?? 88;
-  const lines = String(body ?? "").split("\n");
+  const rawLines = String(body ?? "").split("\n");
   const titleStr = title ? ` ${title} ` : "";
+
+  // Calculate content width: max of title, all lines, capped by maxCols
   const innerWidth = Math.max(
     visibleLen(titleStr),
-    ...lines.map(visibleLen),
+    ...rawLines.map(visibleLen),
   );
-  const width = Math.min(innerWidth + 2, maxCols - 2);
+  const contentWidth = Math.min(innerWidth, maxCols - 4); // 4 = borders + padding
+  const width = contentWidth + 2; // inner content area
+
+  // Wrap lines that exceed contentWidth
+  const lines = [];
+  for (const line of rawLines) {
+    if (visibleLen(line) > contentWidth) {
+      lines.push(...wrapVisible(line, contentWidth));
+    } else {
+      lines.push(line);
+    }
+  }
 
   const topTitle = title ? `╭${pc.reset(titleStr)}` : "╭";
   const topFill = "─".repeat(Math.max(0, width + 2 - visibleLen(titleStr)));
   const top = `${topTitle}${topFill}╮`;
 
-  const middle = lines.map((line) => `│ ${padVisible(line, width)} │`);
+  const middle = lines.map((line) => `│ ${padVisible(line, contentWidth)} │`);
 
   const bottom = `╰${"─".repeat(width + 2)}╯`;
 
   return [top, ...middle, bottom].map((l) => borderColor(l)).join("\n");
+}
+
+function wrapVisible(text, width) {
+  const words = String(text).split(/(\s+)/u);
+  const lines = [];
+  let current = "";
+  for (let word of words) {
+    // If a single word exceeds the width, hard-break it
+    while (visibleLen(word) > width) {
+      if (current.trim()) { lines.push(current.trimEnd()); current = ""; }
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    if (visibleLen(current + word) > width && current.trim()) {
+      lines.push(current.trimEnd());
+      current = word.trimStart();
+    } else {
+      current += word;
+    }
+  }
+  if (current.trim()) lines.push(current.trimEnd());
+  return lines.length > 0 ? lines : [text];
+}
+
+export function renderSectionRows(title, rows, options = {}) {
+  const maxCols = options.columns ?? process.stdout.columns ?? 88;
+  const contentWidth = maxCols - 4;
+  return renderSection(title, renderRows(rows, { wrapWidth: contentWidth }), { ...options, columns: maxCols });
 }
 
 export function renderSection(title, body, options = {}) {
@@ -144,6 +219,8 @@ export function createPrompt() {
 
 export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
   const choices = [];
+  // Separator below the prompt message
+  choices.push(new Separator(pc.dim("  ────────────────────────────────────────────────────────────")));
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     // Add blank line before each group (except the first)
