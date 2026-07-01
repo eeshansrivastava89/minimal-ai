@@ -62,7 +62,7 @@ function optionBackendTag(backendId) {
   return optionPad(label, colors[backendId] ?? pc.dim, OPTION_BACKEND_WIDTH);
 }
 
-function formatSourceLabel(sourceId) {
+export function formatSourceLabel(sourceId) {
   if (!sourceId) return "unknown";
   const map = {
     huggingface: "HuggingFace",
@@ -95,7 +95,7 @@ function discoverySourceForProfile(profile) {
   return inferSourceFromPath(profile.modelPath);
 }
 
-function discoverySourceForItem(item) {
+export function discoverySourceForItem(item) {
   if (item.type === "profile") return discoverySourceForProfile(item.profile);
   return item.model?.source ?? null;
 }
@@ -132,9 +132,10 @@ function optionLabel({ status, backend, source, name, quant, ctx, size, nameWidt
   return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), quant, ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
-export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
+export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact = false }) {
   const sourceId = discoverySourceForItem(item) ?? "unknown";
   const backendId = inferBackendId(item);
+
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
@@ -144,6 +145,16 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
     const hint = drafterMissing ? "MTP drafter missing — reconfigure"
       : modelMissing ? `${backend.label} model no longer available`
       : undefined;
+
+    if (compact) {
+      const indicator = status === "running" ? pc.green("●") : status === "missing" ? pc.red("✗") : pc.dim("○");
+      return {
+        value: itemKey(item),
+        label: [indicator, pc.bold(optionPad(item.label, null, nameWidth)), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+        ...(hint ? { description: pc.red(hint) } : {}),
+      };
+    }
+
     return {
       value: itemKey(item),
       label: optionLabel({
@@ -159,6 +170,17 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       ...(hint ? { hint: pc.red(hint) } : {}),
     };
   }
+
+  // Setup item (new model or managed without profile)
+  if (compact) {
+    const backendLabel = backendFor(backendId)?.label ?? backendId;
+    const full = `${item.label} · ${backendLabel}`;
+    return {
+      value: itemKey(item),
+      label: [pc.yellow(pc.bold(optionPad(full, null, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+    };
+  }
+
   return {
     value: itemKey(item),
     label: optionLabel({
@@ -174,7 +196,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
   };
 }
 
-function inferBackendId(item) {
+export function inferBackendId(item) {
   if (item.type === "profile") return item.profile.backend;
   if (item.type === "managed") return item.backendId;
   // new model: derive from format

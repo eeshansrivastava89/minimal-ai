@@ -6,7 +6,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, modelNameWidth, printGgufModelDetails, printMlxModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printMlxModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 const { stripVTControlCharacters } = await import("node:util");
@@ -65,25 +65,42 @@ export async function modelCommandCenter(initialCatalog) {
     return "setup";
   };
 
-  const groupOrder = ["running", "ready", "setup", "missing"];
-  const groupLabels = {
-    running: "Running now",
-    ready: "Ready",
-    setup: "Needs setup",
-    missing: "Missing files",
-  };
-  const grouped = new Map(groupOrder.map((key) => [key, []]));
-  for (const item of allItems) grouped.get(statusFor(item)).push(item);
+  // Group ready/running/missing profiles by backend, setup items separate
+  const byBackend = new Map();
+  const setupItems = [];
+  for (const item of allItems) {
+    const s = statusFor(item);
+    if (s === "setup") {
+      setupItems.push(item);
+    } else {
+      const backendId = inferBackendId(item);
+      const sourceId = discoverySourceForItem(item) ?? "unknown";
+      const key = `${backendId}:${sourceId}`;
+      if (!byBackend.has(key)) byBackend.set(key, { backendId, sourceId, items: [] });
+      byBackend.get(key).items.push(item);
+    }
+  }
 
   const groups = [];
-  for (const group of groupOrder) {
-    const bucket = grouped.get(group);
-    if (!bucket || bucket.length === 0) continue;
-    const items = bucket.map((item) => {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
-      return { value: opt.value, label: opt.label, description: opt.hint };
+  for (const { backendId, sourceId, items } of byBackend.values()) {
+    const backendLabel = backendFor(backendId)?.label ?? backendId;
+    const sourceLabel = formatSourceLabel(sourceId);
+    const sep = sourceLabel && sourceLabel !== backendLabel
+      ? `${backendLabel} · ${sourceLabel} (${items.length})`
+      : `${backendLabel} (${items.length})`;
+    const groupItems = items.map((item) => {
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
+      return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `  ${groupLabels[group]} (${bucket.length})`, items });
+    groups.push({ separator: `  ${sep}`, items: groupItems });
+  }
+
+  if (setupItems.length > 0) {
+    const groupItems = setupItems.map((item) => {
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
+      return { value: opt.value, label: opt.label, description: opt.description };
+    });
+    groups.push({ separator: `  Needs setup (${setupItems.length})`, items: groupItems });
   }
 
   const prompt = createPrompt();
