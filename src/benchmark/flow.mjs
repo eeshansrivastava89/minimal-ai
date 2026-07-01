@@ -128,6 +128,28 @@ export async function runPreparedBenchmark(profile, runDirectory, options = {}) 
   return metadata;
 }
 
+// ── Shared benchmark selection ────────────────────────────────────────────
+
+async function selectBenchmark(prompt, repoPath) {
+  const kind = await prompt.choice("Benchmark category", [
+    { value: "visual", label: "Visual Benchmark", hint: "HTML/CSS/JS animation benchmarks" },
+    { value: "data-science", label: "Data Science", hint: "Analysis and charting benchmarks" },
+  ], "visual");
+
+  const benchDir = join(repoPath, "benchmarks");
+  const benchmarks = (await loadBenchmarks(benchDir)).filter((b) => b.kind === kind);
+  if (benchmarks.length === 0) {
+    console.log(pc.yellow(`No ${kind} benchmarks found in ${benchDir}`));
+    return null;
+  }
+  const benchmarkId = await prompt.choice("Prompt", benchmarks.map((b) => ({
+    value: b.id, label: b.title, hint: b.description || b.id,
+  })), benchmarks[0].id);
+  const benchmark = benchmarks.find((b) => b.id === benchmarkId);
+  if (!benchmark) return null;
+  return { kind, benchmark };
+}
+
 // ── Benchmark from a selected profile (from model picker) ────────────────
 
 export async function benchmarkForProfile(profile) {
@@ -137,22 +159,9 @@ export async function benchmarkForProfile(profile) {
     const repoPath = await linkBenchmarkRepo(prompt);
     if (!repoPath) return;
 
-    const kind = await prompt.choice("Benchmark category", [
-      { value: "visual", label: "Visual Benchmark", hint: "HTML/CSS/JS animation benchmarks" },
-      { value: "data-science", label: "Data Science", hint: "Analysis and charting benchmarks" },
-    ], "visual");
-
-    const benchDir = join(repoPath, "benchmarks");
-    const benchmarks = (await loadBenchmarks(benchDir)).filter((b) => b.kind === kind);
-    if (benchmarks.length === 0) {
-      console.log(pc.yellow(`No ${kind} benchmarks found in ${benchDir}`));
-      return;
-    }
-    const benchmarkId = await prompt.choice("Prompt", benchmarks.map((b) => ({
-      value: b.id, label: b.title, hint: b.description || b.id,
-    })), benchmarks[0].id);
-    const selectedBenchmark = benchmarks.find((b) => b.id === benchmarkId);
-    if (!selectedBenchmark) return;
+    const selected = await selectBenchmark(prompt, repoPath);
+    if (!selected) return;
+    const { kind, benchmark: selectedBenchmark } = selected;
 
     const modelId = profile.modelAlias;
     const modelSource = benchmarkModelSource(profile);
@@ -177,28 +186,14 @@ export async function benchmarkForProfile(profile) {
 
 export async function benchmarkFlow() {
   await ensureDirs();
-
   const prompt = createPrompt();
   try {
     const repoPath = await linkBenchmarkRepo(prompt);
     if (!repoPath) return;
 
-    const kind = await prompt.choice("Benchmark category", [
-      { value: "visual", label: "Visual Benchmark", hint: "HTML/CSS/JS animation benchmarks" },
-      { value: "data-science", label: "Data Science", hint: "Analysis and charting benchmarks" },
-    ], "visual");
-
-    const benchDir = join(repoPath, "benchmarks");
-    const benchmarks = (await loadBenchmarks(benchDir)).filter((b) => b.kind === kind);
-    if (benchmarks.length === 0) {
-      console.log(pc.yellow(`No ${kind} benchmarks found in ${benchDir}`));
-      return;
-    }
-    const benchmarkId = await prompt.choice("Prompt", benchmarks.map((b) => ({
-      value: b.id, label: b.title, hint: b.description || b.id,
-    })), benchmarks[0].id);
-    const selectedBenchmark = benchmarks.find((b) => b.id === benchmarkId);
-    if (!selectedBenchmark) return;
+    const selected = await selectBenchmark(prompt, repoPath);
+    if (!selected) return;
+    const { kind, benchmark: selectedBenchmark } = selected;
 
     const profiles = await loadProfiles();
     const source = await prompt.choice("Model source", [

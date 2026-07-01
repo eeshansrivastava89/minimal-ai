@@ -159,21 +159,6 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       ...(hint ? { hint: pc.red(hint) } : {}),
     };
   }
-  if (item.type === "new") {
-    return {
-      value: itemKey(item),
-      label: optionLabel({
-        status: optionStatusTag("setup"),
-        backend: optionBackendTag(backendId),
-        source: optionSourceTag(sourceId),
-        name: item.label,
-        nameWidth,
-        quant: optionQuantLabel(item),
-        ctx: optionCtxLabel(item),
-        size: optionSizeLabel(item),
-      }),
-    };
-  }
   return {
     value: itemKey(item),
     label: optionLabel({

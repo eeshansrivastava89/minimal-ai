@@ -9,6 +9,7 @@ import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter } from "./scan.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { estimateMemoryMb } from "./mlx-flags.mjs";
+import { capabilitySummary } from "./model-summary.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -70,7 +71,7 @@ export async function configureLocalProfile(prompt, profile) {
   console.log("");
   console.log(renderSection("Model setup", renderRows([
     ["Model", pc.bold(profile.label)],
-    ["Detected", detectionSummary(caps)],
+    ["Detected", capabilitySummary(caps)],
     ["Context", `${profile.flags.ctxSize.toLocaleString()} tokens`],
     ["KV cache", `${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV}`],
     ["Sampling", samplingSummary(profile.flags)],
@@ -240,7 +241,7 @@ function updateArgv(argv, values, edits = {}) {
   return next;
 }
 
-function removeOption(argv, flag) {
+export function removeOption(argv, flag) {
   const next = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === flag) {
@@ -281,18 +282,6 @@ async function runtimeSupportsGemma4Unified() {
   } catch {
     return false;
   }
-}
-
-function detectionSummary(caps) {
-  const parts = [];
-  if (caps.architecture) parts.push(caps.architecture);
-  if (caps.quant) parts.push(caps.quant);
-  if (caps.mtp) parts.push("MTP");
-  if (caps.qat) parts.push("QAT");
-
-  if (caps.thinking) parts.push("thinking");
-  if (caps.vision) parts.push("vision");
-  return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
 }
 
 function samplingSummary(flags) {

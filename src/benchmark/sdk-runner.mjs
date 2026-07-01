@@ -5,7 +5,7 @@ import { join, relative, basename } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { createCodingTools } from "@earendil-works/pi-coding-agent";
-import { pc } from "../ui.mjs";
+import { pc, formatBytes } from "../ui.mjs";
 import { piApiModelId } from "../harness-pi.mjs";
 
 const C = {
@@ -362,15 +362,6 @@ function relPath(path, cwd) {
 function truncateOneLine(value, max = 80) {
   const text = String(value ?? "").replace(/\s+/gu, " ").trim();
   return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return "unknown";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
-  return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 }
 
 function formatTokens(n) {

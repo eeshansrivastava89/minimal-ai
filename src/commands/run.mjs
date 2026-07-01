@@ -4,6 +4,7 @@ import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
 import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
+import { removeOption } from "../profile-setup.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
 import { pc, formatBytes, renderRows, renderSection, parseOptions } from "../ui.mjs";
@@ -149,18 +150,7 @@ function textOnlyProfile(profile) {
     mmprojPath: null,
     disabledMmprojPath: profile.disabledMmprojPath ?? profile.mmprojPath,
     capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: "unsupported-mmproj" },
-    commandArgv: removeCommandOption(profile.commandArgv ?? [], "--mmproj"),
+    commandArgv: removeOption(profile.commandArgv ?? [], "--mmproj"),
   });
 }
 
-function removeCommandOption(argv, flag) {
-  const next = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === flag) {
-      if (argv[i + 1] && !argv[i + 1].startsWith("--")) i += 1;
-      continue;
-    }
-    next.push(argv[i]);
-  }
-  return next;
-}
