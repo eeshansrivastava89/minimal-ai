@@ -89,7 +89,7 @@ export async function runBenchmarkInPi(profile, runDirectory, { signal } = {}) {
       tools,
     },
     streamFn: async (mdl, ctx, opts) =>
-      streamSimple(mdl, ctx, { ...opts, apiKey: "none" }),
+      streamSimple(mdl, ctx, { ...opts, apiKey: "none", timeoutMs: 2147483647 }),
   });
 
   // ── Event handler: render + collect metrics ──────────────────────────────
