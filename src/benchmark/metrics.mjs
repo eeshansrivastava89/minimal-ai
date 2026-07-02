@@ -19,12 +19,13 @@ export async function queryServerMetrics(profile) {
   throw new Error(`Unsupported backend for benchmark speed metrics: ${backend.id}`);
 }
 
-async function queryLlamaCppMetrics(profile) {
+async function speedQueryFetch(profile, { stream = false, streamOptions = null, errorLabel = "speed query" } = {}) {
   const body = {
     model: profile.modelAlias,
     messages: [{ role: "user", content: BENCH_SPEED_PROMPT }],
-    stream: false,
+    stream,
     max_tokens: SPEED_QUERY_MAX_TOKENS,
+    ...(streamOptions ? { stream_options: streamOptions } : {}),
   };
 
   const response = await fetch(profile.baseUrl.replace(/\/$/u, "") + "/chat/completions", {
@@ -35,8 +36,14 @@ async function queryLlamaCppMetrics(profile) {
   });
 
   if (!response.ok) {
-    throw new Error(`llama.cpp speed query failed: ${response.status} ${response.statusText}`);
+    throw new Error(`${errorLabel} failed: ${response.status} ${response.statusText}`);
   }
+
+  return response;
+}
+
+async function queryLlamaCppMetrics(profile) {
+  const response = await speedQueryFetch(profile, { errorLabel: "llama.cpp speed query" });
 
   const data = await response.json();
   const timings = data.timings;
@@ -60,24 +67,11 @@ async function queryLlamaCppMetrics(profile) {
 }
 
 async function queryOmlxMetrics(profile) {
-  const body = {
-    model: profile.modelAlias,
-    messages: [{ role: "user", content: BENCH_SPEED_PROMPT }],
+  const response = await speedQueryFetch(profile, {
     stream: true,
-    stream_options: { include_usage: true },
-    max_tokens: SPEED_QUERY_MAX_TOKENS,
-  };
-
-  const response = await fetch(profile.baseUrl.replace(/\/$/u, "") + "/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(SPEED_QUERY_TIMEOUT_MS),
+    streamOptions: { include_usage: true },
+    errorLabel: "oMLX speed query",
   });
-
-  if (!response.ok) {
-    throw new Error(`oMLX speed query failed: ${response.status} ${response.statusText}`);
-  }
 
   const text = await response.text();
   let usage = null;

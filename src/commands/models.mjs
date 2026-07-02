@@ -195,7 +195,7 @@ async function performAction(prompt, action, item) {
     return await benchmarkFlow();
   }
   if (action === "run") return await runItem(item);
-  if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item, action);
+  if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
   if (action === "remove" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
 }
 
@@ -207,11 +207,11 @@ function printProfileSaved(id) {
   console.log(pc.dim(`  Profile: ${profileJsonPath(id)}`));
 }
 
-async function setupItem(prompt, item, action) {
+async function setupItem(prompt, item) {
   if (item.type === "profile") {
     const configured = await configureLocalProfile(prompt, await readProfile(item.profile.id));
     if (!configured) return;
-    await saveProfile(configured, { writeCommand: true });
+    await saveProfile(configured);
     await syncPiConfig(configured);
     printProfileSaved(configured.id);
     return;
@@ -226,7 +226,7 @@ async function setupItem(prompt, item, action) {
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
   const configured = await configureLocalProfile(prompt, profile);
   if (!configured) return;
-  await saveProfile(configured, { writeCommand: action === "reconfigure" });
+  await saveProfile(configured);
   await syncPiConfig(configured);
   printProfileSaved(configured.id);
 }

@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
-import { ensureDirs, findLlamaServer, hasHomebrew, HF_HUB_DIR } from "../config.mjs";
+import { ensureDirs, findLlamaServer, ensureHomebrewFor, HF_HUB_DIR } from "../config.mjs";
 import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
+import { ensureOmlxRuntime } from "../omlx-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { BACKEND_INSTALL_CHOICES, BACKEND_INSTALLERS } from "../backend-installers.mjs";
 import { recommendedModel, selectFormat, allFittingModels } from "../recommendations.mjs";
@@ -24,6 +24,7 @@ export async function onboardFlow() {
     console.log(pc.dim("Let's make sure you have everything you need to run local models.\n"));
 
     const llamaBinary = await ensureLlamaRuntime(prompt);
+    await ensureOmlxRuntime(prompt, run);
     if (!(await ensurePi(prompt, run))) return;
 
     const [{ models: ggufModels }, managedModels] = await Promise.all([
@@ -167,35 +168,6 @@ async function offerBackendInstall(prompt, run) {
     return;
   }
   await installBackend(prompt, run, choice, model);
-}
-
-async function ensureHomebrewFor(prompt, run, label) {
-  if (await hasHomebrew()) return true;
-  const install = await prompt.yesNo(`Homebrew is needed to install ${label}. Install Homebrew now?`, true);
-  if (!install) {
-    console.log(pc.dim(`Install ${label} manually, or install Homebrew from https://brew.sh and run offgrid-ai again.`));
-    return false;
-  }
-  console.log(pc.cyan("Installing Homebrew..."));
-  try {
-    await run("/bin/bash", ["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""], "Homebrew");
-    for (const path of ["/opt/homebrew/bin", "/usr/local/bin"]) {
-      if (existsSync(path)) {
-        process.env.PATH = `${path}:${process.env.PATH}`;
-        break;
-      }
-    }
-  } catch {
-    console.log(pc.red("✗ Homebrew installation failed."));
-    console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
-    return false;
-  }
-  if (!(await hasHomebrew())) {
-    console.log(pc.red("Homebrew was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
-    return false;
-  }
-  console.log(pc.green("✓ Homebrew found"));
-  return true;
 }
 
 async function installBackend(prompt, run, backendId, model) {

@@ -126,9 +126,15 @@ async function startManagedServer(profile, backend) {
     try {
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
-      await promisify(execFile)("omlx", ["start"], { timeout: 10000 });
-    } catch {
-      throw new Error(`${backend.label} is not running and could not be auto-started. Install oMLX or run \`omlx start\` manually.`);
+      const { findOmlx } = await import("./omlx-runtime.mjs");
+      const omlxBin = await findOmlx();
+      if (!omlxBin) {
+        throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or install manually: brew tap jundot/omlx && brew install omlx`);
+      }
+      await promisify(execFile)(omlxBin, ["start"], { timeout: 10000 });
+    } catch (err) {
+      if (err.message.includes("not installed")) throw err;
+      throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });
     }
   }
 

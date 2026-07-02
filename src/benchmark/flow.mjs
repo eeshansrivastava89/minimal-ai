@@ -150,16 +150,22 @@ async function selectBenchmark(prompt, repoPath) {
   return { kind, benchmark };
 }
 
+// ── Shared benchmark setup ───────────────────────────────────────────────
+
+async function benchmarkSetup() {
+  await ensureDirs();
+  const prompt = createPrompt();
+  const repoPath = await linkBenchmarkRepo(prompt);
+  if (!repoPath) return { prompt, repoPath: null, selected: null };
+  const selected = await selectBenchmark(prompt, repoPath);
+  return { prompt, repoPath, selected };
+}
+
 // ── Benchmark from a selected profile (from model picker) ────────────────
 
 export async function benchmarkForProfile(profile) {
-  await ensureDirs();
-  const prompt = createPrompt();
+  const { prompt, repoPath, selected } = await benchmarkSetup();
   try {
-    const repoPath = await linkBenchmarkRepo(prompt);
-    if (!repoPath) return;
-
-    const selected = await selectBenchmark(prompt, repoPath);
     if (!selected) return;
     const { kind, benchmark: selectedBenchmark } = selected;
 
@@ -185,13 +191,8 @@ export async function benchmarkForProfile(profile) {
 // ── Standalone benchmark flow (offgrid-ai benchmark) ──────────────────────
 
 export async function benchmarkFlow() {
-  await ensureDirs();
-  const prompt = createPrompt();
+  const { prompt, repoPath, selected } = await benchmarkSetup();
   try {
-    const repoPath = await linkBenchmarkRepo(prompt);
-    if (!repoPath) return;
-
-    const selected = await selectBenchmark(prompt, repoPath);
     if (!selected) return;
     const { kind, benchmark: selectedBenchmark } = selected;
 

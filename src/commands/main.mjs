@@ -4,7 +4,8 @@ import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
-import { hasLmStudioInstalled, hasOmlxInstalled, scanManagedModels } from "../managed.mjs";
+import { offerManagedOmlxUpdate, hasOmlx } from "../omlx-runtime.mjs";
+import { hasLmStudioInstalled, scanManagedModels } from "../managed.mjs";
 import { recommendedModel } from "../recommendations.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
@@ -18,6 +19,7 @@ export async function mainFlow() {
     const runtimePrompt = createPrompt();
     try {
       await offerManagedLlamaRuntimeUpdate(runtimePrompt);
+      await offerManagedOmlxUpdate(runtimePrompt);
     } finally {
       runtimePrompt.close();
     }
@@ -63,7 +65,7 @@ async function printNoModelsHelp(llamaBinary) {
   console.log(pc.yellow("No models found."));
   console.log(pc.dim("You need to download a model to use offgrid-ai.\n"));
 
-  const omlxInstalled = await hasOmlxInstalled();
+  const omlxInstalled = await hasOmlx();
   const lmStudioInstalled = hasLmStudioInstalled();
   const hasBackends = llamaBinary || omlxInstalled || lmStudioInstalled;
   if (!hasBackends) {

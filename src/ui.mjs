@@ -106,25 +106,7 @@ export function renderCard(title, body, options = {}) {
 }
 
 function wrapVisible(text, width) {
-  const words = String(text).split(/(\s+)/u);
-  const lines = [];
-  let current = "";
-  for (let word of words) {
-    // If a single word exceeds the width, hard-break it
-    while (visibleLen(word) > width) {
-      if (current.trim()) { lines.push(current.trimEnd()); current = ""; }
-      lines.push(word.slice(0, width));
-      word = word.slice(width);
-    }
-    if (visibleLen(current + word) > width && current.trim()) {
-      lines.push(current.trimEnd());
-      current = word.trimStart();
-    } else {
-      current += word;
-    }
-  }
-  if (current.trim()) lines.push(current.trimEnd());
-  return lines.length > 0 ? lines : [text];
+  return wrapText(text, width);
 }
 
 export function renderSectionRows(title, rows, options = {}) {

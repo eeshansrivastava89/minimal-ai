@@ -77,7 +77,7 @@ async function ensureLocalServer(profile, backend, options) {
       console.log(pc.yellow("Vision projector is not supported by this llama.cpp build. Retrying text-only."));
       console.log(pc.dim("Update llama.cpp later to re-enable vision for this model."));
       const textOnly = textOnlyProfile(profile);
-      await saveProfile(textOnly, { writeCommand: true });
+      await saveProfile(textOnly);
       return { handled: true, result: await runProfile(textOnly, { ...options, textOnlyRetry: true }) };
     }
     throw err;

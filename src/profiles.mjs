@@ -49,7 +49,7 @@ export async function readProfile(id) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-export async function saveProfile(profile, options = {}) {
+export async function saveProfile(profile) {
   const id = sanitizeProfileId(profile.id);
   const dir = profileDir(id);
   await mkdir(dir, { recursive: true });

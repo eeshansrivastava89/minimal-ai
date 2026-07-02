@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
+import { pc } from "./ui.mjs";
 
 // ── Base directories ──────────────────────────────────────────────────────
 
@@ -124,4 +125,49 @@ export async function hasHomebrew() {
   } catch {
     return false;
   }
+}
+
+/**
+ * Install Homebrew non-interactively and add it to PATH for this process.
+ * Returns true if Homebrew is available after installation.
+ */
+export async function installHomebrew(run) {
+  await run("/bin/bash", ["-c", 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'], "Homebrew");
+  for (const path of ["/opt/homebrew/bin", "/usr/local/bin"]) {
+    if (existsSync(path)) {
+      process.env.PATH = `${path}:${process.env.PATH}`;
+      break;
+    }
+  }
+  return await hasHomebrew();
+}
+
+/**
+ * Ensure Homebrew is installed, prompting the user if necessary.
+ * @param {object} prompt - UI prompt interface (needs yesNo)
+ * @param {function} run - runCommand function for verbose command execution
+ * @param {string} label - what we're installing (for the prompt message)
+ * @returns {Promise<boolean>} true if Homebrew is available
+ */
+export async function ensureHomebrewFor(prompt, run, label) {
+  if (await hasHomebrew()) return true;
+  const install = await prompt.yesNo(`Homebrew is needed to install ${label}. Install Homebrew now?`, true);
+  if (!install) {
+    console.log(pc.dim(`Install ${label} manually, or install Homebrew from https://brew.sh and run offgrid-ai again.`));
+    return false;
+  }
+  console.log(pc.cyan("Installing Homebrew..."));
+  try {
+    const success = await installHomebrew(run);
+    if (!success) {
+      console.log(pc.red("Homebrew was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
+      return false;
+    }
+  } catch {
+    console.log(pc.red("✗ Homebrew installation failed."));
+    console.log(pc.dim("Install it manually from https://brew.sh, then run offgrid-ai again."));
+    return false;
+  }
+  console.log(pc.green("✓ Homebrew found"));
+  return true;
 }

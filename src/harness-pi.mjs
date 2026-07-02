@@ -8,10 +8,8 @@ import pc from "picocolors";
 // ── Pi model id ─────────────────────────────────────────────────────────────
 
 /**
- * The model id Pi must send in requests. mlx-vlm registers the loaded model
- * with the full --model path as its API id (verified via /v1/models); sending
- * the repo-id label instead makes mlx-vlm unload the local model and re-fetch
- * the repo from HuggingFace. Other backends use the friendly modelAlias.
+ * The model id Pi must send in requests. All backends use the friendly
+ * modelAlias as the API model id.
  */
 export function piApiModelId(profile) {
   return profile.modelAlias;

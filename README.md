@@ -2,7 +2,7 @@
 
 # offgrid-ai
 
-**Helper CLI for running local AI models on Mac with llama-server, mlx-vlm, and oMLX.**
+**Helper CLI for running local AI models on Mac with llama-server and oMLX.**
 
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
@@ -12,7 +12,7 @@
 
 ## What is offgrid-ai?
 
-offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server, mlx-vlm, or oMLX have a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity, while still providing a powerful and flexible way to run local models.
+offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server or oMLX have a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity, while still providing a powerful and flexible way to run local models.
 
 This is the recommended workflow:
 
@@ -23,8 +23,8 @@ This is the recommended workflow:
 ## Core Features
 - Auto-detects available models from LM Studio, oMLX, and HuggingFace
 - Auto-detects MTP (multi-token prediction) or QAT (quantization aware training) models, and applies the correct flags for llama.cpp
-- Auto-applies the optimal flags for the model type (llama.cpp server flags, mlx-vlm APC/thinking/context flags)
-- Start / stop local servers automatically for chat sessions (llama-server and mlx-vlm)
+- Auto-applies the optimal flags for the model type (llama.cpp server flags, oMLX auto-start and cache management)
+- Start / stop local servers automatically for chat sessions (llama-server and oMLX)
 
 ## Quick start
 
