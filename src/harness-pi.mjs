@@ -14,7 +14,7 @@ import pc from "picocolors";
  * the repo from HuggingFace. Other backends use the friendly modelAlias.
  */
 export function piApiModelId(profile) {
-  return profile.backend === "mlx-vlm" ? profile.modelPath : profile.modelAlias;
+  return profile.modelAlias;
 }
 
 // ── Sync Pi config ─────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ export function modelReasoning(profile) {
 }
 
 export function modelFamily(profile) {
-  return [profile.id, profile.label, profile.modelAlias, profile.modelPath, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
+  return [profile.id, profile.label, profile.modelAlias, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
 }
 
 function piApiKey() {

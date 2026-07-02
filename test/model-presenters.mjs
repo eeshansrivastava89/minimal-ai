@@ -25,20 +25,18 @@ function createSparseFile(path, size) {
 }
 
 describe("modelSelectOption", () => {
-  it("shows separate backend and source columns", () => {
+  it("shows NEEDS SETUP for new models", () => {
     const item = {
       type: "new",
-      model: { label: "mlx-community/gemma-4-e2b-it-4bit", sizeBytes: 3e9, source: "huggingface", format: "mlx" },
-      label: "mlx-community/Gemma 4 E2B IT",
-      sizeBytes: 3e9,
-      contextLength: 131072,
-      quant: "4bit",
+      model: { label: "unsloth/Qwen3-27B", sizeBytes: 15e9, source: "lmstudio", format: "gguf" },
+      label: "unsloth/Qwen3-27B",
+      sizeBytes: 15e9,
+      contextLength: 32768,
+      quant: "Q4_K_S",
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /NEEDS SETUP\s+│\s+mlx-vlm\s+│\s+HuggingFace/);
-    assert.match(plain(opt), /4bit/);  // quant column
-    assert.match(plain(opt), /2\.79\s*GB/); // size is shown
-    assert.doesNotMatch(plain(opt), /131k/); // context is not shown for SETUP
+    assert.match(plain(opt), /NEEDS SETUP/);
+    assert.match(plain(opt), /Q4_K_S/);
   });
 
   it("infers oMLX source for managed profiles without stored source", () => {

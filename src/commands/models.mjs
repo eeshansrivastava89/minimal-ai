@@ -6,7 +6,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { configureLocalProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printMlxModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 const { stripVTControlCharacters } = await import("node:util");
@@ -83,7 +83,6 @@ export async function modelCommandCenter(initialCatalog) {
 
   const groups = [];
   const backendColors = {
-    "mlx-vlm": pc.yellow,
     "llama-cpp": pc.cyan,
     "llama-cpp-mtp": pc.blue,
     omlx: pc.magenta,
@@ -185,7 +184,6 @@ async function performAction(prompt, action, item) {
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
-    if (item.model?.format === "mlx") return await printMlxModelDetails(item.model);
     return printGgufModelDetails(item.model, item.drafter);
   }
   if (action === "benchmark") {
@@ -223,18 +221,6 @@ async function setupItem(prompt, item, action) {
     await saveProfile(profile);
     await syncPiConfig(profile);
     printProfileSaved(profile.id);
-    return;
-  }
-  // MLX models: build a mlx-vlm profile and run interactive config.
-  if (item.model.format === "mlx") {
-    const { createProfileFromMlxModel } = await import("../profiles.mjs");
-    const { configureMlxProfile } = await import("../profile-setup.mjs");
-    const profile = await createProfileFromMlxModel(item.model);
-    const configured = await configureMlxProfile(prompt, profile);
-    if (!configured) return;
-    await saveProfile(configured, { writeCommand: true });
-    await syncPiConfig(configured);
-    printProfileSaved(configured.id);
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);

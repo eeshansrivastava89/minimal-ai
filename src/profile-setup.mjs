@@ -8,7 +8,6 @@ import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter } from "./scan.mjs";
 import { scanGgufModels } from "./scan.mjs";
-import { estimateMemoryMb } from "./mlx-flags.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -248,92 +247,4 @@ function samplingSummary(flags) {
   return `temp ${flags.temperature}, top-p ${flags.topP}, top-k ${flags.topK}`;
 }
 
-// ── MLX profile configuration ─────────────────────────────────────────────
 
-/**
- * Interactive configuration for an mlx-vlm profile.
- */
-export async function configureMlxProfile(prompt, profile) {
-  let configured = profile;
-
-  console.log("");
-  console.log(renderSection("Model setup", renderRows([
-    ["Model", pc.bold(profile.label)],
-    ["Detected", mlxDetectionSummary(configured.capabilities)],
-    ["Context", String(configured.flags.ctxSize) + " tokens"],
-  ])));
-  console.log(pc.dim("Larger context windows use more memory. You can edit the profile later if needed.\n"));
-
-  if (configured.capabilities.vision) {
-    console.log(renderSection("Vision detected", renderRows([
-      ["Capability", "image / multimodal input"],
-      ["Note", "mlx-vlm loads vision from the model directory automatically."],
-    ])));
-  }
-
-  if (configured.capabilities.thinking) {
-    console.log("");
-    console.log(renderSection("Thinking mode", renderRows([
-      ["Flag", "--enable-thinking"],
-      ["Default", "on for Qwen 3 / Gemma 4 / DeepSeek-R class models"],
-    ])));
-    const useThinking = await prompt.yesNo("Enable thinking mode?", true);
-    configured = await applyMlxThinkingToggle(configured, useThinking);
-  }
-
-  const ctxSize = await prompt.number("Context window tokens", configured.flags.ctxSize, 1024, 1048576);
-  configured = applyMlxContextSize(configured, ctxSize);
-
-  console.log("\n" + renderMlxMemoryEstimate(configured));
-
-  console.log("");
-  console.log(renderSection("Defaults", renderRows([
-    ["Backend", configured.backend],
-    ["Endpoint", configured.baseUrl],
-    ["Context", String(configured.flags.ctxSize) + " tokens"],
-    ["Thinking", configured.capabilities?.thinking ? "on" : "off"],
-    ["Vision", configured.capabilities.vision ? "yes" : "no"],
-  ])));
-
-  if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
-  return configured;
-}
-
-async function applyMlxThinkingToggle(profile, enabled) {
-  if (!profile.capabilities.thinking) return profile;
-  return {
-    ...profile,
-    capabilities: { ...profile.capabilities, thinkingEnabled: enabled },
-  };
-}
-
-function applyMlxContextSize(profile, ctxSize) {
-  const flags = { ...profile.flags, ctxSize };
-  return {
-    ...profile,
-    flags,
-    baseUrl: baseUrlForFlags(flags),
-  };
-}
-
-function renderMlxMemoryEstimate(profile) {
-  const modelBytes = profile.modelSizeBytes || 0;
-  if (!modelBytes) {
-    return renderSection("Memory estimate", pc.dim("Model size unknown — save the profile to estimate."));
-  }
-  const totalMb = estimateMemoryMb(modelBytes);
-  const overheadBytes = Math.max(0, totalMb * 1024 * 1024 - modelBytes);
-  return renderSection("Memory estimate", renderRows([
-    ["Estimated total", pc.bold(`~${formatBytes(totalMb * 1024 * 1024)}`)],
-    ["Model", formatBytes(modelBytes)],
-    ["Overhead", `~${formatBytes(overheadBytes)} (KV cache, APC, runtime)`],
-  ]));
-}
-
-function mlxDetectionSummary(caps) {
-  const parts = [];
-  if (caps.architecture) parts.push(caps.architecture);
-  if (caps.thinking) parts.push("thinking");
-  if (caps.vision) parts.push("vision");
-  return parts.length > 0 ? parts.join(" · ") : "standard MLX";
-}

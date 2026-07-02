@@ -1,28 +1,23 @@
 import { scanGgufModels, matchDrafter } from "./scan.mjs";
 import { loadProfiles, normalizeProfile, sanitizeProfileId } from "./profiles.mjs";
 import { scanManagedModels } from "./managed.mjs";
-import { scanMlxModels } from "./mlx-discovery.mjs";
 import { isProfileFileMissing } from "./model-summary.mjs";
 import { backendFor } from "./backends.mjs";
 
 export async function loadModelCatalog() {
-  const [profiles, { models: ggufModels, drafters }, managedModels, mlxModels] = await Promise.all([
+  const [profiles, { models: ggufModels, drafters }, managedModels] = await Promise.all([
     loadProfiles(),
     scanGgufModels(),
     scanManagedModels(),
-    scanMlxModels(),
   ]);
-  return normalizeCatalog({ profiles, ggufModels, drafters, managedModels, mlxModels });
+  return normalizeCatalog({ profiles, ggufModels, drafters, managedModels });
 }
 
 export function normalizeCatalog(catalog) {
   if (catalog.newModels && catalog.managedItems) return catalog;
-  const { profiles, ggufModels, drafters, managedModels, mlxModels = [] } = catalog;
+  const { profiles, ggufModels, drafters, managedModels } = catalog;
   const profiledPaths = new Set(profiles.map((profile) => profile.modelPath).filter(Boolean));
-  const newModels = [
-    ...ggufModels.filter((model) => !profiledPaths.has(model.path)),
-    ...mlxModels.filter((model) => !profiledPaths.has(model.path)),
-  ];
+  const newModels = ggufModels.filter((model) => !profiledPaths.has(model.path));
   const managedItems = [];
   for (const { backendId, models, status } of managedModels) {
     if (status === "unavailable") continue;
@@ -35,8 +30,9 @@ export function normalizeCatalog(catalog) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
     }
   }
-  return { profiles, ggufModels, drafters, managedModels, mlxModels, newModels, managedItems };
+  return { profiles, ggufModels, drafters, managedModels, newModels, managedItems };
 }
+
 
 export function itemKey(item) {
   if (item.type === "profile") return `profile:${item.profile.id}`;
@@ -57,12 +53,11 @@ function compareRecency(a, b) {
 }
 
 export function buildCatalogItems(normalized) {
-  const { profiles, newModels, managedItems, drafters, ggufModels = [], mlxModels = [], managedModels = [] } = normalized;
+  const { profiles, newModels, managedItems, drafters, ggufModels = [], managedModels = [] } = normalized;
 
   // Lookup maps for enriching profile items with scan data (size + context).
   const scanByPath = new Map();
   for (const m of ggufModels) scanByPath.set(m.path, m);
-  for (const m of mlxModels) scanByPath.set(m.filePath ?? m.path, m);
 
   const managedByKey = new Map();
   for (const { backendId, models } of managedModels) {
@@ -77,7 +72,7 @@ export function buildCatalogItems(normalized) {
     if (profile.modelPath) {
       const scanModel = scanByPath.get(profile.modelPath);
       if (scanModel) {
-        item.label = scanModel.label;  // re-parsed label (publisher/model-name)
+        item.label = scanModel.label;
         if (scanModel.quant) quant = scanModel.quant;
       }
     }

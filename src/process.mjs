@@ -21,32 +21,17 @@ export async function computeServerCommand(profile) {
   const binary = await backendBinaryFor(profile.backend);
   if (!binary) throw new Error("Server binary not found. Run offgrid-ai interactively to install.");
 
-  let argv, extraEnv;
+  // llama-cpp / llama-cpp-mtp
+  const { computeFlags } = await import("./autodetect.mjs");
+  const result = computeFlags(
+    profile.capabilities ?? {},
+    profile.modelPath,
+    profile.mmprojPath,
+    profile.drafterPath,
+    profile.flags ?? {},
+  );
 
-  if (profile.backend === "mlx-vlm") {
-    const { computeMlxVlmFlags } = await import("./mlx-flags.mjs");
-    const result = computeMlxVlmFlags(profile.modelPath, {
-      port: profile.flags?.port,
-      ctxSize: profile.flags?.ctxSize,
-      thinkingEnabled: profile.capabilities?.thinking ?? true,
-    });
-    argv = result.args;
-    extraEnv = { APC_ENABLED: "1", MLX_VLM_MAX_TOKENS: "16384" };
-  } else {
-    // llama-cpp / llama-cpp-mtp
-    const { computeFlags } = await import("./autodetect.mjs");
-    const result = computeFlags(
-      profile.capabilities ?? {},
-      profile.modelPath,
-      profile.mmprojPath,
-      profile.drafterPath,
-      profile.flags ?? {},
-    );
-    argv = result.argv;
-    extraEnv = {};
-  }
-
-  return { binary, argv, extraEnv, backend };
+  return { binary, argv: result.argv, extraEnv: {}, backend };
 }
 
 /** Build a runnable start.sh script for the profile. */
@@ -132,19 +117,34 @@ async function startLocalServer(profile) {
 }
 
 async function startManagedServer(profile, backend) {
-  const ready = await serverReady(profile.baseUrl);
-  if (ready) {
-    // Already running
-  } else {
-    for (let i = 0; i < 60; i++) {
-      await sleep(2000);
-      if (await serverReady(profile.baseUrl)) break;
-      process.stdout.write(".");
-    }
-    if (!(await serverReady(profile.baseUrl))) {
-      throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
+  if (await serverReady(profile.baseUrl)) {
+    return writeManagedState(profile, backend);
+  }
+
+  // Try to start the managed server via CLI
+  if (backend.id === "omlx") {
+    try {
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      await promisify(execFile)("omlx", ["start"], { timeout: 10000 });
+    } catch {
+      throw new Error(`${backend.label} is not running and could not be auto-started. Install oMLX or run \`omlx start\` manually.`);
     }
   }
+
+  // Wait for it to come up
+  for (let i = 0; i < 60; i++) {
+    await sleep(2000);
+    if (await serverReady(profile.baseUrl)) break;
+    process.stdout.write(".");
+  }
+  if (!(await serverReady(profile.baseUrl))) {
+    throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
+  }
+  return writeManagedState(profile, backend);
+}
+
+async function writeManagedState(profile, backend) {
   const state = {
     pid: null,
     profileId: profile.id,
@@ -180,10 +180,7 @@ export async function stopProfile(profile) {
 }
 
 // Reliably terminate a detached local-server process group: SIGTERM with a
-// grace period for graceful shutdown (lets mlx-vlm/llama-server release the
-// model), then SIGKILL if still alive. Guarantees the model is unloaded when a
-// profile stops — consistent across backends (llama-server exits on SIGTERM;
-// mlx-vlm/uvicorn often does not, hence the SIGKILL fallback).
+// grace period for graceful shutdown, then SIGKILL if still alive.
 async function terminateProcess(pid) {
   const signalGroup = (sig) => {
     try { process.kill(-pid, sig); }
@@ -227,19 +224,11 @@ export async function unloadModelFromServer(profile) {
   const backend = backendFor(profile.backend);
 
   if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
-    // llama.cpp unloads when the server process exits; no HTTP unload API exists.
-    // If offgrid-ai started the server, stopProfile already handled it.
     return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
   }
 
   if (backend.id === "omlx") {
     return await unloadOmlxModel(profile);
-  }
-
-  if (backend.id === "mlx-vlm") {
-    // mlx-vlm is a local-server backend — stopProfile handles unload by killing
-    // the process. No HTTP unload API.
-    return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
   }
 
   return { unloaded: false, backend: backend.id, reason: "unsupported backend" };

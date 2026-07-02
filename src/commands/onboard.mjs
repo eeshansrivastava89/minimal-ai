@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { ensureDirs, findLlamaServer, hasHomebrew, HF_HUB_DIR } from "../config.mjs";
 import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
-import { scanMlxModels } from "../mlx-discovery.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
@@ -27,16 +26,15 @@ export async function onboardFlow() {
     const llamaBinary = await ensureLlamaRuntime(prompt);
     if (!(await ensurePi(prompt, run))) return;
 
-    const [{ models: ggufModels }, managedModels, mlxModels] = await Promise.all([
+    const [{ models: ggufModels }, managedModels] = await Promise.all([
       scanGgufModels(),
       scanManagedModels(),
-      scanMlxModels(),
     ]);
     const totalManaged = managedModels.reduce((sum, item) => sum + item.models.length, 0);
-    const hasModels = ggufModels.length > 0 || totalManaged > 0 || mlxModels.length > 0;
+    const hasModels = ggufModels.length > 0 || totalManaged > 0;
 
     if (hasModels) {
-      printFoundModels(ggufModels, managedModels, mlxModels, llamaBinary);
+      printFoundModels(ggufModels, managedModels, llamaBinary);
     } else {
       const canDownload = await hasHuggingfaceHub();
       if (canDownload) {
@@ -96,13 +94,10 @@ async function ensurePi(prompt, run) {
   return true;
 }
 
-function printFoundModels(ggufModels, managedModels, mlxModels, llamaBinary) {
+function printFoundModels(ggufModels, managedModels, llamaBinary) {
   if (ggufModels.length > 0) {
     console.log(pc.green(`✓ Found ${ggufModels.length} GGUF model${ggufModels.length === 1 ? "" : "s"}`));
     if (!llamaBinary) console.log(pc.yellow("Install the managed llama.cpp runtime to run these GGUF models."));
-  }
-  if (mlxModels.length > 0) {
-    console.log(pc.green(`✓ Found ${mlxModels.length} MLX model${mlxModels.length === 1 ? "" : "s"}`));
   }
   for (const { backendId, models, status, reason } of managedModels) {
     if (status === "unavailable") {
@@ -117,7 +112,7 @@ async function offerModelDownload(prompt) {
   const hardware = detectHardware();
   const candidates = allFittingModels(hardware)
     .map((entry) => ({ entry, format: selectFormat(entry, hardware) }))
-    .filter((item) => item.format != null);
+    .filter((item) => item.format === "gguf");
   if (candidates.length === 0) {
     console.log(pc.yellow("No curated models fit your hardware."));
     return false;
@@ -134,7 +129,7 @@ async function offerModelDownload(prompt) {
   const shouldDownload = await prompt.yesNo("Download " + primary.entry.label + " (" + primary.format + ")?", true);
   if (!shouldDownload) return false;
 
-  const hfRef = primary.format === "mlx" ? primary.entry.mlx : primary.entry.gguf;
+  const hfRef = primary.entry.gguf;
   try {
     const plan = await resolveHfDownload(hfRef);
     console.log(pc.dim("Total size: " + formatBytes(plan.totalSizeBytes)));

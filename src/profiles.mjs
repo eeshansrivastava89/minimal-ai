@@ -2,10 +2,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
-import { backendFor, baseUrlForFlags, defaultFlagsForBackend } from "./backends.mjs";
+import { backendFor, baseUrlForFlags, defaultFlagsForBackend, BACKENDS } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
-import { detectMlxCapabilities, defaultMlxContextLength } from "./mlx-discovery.mjs";
-import { detectHardware } from "./hardware.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
 // ── Path helpers ───────────────────────────────────────────────────────────
@@ -42,7 +40,7 @@ export async function loadProfiles() {
     .filter((e) => e.isDirectory() && existsSync(profileJsonPath(e.name)))
     .map((e) => e.name)
     .sort();
-  return Promise.all(ids.map((id) => readProfile(id)));
+  return (await Promise.all(ids.map((id) => readProfile(id)))).filter((p) => BACKENDS[p.backend]);
 }
 
 export async function readProfile(id) {
@@ -149,28 +147,6 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
     capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp }),
     preset: null, // no presets — auto-detected
     flags,
-  });
-}
-
-// ── Auto-create profile from a discovered MLX model ────────────────────────
-
-export async function createProfileFromMlxModel(model) {
-  const { DEFAULT_PORT } = await import("./mlx-flags.mjs");
-  const caps = await detectMlxCapabilities(model.filePath);
-  const ctxSize = defaultMlxContextLength(caps.contextLength, detectHardware().totalRamBytes / (1024 ** 3));
-  return normalizeProfile({
-    id: slugFromLabel(model.label),
-    label: model.label,
-    backend: "mlx-vlm",
-    providerId: "mlx-vlm",
-    modelAlias: model.label,
-    source: model.source,
-    modelPath: model.filePath,
-    mmprojPath: null,
-    drafterPath: null,
-    modelSizeBytes: model.sizeBytes,
-    capabilities: caps,
-    flags: { host: "127.0.0.1", port: DEFAULT_PORT, ctxSize },
   });
 }
 

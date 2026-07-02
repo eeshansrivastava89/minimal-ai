@@ -2,6 +2,10 @@ import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { profileRuntimeStatus } from "../process.mjs";
+import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { pc, renderRows, renderCard } from "../ui.mjs";
 
 export async function statusCommand() {
@@ -37,6 +41,21 @@ export async function statusCommand() {
   summaryRows.push(["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : pc.yellow("Run offgrid-ai to set up a model")]);
 
   console.log(renderCard("Status", renderRows(summaryRows), { formatBorder: running.length > 0 ? pc.green : pc.dim }));
+
+  // Show oMLX cache disk usage if cache exists
+  const omlxCacheDir = join(homedir(), ".omlx", "cache");
+  if (existsSync(omlxCacheDir)) {
+    try {
+      const duOutput = execFileSync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
+      const cacheSize = duOutput.split(/\s+/)[0];
+      console.log("\n" + renderCard("oMLX cache", renderRows([
+        ["Location", pc.dim(omlxCacheDir)],
+        ["Disk usage", pc.bold(cacheSize)],
+      ]), { formatBorder: pc.magenta }));
+    } catch {
+      // du not available — skip
+    }
+  }
 
   if (managedUpMissing.length > 0 || managedUpNotLoaded.length > 0) {
     const detailRows = [];

@@ -18,7 +18,6 @@ const dataDir = await mkdtemp(join(tmpdir(), "offgrid-scan-"));
 process.env.OFFGRID_DIR = dataDir;
 
 const { scanGgufModels, isEmbeddingArchitecture } = await import("../src/scan.mjs");
-const { scanMlxModels } = await import("../src/mlx-discovery.mjs");
 
 describe("scanGgufModels", () => {
   it("sets source label from scan directory", async () => {
@@ -52,32 +51,5 @@ describe("isEmbeddingArchitecture", () => {
     assert.equal(isEmbeddingArchitecture("bert", "bge-small.gguf"), true);
     assert.equal(isEmbeddingArchitecture(null, "jina-embeddings-v2.gguf"), true);
     assert.equal(isEmbeddingArchitecture("llama", "qwen.gguf"), false);
-  });
-});
-
-describe("scanMlxModels", () => {
-  it("skips embedding MLX models by config", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "scan-mlx-embed-"));
-    const modelDir = join(dir, "bge-small");
-    await mkdir(modelDir, { recursive: true });
-    await writeFile(join(modelDir, "config.json"), JSON.stringify({
-      model_type: "bert",
-      architectures: ["BertModel"],
-    }));
-    await createSparseFile(join(modelDir, "model.safetensors"), 11 * 1024 * 1024);
-    const models = await scanMlxModels([dir]);
-    assert.equal(models.length, 0);
-  });
-
-  it("skips tiny MLX dirs", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "scan-mlx-tiny-"));
-    const modelDir = join(dir, "tiny-llm");
-    await mkdir(modelDir, { recursive: true });
-    await writeFile(join(modelDir, "config.json"), JSON.stringify({
-      model_type: "qwen2",
-    }));
-    await createSparseFile(join(modelDir, "model.safetensors"), 1024);
-    const models = await scanMlxModels([dir]);
-    assert.equal(models.length, 0);
   });
 });

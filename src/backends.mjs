@@ -1,8 +1,7 @@
 import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { scanMlxModels, scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
-import { DEFAULT_PORT as MLX_VLM_PORT } from "./mlx-flags.mjs";
+import { scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
 
@@ -54,17 +53,6 @@ export const BACKENDS = {
     needsCommandFile: false,
     scanModels: () => scanOmlxModels(),
   },
-  "mlx-vlm": {
-    id: "mlx-vlm",
-    label: "mlx-vlm",
-    type: "local-server",
-    providerId: "mlx-vlm",
-    defaultHost: LOCAL_HOST,
-    defaultPort: MLX_VLM_PORT,
-    defaultBaseUrl: baseUrlFor({ port: MLX_VLM_PORT }),
-    needsCommandFile: true,
-    scanModels: async () => scanMlxModels(),
-  },
 };
 
 export function backendFor(backendId) {
@@ -75,10 +63,8 @@ export function backendFor(backendId) {
 
 export async function backendBinaryFor(backendId) {
   const backend = BACKENDS[backendId ?? "llama-cpp"];
-  if (backend.id === "mlx-vlm") return "python3"; // mlx-vlm spawns via python3 + the strict=False wrapper
   if (backend.type === "managed-server") return null;
-  const discovered = await findLlamaServer();
-  return discovered; // null means "not found — trigger onboarding"
+  return await findLlamaServer();
 }
 
 export function defaultFlagsForBackend(backendId) {
@@ -96,21 +82,15 @@ async function scanOmlxModels() {
   const body = await response.json();
   if (!Array.isArray(body?.data)) return [];
 
-  // The oMLX API doesn't return model sizes or publishers — look them up from disk.
   const infoMap = await scanOmlxModelSizes();
 
-  // The oMLX API can return the same model multiple times with different
-  // ID formats (e.g. "Qwen3.6-35B-A3B-OptiQ-4bit" and
-  // "mlx-community--Qwen3.6-35B-A3B-OptiQ-4bit"). Deduplicate by the
-  // normalized full name (publisher/model with / separator), keeping
-  // the first entry (which has the most complete metadata).
+  // Deduplicate by normalized full name (publisher/model with / separator)
   const seen = new Set();
   const deduped = [];
   for (const model of body.data.filter(isChatOmlxModel)) {
     const info = lookupOmlxModelInfo(model.id, infoMap);
     const hasPublisher = model.id.includes("/") || model.id.includes("--");
     const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
-    // Normalize: convert -- separator to / for dedup comparison
     const normalized = fullName.replace(/--/g, "/");
     if (seen.has(normalized)) continue;
     seen.add(normalized);
@@ -137,8 +117,6 @@ async function scanOmlxModels() {
     }).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-// ── Labels ──────────────────────────────────────────────────────────────
-
 function isChatOmlxModel(model) {
   if (typeof model?.id !== "string" || !model.id.trim()) return false;
   const type = String(model.type ?? model.model_type ?? "").toLowerCase();
@@ -146,6 +124,3 @@ function isChatOmlxModel(model) {
   if (Object.hasOwn(model, "max_model_len") && model.max_model_len === null) return false;
   return true;
 }
-
-// (ollamaLabel and omlxLabel removed — parseModelName in model-name.mjs is the single path)
-// (Ollama backend removed — offgrid-ai now uses llama-server + mlx-vlm + oMLX)

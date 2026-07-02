@@ -44,8 +44,6 @@ function optionSourceTag(sourceId) {
     omlx: pc.magenta,
     "llama.cpp": pc.cyan,
     gguf: pc.cyan,
-    mlx: pc.yellow,
-    "mlx-vlm": pc.yellow,
   };
   return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
 }
@@ -57,7 +55,6 @@ function optionBackendTag(backendId) {
     "llama-cpp": pc.cyan,
     "llama-cpp-mtp": pc.blue,
     omlx: pc.magenta,
-    "mlx-vlm": pc.yellow,
   };
   return optionPad(label, colors[backendId] ?? pc.dim, OPTION_BACKEND_WIDTH);
 }
@@ -70,8 +67,6 @@ export function formatSourceLabel(sourceId) {
     omlx: "oMLX",
     "llama.cpp": "llama.cpp",
     gguf: "GGUF file",
-    mlx: "MLX",
-    "mlx-vlm": "MLX",
   };
   return map[sourceId] ?? String(sourceId);
 }
@@ -200,7 +195,6 @@ export function inferBackendId(item) {
   if (item.type === "profile") return item.profile.backend;
   if (item.type === "managed") return item.backendId;
   // new model: derive from format
-  if (item.model?.format === "mlx") return "mlx-vlm";
   if (item.model?.backend) return item.model.backend;
   return "llama-cpp";
 }
@@ -295,29 +289,6 @@ export function printGgufModelDetails(model, drafter) {
   ];
   if (drafter) detailRows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);
   console.log("\n" + renderSectionRows("Model details", detailRows, { columns: Math.min(process.stdout.columns ?? 110, 140) }));
-}
-
-export async function printMlxModelDetails(model) {
-  const { detectMlxCapabilities } = await import("./mlx-discovery.mjs");
-  const caps = await detectMlxCapabilities(model.filePath ?? model.path);
-  const parts = [];
-  if (caps.architecture) parts.push(caps.architecture);
-  if (caps.thinking) parts.push("thinking");
-  if (caps.vision) parts.push("vision");
-  const summary = parts.length > 0 ? parts.join(pc.dim(" · ")) : "standard MLX";
-  console.log("\n" + renderSectionRows("Downloaded model", [
-    ["Name", pc.bold(model.label)],
-    ["Status", pc.yellow("Needs one-time setup")],
-    ["Details", summary],
-  ]));
-  console.log("\n" + renderSectionRows("Model details", [
-    ["Model dir", model.path],
-    ["Backend", "mlx-vlm"],
-    ["Source", formatSourceLabel(model.source)],
-    ["Detected", summary],
-    ["Size", formatBytes(model.sizeBytes)],
-    ["Context", caps.contextLength ? `${caps.contextLength.toLocaleString()} trained` : "unknown"],
-  ], { columns: Math.min(process.stdout.columns ?? 110, 140) }));
 }
 
 export function printManagedModelDetails(model, backend) {
