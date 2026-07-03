@@ -203,6 +203,7 @@ export function createPrompt() {
           if (!Number.isFinite(input) || input < min || input > max) {
             return `Enter a number from ${min} to ${max}.`;
           }
+          return true;
         },
       });
       return Number(value);
