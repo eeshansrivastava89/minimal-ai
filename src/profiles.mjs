@@ -40,7 +40,15 @@ export async function loadProfiles() {
     .filter((e) => e.isDirectory() && existsSync(profileJsonPath(e.name)))
     .map((e) => e.name)
     .sort();
-  return (await Promise.all(ids.map((id) => readProfile(id)))).filter((p) => BACKENDS[p.backend]);
+  return (await Promise.all(ids.map((id) => readProfile(id))))
+    .map((p) => {
+      // Migrate legacy llama-cpp-mtp backend → llama-cpp with mtp capability
+      if (p.backend === "llama-cpp-mtp") {
+        return { ...p, backend: "llama-cpp", providerId: "llama-cpp", capabilities: { ...(p.capabilities ?? {}), mtp: true } };
+      }
+      return p;
+    })
+    .filter((p) => BACKENDS[p.backend]);
 }
 
 export async function readProfile(id) {
@@ -126,7 +134,7 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
   // If a drafter is provided, this model supports MTP regardless of filename
   const hasMtp = caps.mtp || Boolean(drafterPath);
-  const backend = backendId ?? (hasMtp ? "llama-cpp-mtp" : "llama-cpp");
+  const backend = backendId ?? "llama-cpp";
   const { flags } = computeFlags(
     { ...caps, mtp: hasMtp },
     model.path,

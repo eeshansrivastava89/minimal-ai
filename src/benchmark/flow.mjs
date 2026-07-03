@@ -15,7 +15,7 @@ import { finalizeBenchmarkRun, renderBenchmarkSummary } from "./finalize.mjs";
 
 function benchmarkModelSource(profile) {
   if (!profile) return "cloud";
-  return profile.providerId === "llama-cpp-mtp" ? "llama-cpp-mtp" : profile.backend === "omlx" ? "omlx" : "llama-cpp";
+  return profile.backend === "omlx" ? "omlx" : "llama-cpp";
 }
 
 async function chooseBenchmarkAction(prompt, canRun) {

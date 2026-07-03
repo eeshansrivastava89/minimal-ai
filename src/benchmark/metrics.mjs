@@ -9,7 +9,7 @@ const SPEED_QUERY_MAX_TOKENS = 64;
 export async function queryServerMetrics(profile) {
   const backend = backendFor(profile.backend);
 
-  if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
+  if (backend.id === "llama-cpp") {
     return await queryLlamaCppMetrics(profile);
   }
   if (backend.id === "omlx") {

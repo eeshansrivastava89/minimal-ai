@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
 import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
+import { pc } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,7 +22,7 @@ export async function computeServerCommand(profile) {
   const binary = await backendBinaryFor(profile.backend);
   if (!binary) throw new Error("Server binary not found. Run offgrid-ai interactively to install.");
 
-  // llama-cpp / llama-cpp-mtp
+  // llama-cpp
   const { computeFlags } = await import("./autodetect.mjs");
   const result = computeFlags(
     profile.capabilities ?? {},
@@ -118,6 +119,10 @@ async function startLocalServer(profile) {
 
 async function startManagedServer(profile, backend) {
   if (await serverReady(profile.baseUrl)) {
+    // Apply per-model settings (MTP) even when server is already running.
+    if (backend.id === "omlx" && profile.capabilities?.mtp) {
+      await ensureOmlxMtpSetting(profile);
+    }
     return writeManagedState(profile, backend);
   }
 
@@ -147,7 +152,46 @@ async function startManagedServer(profile, backend) {
   if (!(await serverReady(profile.baseUrl))) {
     throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
   }
+
+  // Apply per-model settings (MTP) before the model is loaded.
+  // oMLX applies MTP patches at load time, so the setting must be in
+  // model_settings.json before any request triggers a load.
+  if (backend.id === "omlx" && profile.capabilities?.mtp) {
+    await ensureOmlxMtpSetting(profile);
+  }
+
   return writeManagedState(profile, backend);
+}
+
+/**
+ * Enable MTP on an oMLX model via the admin API before loading.
+ * oMLX applies MTP patches at model load time, so the setting must be
+ * persisted to model_settings.json before any request triggers a load.
+ * If the model is already loaded, oMLX will use the setting on next reload.
+ */
+async function ensureOmlxMtpSetting(profile) {
+  const baseUrl = profile.baseUrl?.replace(/\/v1\/?$/u, "") || "";
+  const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
+  try {
+    const response = await fetch(`${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtp_enabled: true }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      console.log(pc.green(`[mtp] Enabled MTP speculative decoding for ${modelId}`));
+    } else if (response.status === 401 || response.status === 403) {
+      console.log(pc.yellow(`[mtp] Could not enable MTP: oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or enable MTP manually from the admin panel.`));
+    } else if (response.status === 404) {
+      console.log(pc.yellow(`[mtp] Model ${modelId} not found on oMLX server. MTP setting not applied.`));
+    } else {
+      const detail = await response.text().catch(() => "");
+      console.log(pc.yellow(`[mtp] Could not enable MTP: HTTP ${response.status} ${detail}`));
+    }
+  } catch (err) {
+    console.log(pc.yellow(`[mtp] Could not enable MTP: ${err.message}`));
+  }
 }
 
 async function writeManagedState(profile, backend) {
@@ -229,7 +273,7 @@ async function processGone(pid) {
 export async function unloadModelFromServer(profile) {
   const backend = backendFor(profile.backend);
 
-  if (backend.id === "llama-cpp" || backend.id === "llama-cpp-mtp") {
+  if (backend.id === "llama-cpp") {
     return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
   }
 

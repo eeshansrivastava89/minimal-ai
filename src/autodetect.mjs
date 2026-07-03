@@ -55,7 +55,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
   const isLowMem = quant && /[Qq]4[_0]/i.test(quant);
 
   const flags = {
-    ...defaultFlagsForBackend(mtp ? "llama-cpp-mtp" : "llama-cpp"),
+    ...defaultFlagsForBackend("llama-cpp"),
     ctxSize: capabilities.ctxSize,
     flashAttention: "on",
     cacheTypeK: isLowMem ? "f16" : "bf16",

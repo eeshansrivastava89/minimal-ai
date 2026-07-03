@@ -3,7 +3,7 @@ import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
-import { configureLocalProfile } from "../profile-setup.mjs";
+import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
 import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
@@ -84,7 +84,6 @@ export async function modelCommandCenter(initialCatalog) {
   const groups = [];
   const backendColors = {
     "llama-cpp": pc.cyan,
-    "llama-cpp-mtp": pc.blue,
     omlx: pc.magenta,
   };
   for (const { backendId, sourceId, items } of byBackend.values()) {
@@ -218,9 +217,11 @@ async function setupItem(prompt, item) {
   }
   if (item.type === "managed") {
     const profile = createManagedProfile(item.model, item.backendId);
-    await saveProfile(profile);
-    await syncPiConfig(profile);
-    printProfileSaved(profile.id);
+    const configured = await configureManagedProfile(prompt, profile);
+    if (!configured) return;
+    await saveProfile(configured);
+    await syncPiConfig(configured);
+    printProfileSaved(configured.id);
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);

@@ -3,12 +3,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { estimateMemory } from "./estimate.mjs";
 import { findLlamaServer } from "./config.mjs";
-import { baseUrlForFlags, LLAMA_CPP_PORT, LLAMA_CPP_MTP_PORT } from "./backends.mjs";
+import { baseUrlForFlags } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter } from "./scan.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
+import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,19 +50,9 @@ export async function configureLocalProfile(prompt, profile) {
   }
   const hasMtp = freshCaps.mtp || Boolean(drafterPath);
   const caps = { ...freshCaps, mtp: hasMtp };
-  // If MTP is newly available, switch backend and add drafter path
-  if (hasMtp && configured.backend !== "llama-cpp-mtp") {
-    configured = { ...configured, backend: "llama-cpp-mtp", providerId: "llama-cpp-mtp", drafterPath, capabilities: { ...configured.capabilities, mtp: true } };
-  }
-  // If the profile was MTP but the drafter is now gone (and the model isn't
-  // natively MTP), switch back to plain llama.cpp so the server can start.
-  if (!hasMtp && configured.backend === "llama-cpp-mtp") {
-    console.log(pc.yellow("MTP drafter no longer found — switching to llama.cpp without speculative decoding."));
-    configured = removeMtpDefaults(configured);
-  }
-  if (drafterPath && !configured.drafterPath) {
-    configured = { ...configured, drafterPath };
-  }
+  // MTP is a capability, not a separate backend. Just update the profile's
+  // capabilities and drafter path — flag computation handles the rest.
+  configured = { ...configured, drafterPath: drafterPath ?? null, capabilities: { ...configured.capabilities, mtp: hasMtp } };
   // If vision was previously disabled but mmproj is back, re-enable
   if (configured.disabledMmprojPath && configured.mmprojPath === null && freshCaps.vision) {
     configured = { ...configured, mmprojPath: configured.disabledMmprojPath, disabledMmprojPath: undefined, capabilities: { ...configured.capabilities, vision: true, visionDisabledReason: undefined } };
@@ -81,8 +72,7 @@ export async function configureLocalProfile(prompt, profile) {
   if (caps.mtp) {
     const drafterInfo = configured.drafterPath ? `\n  Drafter: ${configured.drafterPath}` : "";
     console.log(renderSection("MTP detected", renderRows([
-      ["Backend", "llama.cpp MTP"],
-      ["Port", String(LLAMA_CPP_MTP_PORT)],
+      ["Feature", "Multi-Token Prediction (speculative decoding)"],
       ["Flags", `--spec-type draft-mtp --spec-draft-n-max 4${configured.drafterPath ? " --spec-draft-model <drafter>" : ""}`],
     ])));
     if (drafterInfo) console.log(pc.dim(drafterInfo));
@@ -150,24 +140,60 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
 }
 
 export function applyMtpDefaults(profile) {
-  const flags = { ...profile.flags, port: LLAMA_CPP_MTP_PORT };
   return applyProfileFlags({
     ...profile,
-    backend: "llama-cpp-mtp",
-    providerId: "llama-cpp-mtp",
     capabilities: { ...(profile.capabilities ?? {}), mtp: true },
-  }, flags);
+  }, profile.flags);
 }
 
 export function removeMtpDefaults(profile) {
-  const flags = { ...profile.flags, port: LLAMA_CPP_PORT };
   return applyProfileFlags({
     ...profile,
-    backend: "llama-cpp",
-    providerId: "llama-cpp",
     drafterPath: null,
     capabilities: { ...(profile.capabilities ?? {}), mtp: false },
-  }, flags);
+  }, profile.flags);
+}
+
+// ── oMLX (managed server) profile configuration ───────────────────────────
+
+export async function configureManagedProfile(prompt, profile) {
+  let configured = profile;
+  const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
+
+  // Detect MTP capability from the model's config.json
+  const modelDir = await findOmlxModelDir(modelId);
+  if (modelDir) {
+    const mtpResult = await detectOmlxMtpCapability(modelDir);
+    if (mtpResult.compatible) {
+      console.log("");
+      console.log(renderSection("MTP detected", renderRows([
+        ["Feature", "Multi-Token Prediction (speculative decoding)"],
+        ["Mechanism", "oMLX native MTP (enabled via admin API at load time)"],
+      ])));
+      const useMtp = await prompt.yesNo("Use MTP speculative decoding?", true);
+      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), mtp: useMtp } };
+    } else if (mtpResult.reason !== "model has no MTP heads in config") {
+      // Model declares MTP but can't use it — surface the reason
+      console.log("");
+      console.log(renderSection("MTP not available", renderRows([
+        ["Feature", "Multi-Token Prediction (speculative decoding)"],
+        ["Reason", pc.yellow(mtpResult.reason)],
+      ])));
+    }
+    // If reason is "no MTP heads in config", don't surface anything —
+    // most models don't have MTP, and showing a card for every non-MTP
+    // model would be noise.
+  }
+
+  console.log("");
+  console.log(renderSection("Model setup", renderRows([
+    ["Model", pc.bold(profile.label)],
+    ["Backend", "oMLX"],
+    ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
+  ])));
+
+  if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
+  return configured;
 }
 
 function applyVisionDefaults(profile) {

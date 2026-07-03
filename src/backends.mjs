@@ -7,7 +7,6 @@ import { scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
 
 export const LOCAL_HOST = "127.0.0.1";
 export const LLAMA_CPP_PORT = 8080;
-export const LLAMA_CPP_MTP_PORT = 8081;
 export const OMLX_PORT = 8000;
 
 export function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
@@ -27,17 +26,6 @@ export const BACKENDS = {
     defaultHost: LOCAL_HOST,
     defaultPort: LLAMA_CPP_PORT,
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_PORT }),
-    needsCommandFile: true,
-    scanModels: async () => (await scanGgufModels()).models,
-  },
-  "llama-cpp-mtp": {
-    id: "llama-cpp-mtp",
-    label: "llama.cpp MTP",
-    type: "local-server",
-    providerId: "llama-cpp-mtp",
-    defaultHost: LOCAL_HOST,
-    defaultPort: LLAMA_CPP_MTP_PORT,
-    defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_MTP_PORT }),
     needsCommandFile: true,
     scanModels: async () => (await scanGgufModels()).models,
   },

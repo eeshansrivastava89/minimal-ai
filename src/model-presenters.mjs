@@ -53,7 +53,6 @@ function optionBackendTag(backendId) {
   const label = backend?.label ?? backendId ?? "unknown";
   const colors = {
     "llama-cpp": pc.cyan,
-    "llama-cpp-mtp": pc.blue,
     omlx: pc.magenta,
   };
   return optionPad(label, colors[backendId] ?? pc.dim, OPTION_BACKEND_WIDTH);

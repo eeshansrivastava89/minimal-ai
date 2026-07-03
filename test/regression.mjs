@@ -95,13 +95,13 @@ describe("regressions", () => {
   });
 
 
-  it("disabling MTP clears backend, flags, drafter, and capability state", () => {
+  it("disabling MTP clears drafter and capability state", () => {
     const profile = {
-      backend: "llama-cpp-mtp",
-      providerId: "llama-cpp-mtp",
+      backend: "llama-cpp",
+      providerId: "llama-cpp",
       drafterPath: "/tmp/drafter.gguf",
       capabilities: { mtp: true },
-      flags: { host: "127.0.0.1", port: 8081, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
+      flags: { host: "127.0.0.1", port: 8080, ctxSize: 32768, cacheTypeK: "bf16", cacheTypeV: "bf16" },
     };
 
     const updated = removeMtpDefaults(profile);
@@ -109,7 +109,6 @@ describe("regressions", () => {
     assert.equal(updated.providerId, "llama-cpp");
     assert.equal(updated.drafterPath, null);
     assert.equal(updated.capabilities.mtp, false);
-    assert.equal(updated.flags.port, 8080);
   });
 
   it("updates first-run profile flags together", () => {

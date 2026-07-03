@@ -85,7 +85,7 @@ async function activeProviderProfiles(currentProfile) {
   const byAlias = new Map();
   for (const item of [...allProfiles, currentProfile]) {
     if (item.providerId !== currentProfile.providerId) continue;
-    if (item.backend !== "llama-cpp" && item.backend !== "llama-cpp-mtp") {
+    if (item.backend !== "llama-cpp") {
       byAlias.set(item.modelAlias, item);
       continue;
     }

@@ -2,7 +2,7 @@
 // to compute sizes and publishers. The oMLX API doesn't return these, so we
 // read them from disk.
 
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -63,6 +63,99 @@ export async function scanOmlxModelSizes() {
 
   await walk(OMLX_MODELS_DIR, null);
   return infoByBasename;
+}
+
+// ── MTP capability detection ─────────────────────────────────────────────
+// oMLX supports native MTP for Qwen 3.5/3.6 (dense + MoE) and DeepSeek-V4
+// models that ship MTP heads in their weights. The check mirrors oMLX's own
+// _mtp_compat_for_model: config must declare mtp_num_hidden_layers, model_type
+// must be on the whitelist, and the safetensors index must contain mtp.* keys.
+
+const MTP_MODEL_TYPES = ["qwen3_5", "qwen3_5_moe", "qwen3_6", "qwen3_6_moe", "deepseek_v4"];
+
+/**
+ * Check if an oMLX model directory supports native MTP.
+ * Returns { compatible: boolean, reason: string }.
+ */
+export async function detectOmlxMtpCapability(modelDir) {
+  const configPath = join(modelDir, "config.json");
+  if (!existsSync(configPath)) return { compatible: false, reason: "config.json not found" };
+
+  let config;
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    return { compatible: false, reason: "failed to read config.json" };
+  }
+
+  const mtpLayers = config.mtp_num_hidden_layers;
+  if (!mtpLayers || mtpLayers <= 0) {
+    return { compatible: false, reason: "model has no MTP heads in config" };
+  }
+
+  const modelType = config.model_type;
+  if (!MTP_MODEL_TYPES.some((t) => modelType === t || modelType?.startsWith(t))) {
+    return { compatible: false, reason: `model_type=${modelType} is not on the MTP whitelist (supported: ${MTP_MODEL_TYPES.join(", ")})` };
+  }
+
+  // Check for mtp.* weight tensors in the safetensors index
+  const hasWeights = await modelHasMtpWeights(modelDir);
+  if (!hasWeights) {
+    return { compatible: false, reason: "Config declares MTP layers but the converted weights are missing mtp.* tensors. Re-convert from HF with a converter that preserves MTP weights." };
+  }
+
+  return { compatible: true, reason: "" };
+}
+
+async function modelHasMtpWeights(modelDir) {
+  const indexPath = join(modelDir, "model.safetensors.index.json");
+  if (existsSync(indexPath)) {
+    try {
+      const index = JSON.parse(await readFile(indexPath, "utf8"));
+      const weightMap = index.weight_map ?? {};
+      return Object.keys(weightMap).some((key) => key.includes("mtp."));
+    } catch {
+      return false;
+    }
+  }
+  // Single-shard fallback: can't easily read safetensors keys in Node without
+  // the safetensors library. Check for an mtp-specific safetensors file.
+  try {
+    const entries = await readdir(modelDir);
+    return entries.some((f) => f.endsWith(".safetensors") && /mtp/i.test(f));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Find the model directory for a given oMLX model ID.
+ * Searches ~/.omlx/models/ recursively for a directory matching the model ID.
+ */
+export async function findOmlxModelDir(modelId) {
+  if (!existsSync(OMLX_MODELS_DIR)) return null;
+  const basename = modelId.includes("/") ? modelId.slice(modelId.lastIndexOf("/") + 1)
+    : modelId.includes("--") ? modelId.slice(modelId.lastIndexOf("--") + 2)
+    : modelId;
+
+  async function walk(dir) {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.name === basename && await isMlxModelDir(fullPath)) return fullPath;
+      const found = await walk(fullPath);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return await walk(OMLX_MODELS_DIR);
 }
 
 /**
