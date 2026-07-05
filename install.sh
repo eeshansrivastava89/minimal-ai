@@ -215,7 +215,7 @@ fi
 # but NOT in the user's current shell. nvm added itself to .zprofile, which
 # loads on new terminal sessions — but not in the current one.
 if $NVM_INSTALLED; then
-  RUN_CMD="source \~/.zprofile && offgrid-ai"
+  RUN_CMD="source ~/.zprofile && offgrid-ai"
   RUN_HINT="(or open a new terminal window)"
 else
   RUN_CMD="offgrid-ai"
@@ -240,8 +240,7 @@ if ! $SKIP_RUN && [[ -c /dev/tty ]]; then
   read -r response < /dev/tty
   response="${response:-Y}"
   if [[ "$response" =~ ^[Yy]$ ]]; then
-    # Ensure nvm is sourced before exec (it was sourced earlier but exec
-    # replaces the process, so the PATH from nvm is already in our environment)
-    exec offgrid-ai
+    # Redirect stdin from /dev/tty so offgrid-ai sees a TTY (not the curl pipe)
+    exec offgrid-ai < /dev/tty
   fi
 fi
