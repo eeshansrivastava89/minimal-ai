@@ -1,7 +1,7 @@
 import { ensureDirs, findLlamaServer } from "../config.mjs";
 import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
-import { hasPi } from "../harness-pi.mjs";
+import { hasPi, setupPiConfig } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
@@ -85,6 +85,7 @@ async function ensurePi(prompt) {
     return false;
   }
   console.log(pc.green("✓ Pi found"));
+  await setupPiConfig();
   return true;
 }
 

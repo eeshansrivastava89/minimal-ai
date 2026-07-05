@@ -1,10 +1,29 @@
 import { existsSync } from "node:fs";
+import { cp, readdir, mkdir } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { homedir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
+import { runCommand } from "./exec.mjs";
 import pc from "picocolors";
+
+const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
+const PI_DIR = join(homedir(), ".pi");
+const PI_AGENT_DIR = join(PI_DIR, "agent");
+const PI_SETTINGS = join(PI_AGENT_DIR, "settings.json");
+const PI_SKILLS_DIR = join(PI_AGENT_DIR, "skills");
+const PI_WEB_SEARCH = join(PI_DIR, "web-search.json");
+
+// Pi packages to install for a good out-of-box experience
+const PI_PACKAGES = [
+  "npm:pi-web-access",
+  "npm:pi-powerline-footer",
+  "npm:pi-smart-fetch",
+];
 
 // ── Pi model id ─────────────────────────────────────────────────────────────
 
@@ -74,6 +93,76 @@ export async function hasPi() {
     return true;
   } catch {
     return false;
+  }
+}
+
+// ── Pi setup (skills, packages, web-search) ───────────────────────────────
+
+/**
+ * Set up Pi with bundled skills, npm packages, and web-search config.
+ * Called after Pi is installed during onboarding. Idempotent — safe to run
+ * even if Pi was already configured (overwrites skills, skips existing packages).
+ */
+export async function setupPiConfig() {
+  let configured = 0;
+
+  // 1. Copy bundled skills to ~/.pi/agent/skills/
+  const bundledSkillsDir = join(RESOURCES_DIR, "skills");
+  if (existsSync(bundledSkillsDir)) {
+    try {
+      const skills = await readdir(bundledSkillsDir, { withFileTypes: true });
+      await mkdir(PI_SKILLS_DIR, { recursive: true });
+      for (const entry of skills) {
+        if (!entry.isDirectory()) continue;
+        const src = join(bundledSkillsDir, entry.name);
+        const dest = join(PI_SKILLS_DIR, entry.name);
+        await cp(src, dest, { recursive: true, force: true });
+      }
+      console.log(pc.green(`✓ Pi skills installed (${skills.filter(s => s.isDirectory()).length} skills)`));
+      configured++;
+    } catch {
+      console.log(pc.yellow("  Could not copy Pi skills — they'll still work if you add them manually."));
+    }
+  }
+
+  // 2. Install Pi packages (web access, powerline footer, smart fetch)
+  for (const pkg of PI_PACKAGES) {
+    try {
+      await runCommand("pi", ["install", pkg], { label: pkg, verbose: true });
+      configured++;
+    } catch {
+      console.log(pc.dim(`  Skipped ${pkg} (install failed — install manually: pi install ${pkg})`));
+    }
+  }
+
+  // 3. Copy web-search.json
+  const bundledWebSearch = join(RESOURCES_DIR, "web-search.json");
+  if (existsSync(bundledWebSearch)) {
+    try {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const content = await readFile(bundledWebSearch, "utf8");
+      await mkdir(PI_DIR, { recursive: true });
+      await writeFile(PI_WEB_SEARCH, content, "utf8");
+      console.log(pc.green("✓ Pi web-search config installed"));
+      configured++;
+    } catch {
+      console.log(pc.yellow("  Could not copy web-search config."));
+    }
+  }
+
+  // 4. Enable skill commands in settings.json
+  try {
+    const settings = await readJson(PI_SETTINGS, {});
+    if (!settings.enableSkillCommands) {
+      settings.enableSkillCommands = true;
+      await writeJson(PI_SETTINGS, settings);
+    }
+  } catch {
+    // Non-critical — skills still work, just not as slash commands
+  }
+
+  if (configured > 0) {
+    console.log(pc.green(`✓ Pi configured (${configured} items set up)`));
   }
 }
 
