@@ -149,12 +149,11 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
 
 /**
  * Download a resolved model into the HF hub cache.
+ * Progress bars are shown via tqdm on stderr (huggingface_hub default).
  * @param {object} model - from resolveHfDownload
- * @param {object} options
- * @param {function} options.onProgress - ({ downloadedBytes, totalBytes, percentage, file }) => void
  * @returns {Promise<{ localDir: string, format: string }>}
  */
-export async function downloadToHfCache(model, options = {}) {
+export async function downloadToHfCache(model) {
   await mkdir(HF_HUB_DIR, { recursive: true });
 
   const script = HF_DOWNLOAD_SCRIPT;
@@ -163,38 +162,23 @@ export async function downloadToHfCache(model, options = {}) {
     args.push("--file", model.files[0].filename);
   }
 
-  const onProgress = options.onProgress ?? (() => {});
-
   return new Promise((resolve, reject) => {
     const child = execFile("python3", [script, ...args], { env: process.env });
 
     let stdoutBuf = "";
-    let downloadedBytes = 0;
-    let currentFile = null;
 
-    // huggingface_hub streams NDJSON progress events to stdout, one per line.
-    // Buffer and split on complete newlines so an event split across chunk
-    // boundaries isn't silently dropped.
+    // stdout: NDJSON events (complete/error only — progress is on stderr via tqdm)
     const handleLine = (line) => {
       if (!line) return;
       try {
         const event = JSON.parse(line);
-        if (event.type === "progress") {
-          downloadedBytes = event.downloadedBytes ?? downloadedBytes;
-          currentFile = event.file ?? currentFile;
-          onProgress({
-            downloadedBytes,
-            totalBytes: model.totalSizeBytes,
-            percentage: Math.min(100, Math.round((downloadedBytes / model.totalSizeBytes) * 100)),
-            file: currentFile,
-          });
-        } else if (event.type === "complete") {
+        if (event.type === "complete") {
           resolve({ localDir: event.localDir, format: model.format });
         } else if (event.type === "error") {
           reject(new Error(event.message));
         }
       } catch {
-        // Ignore non-JSON output (progress bars, etc.)
+        // Ignore non-JSON output
       }
     };
 
@@ -207,13 +191,13 @@ export async function downloadToHfCache(model, options = {}) {
       }
     });
 
-    child.stderr?.on("data", () => {
-      // huggingface_hub prints progress bars to stderr; ignore.
+    // stderr: pipe through to terminal — tqdm progress bars live here
+    child.stderr?.on("data", (chunk) => {
+      process.stderr.write(chunk);
     });
 
     child.on("error", reject);
     child.on("exit", (code) => {
-      // Flush any final line that lacked a trailing newline.
       if (stdoutBuf.trim()) handleLine(stdoutBuf.trim());
       if (code !== 0) reject(new Error(`Download failed with exit code ${code}`));
     });

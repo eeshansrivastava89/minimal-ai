@@ -121,20 +121,14 @@ export async function downloadFlow(prompt) {
     return false;
   }
 
-  console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...`));
+  console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...\n`));
 
   try {
-    await downloadToHfCache(plan, {
-      onProgress({ percentage }) {
-        process.stdout.write(pc.cyan(`\r  ${percentage}% downloaded`));
-      },
-    });
-    process.stdout.write("\n");
-    console.log(pc.green("✓ Download complete. The model will appear in the picker."));
+    await downloadToHfCache(plan);
+    console.log(pc.green("\n✓ Download complete. The model will appear in the picker."));
     return true;
   } catch (err) {
-    process.stdout.write("\n");
-    console.log(pc.red("Download failed: " + err.message));
+    console.log(pc.red("\nDownload failed: " + err.message));
     return false;
   }
 }

@@ -6,7 +6,8 @@ Usage:
   python3 hf-download.py --repo mlx-community/gemma-4-e2b-it-4bit
   python3 hf-download.py --repo unsloth/gemma-4-E2B-it-GGUF --file gemma-4-E2B-it-Q4_K_S.gguf
 
-Streams NDJSON progress events to stdout.
+Progress bars are shown via tqdm on stderr (the huggingface_hub default).
+Completion/error events are emitted as NDJSON on stdout.
 """
 import argparse
 import json
@@ -16,15 +17,6 @@ import sys
 
 def emit(event):
     print(json.dumps(event), flush=True)
-
-
-def progress_callback(relative_path, downloaded, total):
-    emit({
-        "type": "progress",
-        "file": relative_path,
-        "downloadedBytes": downloaded,
-        "totalBytes": total,
-    })
 
 
 def main():
@@ -64,6 +56,7 @@ def main():
                 repo_id=args.repo,
                 cache_dir=cache_dir,
                 resume_download=True,
+                ignore_patterns=[".gitattributes", "*.md", "LICENSE"],
             )
             emit({
                 "type": "complete",
