@@ -136,12 +136,12 @@ async function showModelPicker(catalog) {
 
     if (selected === "__settings__") {
       await settingsFlow(prompt);
-      return "rescan";
+      return;
     }
 
     if (selected === "__download__") {
       await downloadFlow(prompt);
-      return "rescan";
+      return;
     }
 
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
@@ -322,11 +322,11 @@ async function settingsFlow(prompt) {
     const choices = [
       { value: "add", label: "Add discovery path" },
       ...(customDirs.length > 0 ? [{ value: "remove", label: "Remove discovery path" }] : []),
-      { value: "back", label: "Back to models" },
+      { value: "done", label: "Done" },
     ];
-    const action = await prompt.choice("Settings", choices, "back");
+    const action = await prompt.choice("Settings", choices, "done");
 
-    if (!action || action === "back") return;
+    if (!action || action === "done") return;
 
     if (action === "add") {
       const dir = await prompt.text("Path to model directory", "");

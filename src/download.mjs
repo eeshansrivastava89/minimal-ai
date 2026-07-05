@@ -125,7 +125,13 @@ export async function downloadFlow(prompt) {
 
   try {
     await downloadToHfCache(plan);
-    console.log(pc.green("\n✓ Download complete. The model will appear in the picker."));
+    if (plan.format === "mlx") {
+      console.log(pc.green("\n✓ Download complete."));
+      console.log(pc.yellow("Restart oMLX to load the new model: omlx restart"));
+      console.log(pc.dim("Then run offgrid-ai again."));
+    } else {
+      console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
+    }
     return true;
   } catch (err) {
     console.log(pc.red("\nDownload failed: " + err.message));
