@@ -23,6 +23,9 @@
 
 set -euo pipefail
 
+# Track if we installed Node via nvm (affects PATH instructions at the end)
+NVM_INSTALLED=false
+
 # ── Flags ───────────────────────────────────────────────────────────────────
 
 DRY_RUN=false
@@ -93,6 +96,7 @@ else
   # Verify
   if $DRY_RUN || command -v node &>/dev/null; then
     ok "Node.js $(node --version 2>/dev/null || echo 'installed') installed via nvm."
+    NVM_INSTALLED=true
   else
     # nvm added to shell profile but not active in this session
     ok "Node.js installed via nvm."
@@ -207,6 +211,17 @@ fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
+# When nvm was used, offgrid-ai is on PATH within this script (nvm sourced),
+# but NOT in the user's current shell. nvm added itself to .zprofile, which
+# loads on new terminal sessions — but not in the current one.
+if $NVM_INSTALLED; then
+  RUN_CMD="source \~/.zprofile && offgrid-ai"
+  RUN_HINT="(or open a new terminal window)"
+else
+  RUN_CMD="offgrid-ai"
+  RUN_HINT=""
+fi
+
 echo ""
 printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 printf "${BOLD}${GREEN}  offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }is ready!${RESET}\n"
@@ -215,19 +230,18 @@ echo ""
 echo "  First run will walk you through setting up everything you need"
 echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
 echo ""
-if command -v offgrid-ai &>/dev/null; then
-  echo "  Run: offgrid-ai"
-else
-  echo "  Run: source ~/.zshrc && offgrid-ai"
-  echo "  (or open a new terminal)"
-fi
+echo "  Run: ${RUN_CMD}"
+[[ -n "$RUN_HINT" ]] && echo "  ${RUN_HINT}"
 echo ""
 
-if [[ -t 0 ]] && ! $SKIP_RUN; then
+# Auto-launch — use /dev/tty so the prompt works even when piped from curl|bash
+if ! $SKIP_RUN && [[ -c /dev/tty ]]; then
   printf "${BOLD}Run offgrid-ai now? [Y/n]${RESET} "
-  read -r response
+  read -r response < /dev/tty
   response="${response:-Y}"
   if [[ "$response" =~ ^[Yy]$ ]]; then
+    # Ensure nvm is sourced before exec (it was sourced earlier but exec
+    # replaces the process, so the PATH from nvm is already in our environment)
     exec offgrid-ai
   fi
 fi
