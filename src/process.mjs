@@ -6,6 +6,8 @@ import { basename, join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
 import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
+import { computeFlags } from "./autodetect.mjs";
+import { findOmlx } from "./omlx-runtime.mjs";
 import { pc } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -23,7 +25,6 @@ export async function computeServerCommand(profile) {
   if (!binary) throw new Error("Server binary not found. Run offgrid-ai interactively to install.");
 
   // llama-cpp
-  const { computeFlags } = await import("./autodetect.mjs");
   const result = computeFlags(
     profile.capabilities ?? {},
     profile.modelPath,
@@ -129,14 +130,11 @@ async function startManagedServer(profile, backend) {
   // Try to start the managed server via CLI
   if (backend.id === "omlx") {
     try {
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-      const { findOmlx } = await import("./omlx-runtime.mjs");
       const omlxBin = await findOmlx();
       if (!omlxBin) {
         throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or install manually: brew tap jundot/omlx && brew install omlx`);
       }
-      await promisify(execFile)(omlxBin, ["start"], { timeout: 10000 });
+      await execFileAsync(omlxBin, ["start"], { timeout: 10000 });
     } catch (err) {
       if (err.message.includes("not installed")) throw err;
       throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });

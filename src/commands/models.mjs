@@ -1,20 +1,22 @@
 import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR } from "../config.mjs";
 import { existsSync } from "node:fs";
+import { rm, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
-import { hasOmlx } from "../omlx-runtime.mjs";
+import { hasOmlx, offerOmlxRestart } from "../omlx-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
+import { findOmlxModelDir } from "../mlx-discovery.mjs";
 import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 import { downloadFlow } from "../download.mjs";
-
-const { stripVTControlCharacters } = await import("node:util");
+import { execFileAsync } from "../exec.mjs";
 
 export async function modelsCommand(argv) {
   await ensureDirs();
@@ -125,8 +127,8 @@ async function showModelPicker(catalog) {
   }
 
   groups.push({ separator: " ", items: [
-    { value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` },
     { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
+    { value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` },
   ] });
 
   const prompt = createPrompt();
@@ -136,11 +138,13 @@ async function showModelPicker(catalog) {
 
     if (selected === "__settings__") {
       await settingsFlow(prompt);
+      console.log("");
       return;
     }
 
     if (selected === "__download__") {
       await downloadFlow(prompt);
+      console.log("");
       return;
     }
 
@@ -151,6 +155,7 @@ async function showModelPicker(catalog) {
     const action = await prompt.choice(item.label, actions, actions[0].value);
     if (!action) return;
     await performAction(prompt, action, item);
+    console.log("");
   } finally {
     prompt.close();
   }
@@ -179,7 +184,8 @@ function actionsForItem(item) {
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
     }
-    available.push({ value: "remove", name: "Remove", desc: missing ? "Delete this broken setup" : "Delete this setup" });
+    available.push({ value: "remove_config", name: "Remove configuration", desc: "Delete this setup, keep model files" });
+    available.push({ value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" });
     if (missing) {
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi", dimmed: true },
@@ -192,11 +198,13 @@ function actionsForItem(item) {
     return formatActions([
       { value: "setup", name: "Set up", desc: "Configure and save" },
       { value: "inspect", name: "Details", desc: "Model info" },
+      { value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" },
     ]);
   }
   return formatActions([
     { value: "setup", name: "Set up", desc: `Connect via ${BACKENDS[item.backendId].label}` },
     { value: "inspect", name: "Details", desc: "Model info" },
+    { value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" },
   ]);
 }
 
@@ -215,7 +223,8 @@ async function performAction(prompt, action, item) {
   }
   if (action === "run") return await runItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
-  if (action === "remove" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
+  if (action === "remove_config" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
+  if (action === "delete_model") return await deleteModelFromSource(prompt, item);
 }
 
 async function runItem(item) {
@@ -277,6 +286,161 @@ async function removeProfileInteractive(id) {
   console.log(pc.green(`Removed ${profile.label} (${profile.id})`));
 }
 
+// ── Delete model from source ───────────────────────────────────────────────
+
+/** Extract HuggingFace repo ID from a cache path. */
+function hfRepoFromPath(path) {
+  const hubPart = path.slice(HF_HUB_DIR.length);
+  const match = hubPart.match(/models--(.+?)(?=\/|$)/);
+  if (!match) return null;
+  return match[1].replace(/--/g, "/");
+}
+
+/** Determine where a model's files live on disk. */
+async function modelLocationForItem(item) {
+  if (item.type === "profile") {
+    const backend = backendFor(item.profile.backend);
+    if (backend.type === "managed-server") {
+      const modelId = item.profile.omlxModel || item.profile.modelAlias || item.profile.id;
+      // oMLX model IDs may not include the org prefix, so search recursively
+      const dir = await findOmlxModelDir(modelId);
+      return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
+    }
+    const modelPath = item.profile.modelPath;
+    if (!modelPath) return { kind: "unknown" };
+    if (modelPath.startsWith(HF_HUB_DIR)) {
+      return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
+    }
+    return { kind: "file", path: modelPath };
+  }
+  if (item.type === "new") {
+    const modelPath = item.model?.path;
+    if (!modelPath) return { kind: "unknown" };
+    if (modelPath.startsWith(HF_HUB_DIR)) {
+      return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
+    }
+    return { kind: "file", path: modelPath };
+  }
+  if (item.type === "managed") {
+    const modelId = item.model?.id;
+    if (!modelId) return { kind: "unknown" };
+    // oMLX model IDs may not include the org prefix, so search recursively
+    const dir = await findOmlxModelDir(modelId);
+    return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
+  }
+  return { kind: "unknown" };
+}
+
+async function deleteModelFromSource(prompt, item) {
+  const loc = await modelLocationForItem(item);
+
+  if (loc.kind === "unknown") {
+    console.log(pc.yellow("Could not determine where this model's files are located."));
+    return;
+  }
+
+  // Show what will be deleted
+  let locationLabel;
+  if (loc.kind === "hf-cache") {
+    locationLabel = loc.path ?? loc.repoId;
+  } else if (loc.kind === "mlx") {
+    locationLabel = loc.dir;
+  } else if (loc.kind === "file") {
+    locationLabel = loc.path;
+  }
+
+  console.log(pc.yellow("\nThis will permanently delete " + (item.type === "profile" ? "the configuration and the model from:" : "the model from:")));
+  console.log(pc.dim(`  ${locationLabel}`));
+
+  const confirmed = await prompt.yesNo("Delete this model?", false);
+  if (!confirmed) {
+    console.log(pc.dim("Cancelled."));
+    return;
+  }
+
+  // Stop running server if needed
+  if (item.type === "profile" && await isProfileRunning(item.profile)) {
+    console.log(pc.dim("Stopping running server..."));
+    await stopProfile(item.profile);
+  }
+
+  // Delete files
+  if (loc.kind === "hf-cache" && loc.repoId) {
+    const cacheDir = join(HF_HUB_DIR, `models--${loc.repoId.replace(/\//g, "--")}`);
+    try {
+      const { stdout } = await execFileAsync("hf", ["cache", "rm", `model/${loc.repoId}`, "--yes"], { timeout: 30000 });
+      if (stdout.trim()) console.log(pc.dim(stdout.trim()));
+      // Verify the directory is actually gone
+      if (existsSync(cacheDir)) {
+        console.log(pc.red(`✗ Model still exists at ${cacheDir}`));
+        console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
+      } else {
+        console.log(pc.green(`✓ Deleted ${loc.repoId} from HuggingFace cache`));
+      }
+    } catch (err) {
+      const detail = err.stderr?.trim() || err.message;
+      console.log(pc.red(`✗ Failed: ${detail}`));
+      console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
+    }
+  } else if (loc.kind === "mlx") {
+    const omlxModelsRoot = join(homedir(), ".omlx", "models");
+    // Safety guard: never delete outside ~/.omlx/models/
+    if (!loc.dir.startsWith(omlxModelsRoot + "/") && loc.dir !== omlxModelsRoot) {
+      console.log(pc.red(`✗ Refusing to delete: path is outside ~/.omlx/models/`));
+      console.log(pc.dim(`  Target: ${loc.dir}`));
+      console.log(pc.dim(`Delete manually if needed: rm -rf ${loc.dir}`));
+      return;
+    }
+    if (!existsSync(loc.dir)) {
+      console.log(pc.yellow(`Directory not found: ${loc.dir}`));
+      console.log(pc.dim("Model files may have already been removed, or oMLX loaded them from a different location."));
+    } else {
+      try {
+        await rm(loc.dir, { recursive: true, force: true });
+      } catch (err) {
+        console.log(pc.red(`✗ Failed: ${err.message}`));
+        console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
+        return;
+      }
+      // Verify deletion
+      if (existsSync(loc.dir)) {
+        console.log(pc.red(`✗ Directory still exists: ${loc.dir}`));
+        console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
+      } else {
+        console.log(pc.green(`✓ Deleted ${loc.dir}`));
+        await offerOmlxRestart(prompt, "to update its model list");
+      }
+    }
+  } else if (loc.kind === "file") {
+    if (!existsSync(loc.path)) {
+      console.log(pc.yellow(`File not found: ${loc.path}`));
+      console.log(pc.dim("Model file may have already been removed."));
+    } else {
+      try {
+        await unlink(loc.path);
+      } catch (err) {
+        console.log(pc.red(`✗ Failed: ${err.message}`));
+        console.log(pc.dim(`Delete manually: rm ${loc.path}`));
+        return;
+      }
+      // Verify deletion
+      if (existsSync(loc.path)) {
+        console.log(pc.red(`✗ File still exists: ${loc.path}`));
+        console.log(pc.dim(`Delete manually: rm ${loc.path}`));
+      } else {
+        console.log(pc.green(`✓ Deleted ${loc.path}`));
+      }
+    }
+  }
+
+  // Remove profile configuration if one exists
+  if (item.type === "profile") {
+    await removeFromPiConfig(item.profile);
+    await deleteProfile(item.profile.id);
+    console.log(pc.dim(`Removed configuration: ${item.profile.id}`));
+  }
+}
+
 // ── Settings & discovery path management ───────────────────────────────────
 
 async function settingsFlow(prompt) {
@@ -288,7 +452,7 @@ async function settingsFlow(prompt) {
     let omlxServerUp = false;
     if (omlxInstalled) {
       try {
-        const res = await fetch("http://127.0.0.1:8000/v1/models", { signal: AbortSignal.timeout(2000) });
+        const res = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(2000) });
         omlxServerUp = res.ok;
       } catch { /* server down */ }
     }

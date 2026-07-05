@@ -46,6 +46,7 @@ export async function runProfile(profile, options = {}) {
 
   printMemoryEstimate(profile, isManaged);
   await launchHarness(profile, options, isManaged, withHarness, backend);
+  console.log("");
 }
 
 async function ensureLocalServer(profile, backend, options) {

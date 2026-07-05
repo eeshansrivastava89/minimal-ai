@@ -34,6 +34,7 @@ export async function stopCommand(argv) {
 
     const targets = selected === "__all" ? running : running.filter((item) => item.profile.id === selected);
     for (const { profile } of targets) await printStopResult(profile);
+    console.log("");
   } finally {
     prompt.close();
   }

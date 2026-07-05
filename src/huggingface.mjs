@@ -1,23 +1,19 @@
 // HuggingFace model download helpers.
-// Uses the Python huggingface_hub package (the standard, maintained downloader)
-// to download models into the standard HF cache directory.
-// Downloads go to ~/.cache/huggingface/hub, NOT a custom offgrid-ai folder.
+// Uses the `hf` CLI (from huggingface_hub) for actual downloads.
+// The interactive model/quant selection happens in download.mjs; here we
+// just hand off to the CLI and let it handle progress bars, resumption, etc.
 
-import { execFile } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { join, dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { HF_HUB_DIR } from "./config.mjs";
 
 const execFileAsync = promisify(execFile);
 
-const HF_DOWNLOAD_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "resources", "hf-download.py");
-
-/** Check whether python3 + huggingface_hub is available. */
-export async function hasHuggingfaceHub() {
+/** Check whether the `hf` CLI is available. */
+export async function hasHfCli() {
   try {
-    const { stdout } = await execFileAsync("python3", ["-c", "import huggingface_hub; print(huggingface_hub.__version__)"]);
+    const { stdout } = await execFileAsync("hf", ["--version"]);
     return Boolean(stdout.trim());
   } catch {
     return false;
@@ -108,6 +104,21 @@ export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch } = {})
     .sort((a, b) => a.sizeBytes - b.sizeBytes);
 }
 
+/** Fetch model metadata from the HF API. */
+export async function getHfModelInfo(repo, { fetchImpl = globalThis.fetch } = {}) {
+  const url = `https://huggingface.co/api/models/${repo}`;
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error(`HuggingFace API error: HTTP ${response.status} for ${repo}`);
+  return await response.json();
+}
+
+/** Check if a repo is MLX-formatted based on its HF metadata. */
+export function isMlxRepo(modelInfo) {
+  if (modelInfo.library_name === "mlx") return true;
+  if (Array.isArray(modelInfo.tags) && modelInfo.tags.includes("mlx")) return true;
+  return false;
+}
+
 /** Resolve a user-provided HF reference into a download plan. */
 export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } = {}) {
   const { repo, filename } = parseHfRef(input);
@@ -148,66 +159,51 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
 }
 
 /**
- * Download a resolved model.
- * GGUF: downloads to HF cache (offgrid-ai scanner finds it there).
- * MLX: downloads directly to a local directory (oMLX scans ~/.omlx/models).
+ * Download a resolved model using the `hf` CLI.
+ * GGUF: downloads single file to HF cache (offgrid-ai scanner finds it there).
+ * MLX: downloads full repo to a local directory (oMLX scans ~/.omlx/models).
+ * Progress bars are handled natively by the CLI (stdio inherited).
  * @param {object} model - from resolveHfDownload
  * @param {object} [options]
- * @param {string} [options.localDir] - for MLX: target directory (e.g. ~/.omlx/models/org/model)
+ * @param {string} [options.localDir] - for MLX: target directory
  * @returns {Promise<{ localDir: string, format: string }>}
  */
-export async function downloadToHfCache(model, options = {}) {
-  const script = HF_DOWNLOAD_SCRIPT;
-  const args = ["--repo", model.repo];
+export async function downloadModel(model, options = {}) {
+  const args = ["download", model.repo];
+  let localDir;
 
   if (model.format === "gguf") {
+    // Single file to HF cache — scanner finds it there
     await mkdir(HF_HUB_DIR, { recursive: true });
-    args.push("--file", model.files[0].filename, "--cache-dir", HF_HUB_DIR);
+    args.push(model.files[0].filename, "--cache-dir", HF_HUB_DIR);
+    localDir = HF_HUB_DIR;
   } else if (options.localDir) {
-    args.push("--local-dir", options.localDir);
+    // Full repo to a flat local directory (oMLX)
+    await mkdir(options.localDir, { recursive: true });
+    args.push(
+      "--local-dir", options.localDir,
+      "--exclude", "*.md",
+      "--exclude", ".gitattributes",
+      "--exclude", "LICENSE",
+      "--exclude", ".gitignore",
+    );
+    localDir = options.localDir;
   } else {
+    // Fallback: full repo to HF cache
     await mkdir(HF_HUB_DIR, { recursive: true });
     args.push("--cache-dir", HF_HUB_DIR);
+    localDir = HF_HUB_DIR;
   }
 
-  return new Promise((resolve, reject) => {
-    const child = execFile("python3", [script, ...args], { env: process.env });
-
-    let stdoutBuf = "";
-
-    // stdout: NDJSON events (complete/error only — progress is on stderr via tqdm)
-    const handleLine = (line) => {
-      if (!line) return;
-      try {
-        const event = JSON.parse(line);
-        if (event.type === "complete") {
-          resolve({ localDir: event.localDir, format: model.format });
-        } else if (event.type === "error") {
-          reject(new Error(event.message));
-        }
-      } catch {
-        // Ignore non-JSON output
-      }
-    };
-
-    child.stdout?.on("data", (chunk) => {
-      stdoutBuf += String(chunk);
-      let nl;
-      while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
-        handleLine(stdoutBuf.slice(0, nl));
-        stdoutBuf = stdoutBuf.slice(nl + 1);
-      }
-    });
-
-    // stderr: pipe through to terminal — tqdm progress bars live here
-    child.stderr?.on("data", (chunk) => {
-      process.stderr.write(chunk);
-    });
-
+  const exitCode = await new Promise((resolve, reject) => {
+    const child = spawn("hf", args, { stdio: "inherit", env: process.env });
     child.on("error", reject);
-    child.on("exit", (code) => {
-      if (stdoutBuf.trim()) handleLine(stdoutBuf.trim());
-      if (code !== 0) reject(new Error(`Download failed with exit code ${code}`));
-    });
+    child.on("exit", resolve);
   });
+
+  if (exitCode !== 0) {
+    throw new Error(`hf download exited with code ${exitCode}`);
+  }
+
+  return { localDir, format: model.format };
 }

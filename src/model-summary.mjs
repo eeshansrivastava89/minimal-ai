@@ -23,7 +23,7 @@ export function capabilitySummary(caps) {
   return parts.length > 0 ? parts.join(" · ") : "standard GGUF";
 }
 
-export function profileMtpLabel(profile, drafters, { detailed = false } = {}) {
+function profileMtpLabel(profile, drafters, { detailed = false } = {}) {
   if (profile.drafterPath) {
     return detailed ? pc.green(`MTP enabled (drafter: ${basename(profile.drafterPath)})`) : pc.green("MTP enabled");
   }
@@ -34,7 +34,7 @@ export function profileMtpLabel(profile, drafters, { detailed = false } = {}) {
   return null;
 }
 
-export function ggufMtpLabel(model, drafter) {
+function ggufMtpLabel(model, drafter) {
   const caps = detectCapabilities(model.path, model.mmprojPath);
   if (caps.mtp || Boolean(drafter)) return pc.green("MTP ✓");
   if (caps.architecture === "gemma4") return pc.yellow("MTP: needs drafter");

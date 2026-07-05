@@ -237,6 +237,8 @@ export function createPrompt() {
 
 export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
   const choices = [];
+  // Blank line after the prompt message for visual separation
+  choices.push(new Separator(" "));
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     // Add blank line before each group (except the first)

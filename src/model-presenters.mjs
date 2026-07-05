@@ -1,12 +1,12 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
 import { pc, formatBytes, renderSectionRows } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
-import { DATA_DIR } from "./config.mjs";
 
 const OPTION_SEPARATOR = "  ";
 const OPTION_STATUS_WIDTH = 12;
@@ -14,8 +14,6 @@ const OPTION_BACKEND_WIDTH = 14;
 const OPTION_SOURCE_WIDTH = 14;
 const OPTION_QUANT_WIDTH = 10;
 const OPTION_CTX_WIDTH = 5;
-
-const { stripVTControlCharacters } = await import("node:util");
 
 function optionPad(text, color, width) {
   const visible = stripVTControlCharacters(String(text)).length;
@@ -195,26 +193,6 @@ export function inferBackendId(item) {
   // new model: derive from format
   if (item.model?.backend) return item.model.backend;
   return "llama-cpp";
-}
-
-export function printWorkspaceHeader(normalized, runningProfilesNow, modelMissingIds = new Set()) {
-  const profiles = normalized.profiles;
-  const isRunning = (p) => runningProfilesNow.some((r) => r.id === p.id);
-  const isMissing = (p) => isProfileFileMissing(p) || modelMissingIds.has(p.id);
-  const readyCount = profiles.filter((p) => !isMissing(p) && !isRunning(p)).length;
-  const runningCount = runningProfilesNow.length;
-  const missingCount = profiles.filter(isMissing).length;
-  const setupCount = normalized.newModels.length + normalized.managedItems.length;
-
-  const countParts = [];
-  if (runningCount > 0) countParts.push(pc.green(`${runningCount} running`));
-  if (readyCount > 0) countParts.push(pc.blue(`${readyCount} model${readyCount === 1 ? "" : "s"} ready`));
-  if (missingCount > 0) countParts.push(pc.red(`${missingCount} model${missingCount === 1 ? "" : "s"} missing`));
-  if (setupCount > 0) countParts.push(pc.yellow(`${setupCount} model${setupCount === 1 ? "" : "s"} need${setupCount === 1 ? "s" : ""} setup`));
-
-  console.log(`   ${countParts.join(pc.dim(" · "))}`);
-  console.log(pc.dim(`   Profiles: ${DATA_DIR}`));
-  console.log(pc.dim("   ─────────────────────────────────────────────────────────"));
 }
 
 export async function printProfileDetails(profile) {

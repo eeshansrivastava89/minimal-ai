@@ -22,6 +22,14 @@
 - **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which offgrid-ai`, etc.).
 - **Test and lint before committing.** Run `npm test` and `npm run lint`. Keep the change focused.
 
+## TODO Tracking
+
+- **All to-do items, feature requests, and planned work live in GitHub issues** — not in planning docs or internal-docs.
+- Before starting work, check `gh issue list` for open issues. Close issues when the work is done.
+- Planning docs go stale silently; GitHub issues have status (open/closed), labels, and tracking.
+- If you discover a gap or future enhancement during a session, create a GitHub issue rather than noting it in a doc.
+- Internal-docs are for reference material and architecture decisions only — not for tracking work.
+
 ## Session Start: Codebase Health Report
 
 At the start of every new session, before other work, run a read-only

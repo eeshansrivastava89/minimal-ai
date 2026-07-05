@@ -85,4 +85,5 @@ export async function statusCommand() {
       ["Server", profile.baseUrl],
     ]), { formatBorder: status.ready ? pc.green : pc.yellow }));
   }
+  console.log("");
 }

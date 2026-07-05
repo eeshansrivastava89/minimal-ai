@@ -1,6 +1,5 @@
-// Shared discovery helpers used by both the GGUF scanner (scan.mjs) and the
-// MLX scanner (mlx-discovery.mjs). Keeping these here avoids a cross-dependency
-// between the two format-specific scanners.
+// Helpers for the GGUF scanner (scan.mjs). Centralizes model-size and embedding-type
+// constants so they're defined once rather than duplicated across scanners.
 
 import { basename, dirname } from "node:path";
 

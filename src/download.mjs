@@ -1,11 +1,12 @@
 // Model download flow — HuggingFace downloads with quant picker and RAM fit.
 // Used by onboarding (no models found) and the model picker (↓ Download a model).
 
-import { hasHuggingfaceHub, parseHfRef, resolveHfDownload, downloadToHfCache, listGgufFiles } from "./huggingface.mjs";
+import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, getHfModelInfo, isMlxRepo } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
+import { offerOmlxRestart } from "./omlx-runtime.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
@@ -18,13 +19,13 @@ const GB = 1024 ** 3;
  * @returns {Promise<boolean>} true if a model was downloaded
  */
 export async function downloadFlow(prompt) {
+  console.log("");
   const method = await prompt.choice("Download a model", [
-    { value: "recommended", label: "Recommended for your machine" },
     { value: "manual", label: "Enter a HuggingFace repo ID" },
-    { value: "back", label: "Back" },
-  ], "recommended");
+    { value: "recommended", label: "Recommended for your machine" },
+  ], "manual");
 
-  if (!method || method === "back") return false;
+  if (!method) return false;
 
   let repo, filename;
 
@@ -76,6 +77,7 @@ export async function downloadFlow(prompt) {
       filename = undefined;
     }
   } else {
+    console.log(pc.dim("  Browse models at huggingface.co/models"));
     const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/gemma-4-E2B-it-GGUF)", "");
     if (!input || !input.trim()) return false;
     const ref = parseHfRef(input.trim());
@@ -95,12 +97,27 @@ export async function downloadFlow(prompt) {
     if (ggufFiles.length > 0) {
       filename = await pickGgufQuant(prompt, repo, ggufFiles);
       if (!filename) return false;
+    } else {
+      // No GGUF files — check if it's an MLX repo via HF metadata
+      let modelInfo;
+      try {
+        modelInfo = await getHfModelInfo(repo);
+      } catch {
+        console.log(pc.red(`Could not fetch repo info for ${repo}. Check the repo ID and try again.`));
+        return false;
+      }
+      if (!isMlxRepo(modelInfo)) {
+        console.log(pc.yellow(`This repo is not a GGUF or MLX model (library: ${modelInfo.library_name ?? "unknown"}).`));
+        console.log(pc.dim("For llama.cpp: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
+        console.log(pc.dim("For oMLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
+        return false;
+      }
+      // It's MLX — download everything
     }
-    // If no GGUF files, it's an MLX repo — download everything
   }
 
   // Check for huggingface_hub
-  if (!(await hasHuggingfaceHub())) {
+  if (!(await hasHfCli())) {
     console.log(pc.yellow("HuggingFace CLI is required to download models."));
     console.log(pc.dim("Install it: pip3 install huggingface_hub"));
     return false;
@@ -123,19 +140,25 @@ export async function downloadFlow(prompt) {
     return false;
   }
 
-  console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...\n`));
+  console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})`));
+  if (plan.format === "mlx") {
+    const modelParts = repo.split("/").filter(Boolean);
+    const localDir = join(homedir(), ".omlx", "models", ...modelParts);
+    console.log(pc.dim(`Location: ${localDir}\n`));
+  } else {
+    console.log(pc.dim(`Location: HF cache (${HF_HUB_DIR})\n`));
+  }
 
   try {
     if (plan.format === "mlx") {
       // Download directly to ~/.omlx/models/<org>/<model> — oMLX scans this dir
       const modelParts = repo.split("/").filter(Boolean);
       const localDir = join(homedir(), ".omlx", "models", ...modelParts);
-      await downloadToHfCache(plan, { localDir });
+      await downloadModel(plan, { localDir });
       console.log(pc.green("\n✓ Download complete."));
-      console.log(pc.yellow("Restart oMLX to load the new model: omlx restart"));
-      console.log(pc.dim("Then run offgrid-ai again."));
+      await offerOmlxRestart(prompt, "to load the new model");
     } else {
-      await downloadToHfCache(plan);
+      await downloadModel(plan);
       console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
     }
     return true;

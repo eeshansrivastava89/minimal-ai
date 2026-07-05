@@ -3,6 +3,7 @@ import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promise
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor, baseUrlForFlags, defaultFlagsForBackend, BACKENDS } from "./backends.mjs";
+import { detectCapabilities } from "./autodetect.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
@@ -130,7 +131,6 @@ export function normalizeProfile(profile) {
 // ── Auto-create profile from a discovered model ────────────────────────────
 
 export async function createProfileFromModel(model, backendId, drafterPath) {
-  const { detectCapabilities } = await import("./autodetect.mjs");
   const caps = detectCapabilities(model.path, model.mmprojPath);
   // If a drafter is provided, this model supports MTP regardless of filename
   const hasMtp = caps.mtp || Boolean(drafterPath);

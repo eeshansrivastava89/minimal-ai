@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
 import { BACKENDS } from "./backends.mjs";
-import { hasOmlx } from "./omlx-runtime.mjs";
 
-export const MANAGED_BACKEND_IDS = ["omlx"];
+const MANAGED_BACKEND_IDS = ["omlx"];
 
 export async function scanManagedModels() {
   const results = [];
@@ -20,8 +19,4 @@ export async function scanManagedModels() {
 
 export function hasLmStudioInstalled() {
   return existsSync("/Applications/LM Studio.app");
-}
-
-export async function hasOmlxInstalled() {
-  return await hasOmlx();
 }

@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { MANAGED_LLAMA_SERVER, RUNTIME_DIR } from "./config.mjs";
 import { compareVersions } from "./updates.mjs";
@@ -137,5 +137,5 @@ function verifyDigest(bytes, digest) {
   if (!digest?.startsWith("sha256:")) return;
   const expected = digest.slice("sha256:".length);
   const actual = createHash("sha256").update(bytes).digest("hex");
-  if (actual !== expected) throw new Error(`${basename("llama.cpp")}: checksum mismatch`);
+  if (actual !== expected) throw new Error("llama.cpp: checksum mismatch");
 }

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
@@ -69,8 +70,6 @@ export async function launchPi(profile) {
 
 export async function hasPi() {
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
     await promisify(execFile)("which", ["pi"]);
     return true;
   } catch {

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { compareVersions } from "./updates.mjs";
 import { hasHomebrew, ensureHomebrewFor } from "./config.mjs";
-import { commandExists } from "./exec.mjs";
+import { commandExists, runCommand } from "./exec.mjs";
 import { pc, renderCard, renderRows } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -138,7 +138,6 @@ export async function offerManagedOmlxUpdate(prompt, { fetchImpl = globalThis.fe
   if (!shouldUpdate) return false;
 
   try {
-    const { runCommand } = await import("./exec.mjs");
     console.log(pc.dim("Updating oMLX via Homebrew..."));
     await runCommand("brew", ["update"], { label: "brew update" });
     await runCommand("brew", ["upgrade", "omlx"], { label: "brew upgrade omlx" });
@@ -154,6 +153,34 @@ export async function offerManagedOmlxUpdate(prompt, { fetchImpl = globalThis.fe
 // ── Installation ───────────────────────────────────────────────────────────
 
 /**
+ * Offer to restart oMLX so it picks up new or deleted models.
+ * @param {object} prompt - UI prompt interface (yesNo)
+ * @param {string} [reason] - why we're restarting (e.g. "to load the new model")
+ * @returns {Promise<boolean>} true if oMLX was restarted
+ */
+export async function offerOmlxRestart(prompt, reason = "to update its model list") {
+  const bin = await findOmlx();
+  if (!bin) {
+    console.log(pc.dim("Restart oMLX manually: omlx restart"));
+    return false;
+  }
+  const shouldRestart = await prompt.yesNo(`Restart oMLX ${reason}?`, true);
+  if (!shouldRestart) {
+    console.log(pc.dim("Restart manually later: omlx restart"));
+    return false;
+  }
+  try {
+    await execFileAsync(bin, ["restart"], { timeout: 15000 });
+    console.log(pc.green("✓ oMLX restarted"));
+    return true;
+  } catch (err) {
+    console.log(pc.red(`✗ Restart failed: ${err.message}`));
+    console.log(pc.dim("Restart manually: omlx restart"));
+    return false;
+  }
+}
+
+/**
  * Install oMLX. Uses Homebrew if available (automating tap + install).
  * If Homebrew is not available, prompts to download the DMG from GitHub
  * Releases or install Homebrew first.
@@ -167,7 +194,6 @@ export async function installOmlx(prompt, run) {
 
   if (!hasBrew) {
     if (!(await ensureHomebrewFor(prompt, run || (async (cmd, args, label) => {
-      const { runCommand } = await import("./exec.mjs");
       return runCommand(cmd, args, { label });
     }), "oMLX"))) {
       console.log(pc.dim("Install oMLX manually:"));
@@ -179,7 +205,6 @@ export async function installOmlx(prompt, run) {
 
   // Install oMLX via Homebrew
   const runner = run || (async (cmd, args, label) => {
-    const { runCommand } = await import("./exec.mjs");
     return runCommand(cmd, args, { label });
   });
 
