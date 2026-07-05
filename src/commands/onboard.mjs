@@ -13,16 +13,14 @@ export async function onboardFlow() {
   await ensureDirs();
   startInteractive("offgrid-ai setup");
   const prompt = createPrompt();
-  const verbose = process.argv.includes("--verbose");
-  const run = (cmd, args, label) => runCommand(cmd, args, { label, verbose });
 
   try {
     console.log(pc.bold("Welcome to offgrid-ai!"));
     console.log(pc.dim("Let's make sure you have everything you need to run local models.\n"));
 
     const llamaBinary = await ensureLlamaRuntime(prompt);
-    await ensureOmlxRuntime(prompt, run);
-    if (!(await ensurePi(prompt, run))) return;
+    await ensureOmlxRuntime(prompt);
+    if (!(await ensurePi(prompt))) return;
 
     const [{ models: ggufModels }, managedModels] = await Promise.all([
       scanGgufModels(),
@@ -63,7 +61,7 @@ async function ensureLlamaRuntime(prompt) {
   return llamaBinary;
 }
 
-async function ensurePi(prompt, run) {
+async function ensurePi(prompt) {
   if (await hasPi()) {
     console.log(pc.green("✓ Pi found"));
     return true;
@@ -76,7 +74,7 @@ async function ensurePi(prompt, run) {
   }
   console.log(pc.cyan("Installing Pi..."));
   try {
-    await run("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], "Pi");
+    await runCommand("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], { label: "Pi", verbose: true });
   } catch {
     console.log(pc.red("✗ Failed to install Pi."));
     console.log(pc.dim("Install it manually: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"));

@@ -139,8 +139,8 @@ export async function offerManagedOmlxUpdate(prompt, { fetchImpl = globalThis.fe
 
   try {
     console.log(pc.dim("Updating oMLX via Homebrew..."));
-    await runCommand("brew", ["update"], { label: "brew update" });
-    await runCommand("brew", ["upgrade", "omlx"], { label: "brew upgrade omlx" });
+    await runCommand("brew", ["update"], { label: "brew update", verbose: true });
+    await runCommand("brew", ["upgrade", "omlx"], { label: "brew upgrade omlx", verbose: true });
     console.log(pc.green(`✓ Updated oMLX to latest`));
     return true;
   } catch (err) {
@@ -186,16 +186,17 @@ export async function offerOmlxRestart(prompt, reason = "to update its model lis
  * Releases or install Homebrew first.
  *
  * @param {object} prompt - UI prompt interface (yesNo, choice)
- * @param {function} [run] - runCommand function for verbose command execution
  * @returns {Promise<boolean>} true if installation succeeded
  */
-export async function installOmlx(prompt, run) {
+export async function installOmlx(prompt) {
   const hasBrew = await hasHomebrew();
 
+  // Always show brew output for installs — these are long-running operations
+  // the user explicitly approved, so they deserve to see progress bars.
+  const verboseRun = (cmd, args, label) => runCommand(cmd, args, { label, verbose: true });
+
   if (!hasBrew) {
-    if (!(await ensureHomebrewFor(prompt, run || (async (cmd, args, label) => {
-      return runCommand(cmd, args, { label });
-    }), "oMLX"))) {
+    if (!(await ensureHomebrewFor(prompt, verboseRun, "oMLX"))) {
       console.log(pc.dim("Install oMLX manually:"));
       console.log(pc.dim("  brew tap jundot/omlx && brew install omlx"));
       console.log(pc.dim("  — or download the macOS app from https://github.com/jundot/omlx/releases"));
@@ -204,15 +205,12 @@ export async function installOmlx(prompt, run) {
   }
 
   // Install oMLX via Homebrew
-  const runner = run || (async (cmd, args, label) => {
-    return runCommand(cmd, args, { label });
-  });
-
   console.log(pc.cyan("Installing oMLX via Homebrew..."));
+  console.log(pc.dim("  This may take a few minutes — grab a coffee.\n"));
   try {
-    await runner("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
-    await runner("brew", ["install", "omlx"], "oMLX");
-    console.log(pc.green("✓ oMLX installed"));
+    await verboseRun("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
+    await verboseRun("brew", ["install", "omlx"], "oMLX");
+    console.log(pc.green("\n✓ oMLX installed"));
     return true;
   } catch (err) {
     console.log(pc.red(`✗ oMLX installation failed: ${err.message}`));
@@ -227,10 +225,9 @@ export async function installOmlx(prompt, run) {
  * to install it. This is the oMLX equivalent of ensureLlamaRuntime().
  *
  * @param {object} prompt - UI prompt interface
- * @param {function} [run] - runCommand function for verbose output
  * @returns {Promise<boolean>} true if oMLX is available (installed or pre-existing)
  */
-export async function ensureOmlxRuntime(prompt, run) {
+export async function ensureOmlxRuntime(prompt) {
   let omlxBin = await findOmlx();
   if (!omlxBin) {
     console.log(renderCard("oMLX runtime", renderRows([
@@ -241,7 +238,7 @@ export async function ensureOmlxRuntime(prompt, run) {
 
     const shouldInstall = await prompt.yesNo("Install oMLX runtime?", true);
     if (shouldInstall) {
-      await installOmlx(prompt, run);
+      await installOmlx(prompt);
       omlxBin = await findOmlx();
     }
 

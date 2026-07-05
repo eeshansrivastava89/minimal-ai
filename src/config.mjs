@@ -172,6 +172,7 @@ export async function ensureHomebrewFor(prompt, run, label) {
     return false;
   }
   console.log(pc.cyan("Installing Homebrew..."));
+  console.log(pc.dim("  This may take several minutes — Homebrew is a large download.\n"));
   try {
     const success = await installHomebrew(run);
     if (!success) {
