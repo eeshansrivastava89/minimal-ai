@@ -2,7 +2,7 @@
 
 # offgrid-ai
 
-**Helper CLI for running local AI models on Mac with llama-server and oMLX.**
+**Run local AI models on your machine — pick, configure, and chat.**
 
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
@@ -12,19 +12,23 @@
 
 ## What is offgrid-ai?
 
-offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server or oMLX have a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity, while still providing a powerful and flexible way to run local models.
+offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server or oMLX has a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity while still providing a powerful and flexible way to run local models.
 
-This is the recommended workflow:
+The recommended workflow:
 
-1. Download models from **LM Studio** or **oMLX**
-2. Do minimal configuration using the `offgrid-ai` command
-3. Run the model with `offgrid-ai` with Pi in interactive mode
+1. Download models from **HuggingFace** (or use models you already have from LM Studio, oMLX, etc.)
+2. Configure using the `offgrid-ai` interactive setup
+3. Start chatting in **Pi** — offgrid-ai handles the server lifecycle
 
 ## Core Features
-- Auto-detects available models from LM Studio, oMLX, and HuggingFace
-- Auto-detects MTP (multi-token prediction) or QAT (quantization aware training) models, and applies the correct flags for llama.cpp
-- Auto-applies the optimal flags for the model type (llama.cpp server flags, oMLX auto-start and cache management)
-- Start / stop local servers automatically for chat sessions (llama-server and oMLX)
+
+- **Download models** from HuggingFace with a quant picker and RAM fit indicators
+- **Auto-detects** models from LM Studio, oMLX, and HuggingFace cache
+- **Glass-box setup** — every configuration flag gets an explanation card with tradeoffs and memory impact
+- **Model management** — delete models from disk, remove configurations, reconfigure settings
+- **Auto-detects MTP** (multi-token prediction) and **QAT** (quantization-aware training) models, applies the correct flags
+- **Start / stop servers** automatically for chat sessions (llama-server and oMLX)
+- **oMLX integration** — auto-start, MTP enable via admin API, restart after download/deletion
 
 ## Quick start
 
@@ -52,7 +56,7 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 ### 2. Pick a model
 
-The first time you run offgrid-ai, it looks for models already on your machine. If it does not find any, it tells you how to get one.
+The first time you run offgrid-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — just pick "↓ Download a model" and enter a repo ID (e.g. `unsloth/gemma-4-E2B-it-GGUF`).
 
 <img width="808" height="274" alt="image" src="https://github.com/user-attachments/assets/6e1583ab-65db-423c-b0eb-b627586fbf86" />
 
@@ -74,16 +78,17 @@ Pick a model from the list and press Enter. offgrid-ai configures the rest and o
 ## Everyday commands
 
 ```bash
-offgrid-ai              # primary entry-point for the CLI
+offgrid-ai              # model picker — pick, configure, download, or manage models
 offgrid-ai status       # see if any model is running
 offgrid-ai stop         # stop the running model
 offgrid-ai uninstall    # remove offgrid-ai
 ```
 
-## What can I do with it?
+## Platform support
 
-- **Chat with local models** — you download the models yourself, and then offgrid-ai helps configure and run then
-- **Keep data private** — everything runs on your machine without any cloud connections
+- **macOS (Apple Silicon)** — full support: llama.cpp (GGUF) + oMLX (MLX)
+- **Linux** — llama.cpp (GGUF) only. oMLX is Apple Silicon exclusive.
+- **Windows** — not supported
 
 ## Need help?
 
