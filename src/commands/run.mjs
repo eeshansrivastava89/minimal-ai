@@ -113,6 +113,7 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
   }
 
   if (!(await hasPiModel(profile))) await syncPiConfig(profile);
+
   try {
     await launchPi(profile);
   } finally {
@@ -121,10 +122,6 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
         const result = await stopProfile(profile);
         console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
       } else {
-        // Managed-server backends (oMLX): unload the model from the
-        // server's memory via its HTTP API. The server itself stays running
-        // (offgrid-ai doesn't manage it), but the model is released — same UX
-        // as local-server backends where stopProfile kills the process.
         const result = await unloadModelFromServer(profile);
         if (result.unloaded) {
           console.log(pc.green(`[unload] ${backend.label}: model unloaded`));

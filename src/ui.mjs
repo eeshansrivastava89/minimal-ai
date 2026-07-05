@@ -95,12 +95,12 @@ export function renderCard(title, body, options = {}) {
   }
 
   const topTitle = title ? `╭${pc.reset(titleStr)}` : "╭";
-  const topFill = "─".repeat(Math.max(0, width + 2 - visibleLen(titleStr)));
+  const topFill = "─".repeat(Math.max(0, width - visibleLen(titleStr)));
   const top = `${topTitle}${topFill}╮`;
 
   const middle = lines.map((line) => `│ ${padVisible(line, contentWidth)} │`);
 
-  const bottom = `╰${"─".repeat(width + 2)}╯`;
+  const bottom = `╰${"─".repeat(width)}╯`;
 
   return [top, ...middle, bottom].map((l) => borderColor(l)).join("\n");
 }
@@ -180,9 +180,8 @@ async function runPrompt(fn, config) {
 
 // ── Interactive prompt factory ──────────────────────────────────────────────
 
-export function startInteractive(title = "offgrid-ai") {
+export function startInteractive() {
   if (process.stdin.isTTY) console.clear();
-  console.log(pc.magenta(`◆ ${title}`));
 }
 
 export function createPrompt() {
@@ -195,10 +194,13 @@ export function createPrompt() {
       return value?.trim() || String(defaultValue ?? "");
     },
 
-    async number(label, defaultValue, min, max) {
+    async number(label, defaultValue, min, max, { float = false } = {}) {
       const value = await runPrompt(number, {
         message: label,
         default: defaultValue,
+        min,
+        max,
+        step: float ? 'any' : 1,
         validate(input) {
           if (!Number.isFinite(input) || input < min || input > max) {
             return `Enter a number from ${min} to ${max}.`;
@@ -235,12 +237,10 @@ export function createPrompt() {
 
 export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
   const choices = [];
-  // Separator below the prompt message
-  choices.push(new Separator(pc.dim("  ────────────────────────────────────────────────────────────")));
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     // Add blank line before each group (except the first)
-    if (i > 0) choices.push(new Separator(""));
+    if (i > 0) choices.push(new Separator(" "));
     if (group.separator) {
       choices.push(new Separator(group.separator));
     }

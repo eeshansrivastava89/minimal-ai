@@ -7,9 +7,8 @@ import { pc, formatBytes, renderSectionRows } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 import { DATA_DIR } from "./config.mjs";
-import { findBenchmarkRepo } from "./benchmark.mjs";
 
-const OPTION_SEPARATOR = pc.dim("  │  ");
+const OPTION_SEPARATOR = "  ";
 const OPTION_STATUS_WIDTH = 12;
 const OPTION_BACKEND_WIDTH = 14;
 const OPTION_SOURCE_WIDTH = 14;
@@ -218,15 +217,6 @@ export function printWorkspaceHeader(normalized, runningProfilesNow, modelMissin
   console.log(pc.dim("   ─────────────────────────────────────────────────────────"));
 }
 
-export async function printBenchmarkLine() {
-  const repoPath = await findBenchmarkRepo();
-  if (repoPath) {
-    console.log(pc.green("   ✓") + " local-llm-visual-benchmark linked");
-  } else {
-    console.log(pc.yellow("   ○") + " to run benchmarks, pair with " + pc.cyan("local-llm-visual-benchmark"));
-  }
-}
-
 export async function printProfileDetails(profile) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
@@ -266,8 +256,9 @@ export async function printProfileDetails(profile) {
       const scriptPath = join(profileDir(profile.id), "start.sh");
       console.log("\n" + renderSectionRows("Server command", [
         ["Run manually", pc.cyan(`bash ${scriptPath}`)],
-        ["Command", pc.dim(script)],
-      ], { columns: Math.min(process.stdout.columns ?? 120, 140) }));
+      ]));
+      console.log("");
+      console.log(pc.dim(script));
     }
   }
 }

@@ -50,7 +50,7 @@ describe("modelSelectOption", () => {
       quant: null,
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /READY\s+│\s+oMLX\s+│\s+oMLX/);
+    assert.match(plain(opt), /READY\s+oMLX\s+oMLX/);
     assert.doesNotMatch(plain(opt), /GGUF/);
   });
 

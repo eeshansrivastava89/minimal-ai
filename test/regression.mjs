@@ -172,39 +172,7 @@ describe("regressions", () => {
     });
   });
 
-  it("fails a benchmark before launching Pi when a managed-server model is unavailable", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-benchmark-missing-model-"));
-    const fakeBin = join(dir, "bin");
-    const runDirectory = join(dir, "run");
-    const piMarker = join(dir, "pi-ran");
-    await mkdir(fakeBin, { recursive: true });
-    await mkdir(runDirectory, { recursive: true });
-    await writeFile(join(runDirectory, "metadata.json"), JSON.stringify({ kind: "visual", status: "prepared", runner: {}, results: {} }, null, 2) + "\n", "utf8");
-    await writeFile(join(fakeBin, "pi"), `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(piMarker)}, "ran");\n`, "utf8");
-    await chmod(join(fakeBin, "pi"), 0o755);
-
-    const originalPath = process.env.PATH;
-    process.env.PATH = `${fakeBin}${delimiter}${originalPath ?? ""}`;
-    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
-
-    try {
-      await withMockedFetch(async (url) => {
-        if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Other-Model-4bit" }] });
-        throw new Error(`Unexpected fetch: ${url}`);
-      }, async () => {
-        const { runPreparedBenchmark } = await import(`../src/benchmark/flow.mjs?t=${Date.now()}-${++importCounter}`);
-        const metadata = await runPreparedBenchmark(profile, runDirectory);
-        assert.equal(metadata.status, "failed");
-        assert.match(metadata.error.message, /Qwen3-4B-4bit is not available on oMLX/);
-        await assert.rejects(() => readFile(piMarker), /ENOENT/);
-      });
-    } finally {
-      if (originalPath === undefined) delete process.env.PATH;
-      else process.env.PATH = originalPath;
-    }
-  });
-
-  it("unloads oMLX benchmark models with the discovered server model id", async () => {
+  it("unloads oMLX models with the discovered server model id", async () => {
     const profile = managedProfile("omlx", "qwen3-4b-4bit", "http://127.0.0.1:8000/v1");
     const { unloadModelFromServer } = await import("../src/process.mjs");
     const calls = [];
@@ -294,7 +262,7 @@ describe("regressions", () => {
     const mod = await freshConfigImport();
     const config = await mod.loadConfig();
     assert.equal(config.modelScanDirs.length, 0);
-    assert.equal(config.benchmarkRepoPath, null);
+
   });
 
   it("loadConfig throws on corrupt config instead of silently defaulting", async () => {

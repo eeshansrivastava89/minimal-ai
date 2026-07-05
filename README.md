@@ -77,14 +77,12 @@ Pick a model from the list and press Enter. offgrid-ai configures the rest and o
 offgrid-ai              # primary entry-point for the CLI
 offgrid-ai status       # see if any model is running
 offgrid-ai stop         # stop the running model
-offgrid-ai benchmark    # run a benchmark paired with my local llm benchmark runner
 offgrid-ai uninstall    # remove offgrid-ai
 ```
 
 ## What can I do with it?
 
 - **Chat with local models** — you download the models yourself, and then offgrid-ai helps configure and run then
-- **Run benchmarks** — compare how different models perform on creative or data-science tasks. Pairs with my other [local llm benchmark runner](https://github.com/eeshansrivastava89/local-llm-visual-benchmark)
 - **Keep data private** — everything runs on your machine without any cloud connections
 
 ## Need help?

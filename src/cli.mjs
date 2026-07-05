@@ -5,7 +5,6 @@ import { modelsCommand } from "./commands/models.mjs";
 import { runCommand } from "./commands/run.mjs";
 import { statusCommand } from "./commands/status.mjs";
 import { stopCommand } from "./commands/stop.mjs";
-import { benchmarkCommand } from "./commands/benchmark.mjs";
 import { uninstallCommand } from "./commands/uninstall.mjs";
 
 async function offerUpdate(argv) {
@@ -45,7 +44,6 @@ export async function run(argv) {
   if (command === "run") return runCommand(argv.slice(1));
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
-  if (command === "benchmark") return benchmarkCommand();
   if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
   if (command === "--verbose") return mainFlow();
 
@@ -69,10 +67,9 @@ function printHelp() {
     ["Start", pc.bold("offgrid-ai")],
     ["Status", "offgrid-ai status"],
     ["Stop", "offgrid-ai stop"],
-    ["Benchmark", "offgrid-ai benchmark"],
     ["Uninstall", "offgrid-ai uninstall"],
     ["Version", "offgrid-ai version"],
   ]), { formatBorder: pc.cyan }));
-  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.\n\nFor benchmarks, run offgrid-ai benchmark to prepare a visual or data-science benchmark run.", { formatBorder: pc.magenta }));
+  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.", { formatBorder: pc.magenta }));
   console.log("\n" + pc.dim("Tip: use --verbose only when you want detailed install output."));
 }

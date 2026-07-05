@@ -4,9 +4,9 @@
 // No other function should format, title-case, or dissect a model name.
 //
 // The returned `id` is always the raw identifier (untouched) and is used for
-// API calls, profile IDs, Pi config matching, and benchmark directory slugs.
+// API calls, profile IDs, and Pi config matching.
 // The returned `display` is the human-readable string shown in pickers, details,
-// and benchmark metadata.
+
 
 // ── Known model families ────────────────────────────────────────────────
 //

@@ -26,6 +26,7 @@ export const HF_HUB_DIR = process.env.HF_HUB_CACHE
 
 export const DEFAULT_MODEL_DIRS = [
   join(homedir(), ".lmstudio", "models"),
+  join(homedir(), ".omlx", "models"),
   HF_HUB_DIR,
 ];
 
@@ -47,7 +48,6 @@ const CONFIG_PATH = join(DATA_DIR, "config.json");
 
 const DEFAULT_CONFIG = {
   modelScanDirs: [],
-  benchmarkRepoPath: null,
   binaryOverrides: {},
 };
 
@@ -76,6 +76,21 @@ export async function getModelScanDirs() {
   const config = await loadConfig();
   // Dedupe (a user may list a default dir explicitly) so we never scan twice.
   return [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs].filter((dir, i, arr) => arr.indexOf(dir) === i);
+}
+
+export async function addModelScanDir(dir) {
+  const config = await loadConfig();
+  config.modelScanDirs ??= [];
+  if (!config.modelScanDirs.includes(dir)) {
+    config.modelScanDirs.push(dir);
+    await saveConfig(config);
+  }
+}
+
+export async function removeModelScanDir(dir) {
+  const config = await loadConfig();
+  config.modelScanDirs = (config.modelScanDirs ?? []).filter((d) => d !== dir);
+  await saveConfig(config);
 }
 
 // ── Binary discovery ──────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { offerManagedOmlxUpdate, hasOmlx } from "../omlx-runtime.mjs";
 import { hasLmStudioInstalled, scanManagedModels } from "../managed.mjs";
 import { recommendedModel } from "../recommendations.mjs";
-import { pc, startInteractive, createPrompt } from "../ui.mjs";
+import { pc, startInteractive, createPrompt, renderCard } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
 import { statusCommand } from "./status.mjs";
@@ -58,7 +58,29 @@ export async function mainFlow() {
   if (!process.stdin.isTTY) return await statusCommand();
 
   startInteractive("offgrid-ai");
+  printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: await hasOmlx(), profiles });
+  console.log(pc.dim("  How to get models — offgrid-ai finds them on disk after you download:"));
+  console.log(pc.dim("    LM Studio       Open LM Studio app, browse and download"));
+  console.log(pc.dim("    oMLX            Open oMLX app, browse and download"));
+  console.log(pc.dim("    HuggingFace     hf download mlx-community/gemma-4-e2b-it-4bit"));
+  console.log("");
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
+}
+
+function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, profiles }) {
+  const omlxServerUp = managedModels.some((m) => m.backendId === "omlx" && m.status === "ok");
+  const parts = [
+    llamaBinary ? pc.green("llama.cpp ✓") : pc.red("llama.cpp ✗"),
+  ];
+  if (omlxInstalled) {
+    parts.push(omlxServerUp ? pc.green("oMLX ✓ server up") : pc.yellow("oMLX ✓ server down"));
+  } else {
+    parts.push(pc.red("oMLX ✗"));
+  }
+  parts.push(piInstalled ? pc.green("Pi ✓") : pc.red("Pi ✗"));
+  if (profiles.length > 0) parts.push(pc.dim(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
+  console.log(renderCard("offgrid-ai", parts.join(pc.dim("  ·  ")), { formatBorder: pc.cyan }));
+  console.log("");
 }
 
 async function printNoModelsHelp(llamaBinary) {

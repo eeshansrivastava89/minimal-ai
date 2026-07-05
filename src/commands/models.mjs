@@ -1,12 +1,16 @@
-import { ensureDirs } from "../config.mjs";
+import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR } from "../config.mjs";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
-import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
+import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
+import { hasOmlx } from "../omlx-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
+import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printWorkspaceHeader, printBenchmarkLine, printProfileDetails } from "../model-presenters.mjs";
+import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 
 const { stripVTControlCharacters } = await import("node:util");
@@ -31,7 +35,19 @@ export async function modelCommandCenter(initialCatalog) {
     return;
   }
 
-  const catalog = initialCatalog.newModels ? initialCatalog : await loadModelCatalog();
+  let catalog = initialCatalog.newModels ? initialCatalog : await loadModelCatalog();
+
+  while (true) {
+    const result = await showModelPicker(catalog);
+    if (result === "rescan") {
+      catalog = await loadModelCatalog();
+      continue;
+    }
+    return;
+  }
+}
+
+async function showModelPicker(catalog) {
   const normalized = normalizeCatalog(catalog);
   const allItems = buildCatalogItems(normalized);
   if (allItems.length === 0) {
@@ -50,9 +66,6 @@ export async function modelCommandCenter(initialCatalog) {
       if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
   }
-  printWorkspaceHeader(normalized, runningProfilesNow, modelMissingIds);
-  await printBenchmarkLine();
-
   const nameWidth = modelNameWidth(allItems);
 
   const statusFor = (item) => {
@@ -82,15 +95,10 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   const groups = [];
-  const backendColors = {
-    "llama-cpp": pc.cyan,
-    omlx: pc.magenta,
-  };
   for (const { backendId, sourceId, items } of byBackend.values()) {
     const backendLabel = backendFor(backendId)?.label ?? backendId;
     const sourceLabel = formatSourceLabel(sourceId);
-    const color = backendColors[backendId] ?? pc.dim;
-    const sep = `Inference: ${pc.bold(color(backendLabel))} ${pc.dim("|")} Source: ${sourceLabel} (${items.length})`;
+    const sep = `  ${pc.dim(backendLabel + " · " + sourceLabel + " (" + items.length + ")")}`;
     const groupItems = items.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
@@ -103,13 +111,21 @@ export async function modelCommandCenter(initialCatalog) {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `  ${pc.bold(pc.yellow(`Needs setup (${setupItems.length})`))}`, items: groupItems });
+    groups.push({ separator: `  ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
+
+  groups.push({ separator: " ", items: [{ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` }] });
 
   const prompt = createPrompt();
   try {
     const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
     if (!selected) return;
+
+    if (selected === "__settings__") {
+      await settingsFlow(prompt);
+      return "rescan";
+    }
+
     const item = allItems.find((candidate) => itemKey(candidate) === selected);
     if (!item) return;
 
@@ -144,10 +160,6 @@ function actionsForItem(item) {
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
-      const backend = backendFor(item.profile.backend);
-      if (backend.type === "local-server" || backend.type === "managed-server") {
-        available.push({ value: "benchmark", name: "Benchmark", desc: "Prepare a benchmark run" });
-      }
     }
     available.push({ value: "remove", name: "Remove", desc: missing ? "Delete this broken setup" : "Delete this setup" });
     if (missing) {
@@ -155,10 +167,6 @@ function actionsForItem(item) {
         { value: "run", name: "Start chatting", desc: "Launch and open Pi", dimmed: true },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", dimmed: true },
       );
-      const backend = backendFor(item.profile.backend);
-      if (backend.type === "local-server" || backend.type === "managed-server") {
-        available.push({ value: "benchmark", name: "Benchmark", desc: "Prepare a benchmark run", dimmed: true });
-      }
     }
     return formatActions(available);
   }
@@ -176,7 +184,7 @@ function actionsForItem(item) {
 
 async function performAction(prompt, action, item) {
   const missing = item.type === "profile" && item.fileMissing;
-  if (missing && ["run", "reconfigure", "benchmark"].includes(action)) {
+  if (missing && ["run", "reconfigure"].includes(action)) {
     console.log(pc.red("This model's file is no longer on disk. Remove the setup or move the file back."));
     return;
   }
@@ -184,14 +192,6 @@ async function performAction(prompt, action, item) {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
     return printGgufModelDetails(item.model, item.drafter);
-  }
-  if (action === "benchmark") {
-    if (item.type === "profile") {
-      const { benchmarkForProfile } = await import("../benchmark.mjs");
-      return await benchmarkForProfile(await readProfile(item.profile.id));
-    }
-    const { benchmarkFlow } = await import("../benchmark.mjs");
-    return await benchmarkFlow();
   }
   if (action === "run") return await runItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
@@ -255,4 +255,77 @@ async function removeProfileInteractive(id) {
   await removeFromPiConfig(profile);
   await deleteProfile(id);
   console.log(pc.green(`Removed ${profile.label} (${profile.id})`));
+}
+
+// ── Settings & discovery path management ───────────────────────────────────
+
+async function settingsFlow(prompt) {
+  while (true) {
+    const llamaBinary = await findLlamaServer();
+    const omlxInstalled = await hasOmlx();
+    const piInstalled = await hasPi();
+
+    let omlxServerUp = false;
+    if (omlxInstalled) {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/v1/models", { signal: AbortSignal.timeout(2000) });
+        omlxServerUp = res.ok;
+      } catch { /* server down */ }
+    }
+
+    console.log("");
+    console.log(renderCard("Runtime status", renderRows([
+      ["llama.cpp", llamaBinary ? pc.green("✓ ") + pc.dim(llamaBinary) : pc.red("✗ not found")],
+      ["oMLX", omlxInstalled ? (omlxServerUp ? pc.green("✓ server up") : pc.yellow("✓ installed · server down")) : pc.red("✗ not found")],
+      ["Pi", piInstalled ? pc.green("✓ installed") : pc.red("✗ not found")],
+    ]), { formatBorder: pc.cyan }));
+
+    const scanDirs = await getModelScanDirs();
+    const defaultSet = new Set(DEFAULT_MODEL_DIRS);
+    const pathLabels = new Map([
+      [join(homedir(), ".lmstudio", "models"), "LM Studio downloads"],
+      [join(homedir(), ".omlx", "models"), "oMLX downloads"],
+      [HF_HUB_DIR, "HuggingFace CLI downloads"],
+    ]);
+    const pathRows = scanDirs.map((dir) => {
+      const exists = existsSync(dir);
+      const isBuiltin = defaultSet.has(dir);
+      const desc = pathLabels.get(dir);
+      const label = `${exists ? pc.green("✓") : pc.red("✗")}  ${dir}`;
+      const tags = [desc, isBuiltin ? "built-in" : "custom"].filter(Boolean).join(pc.dim(" · "));
+      return [label, pc.dim(tags)];
+    });
+    console.log("");
+    console.log(renderCard("Discovery paths", renderRows(pathRows), { formatBorder: pc.magenta }));
+
+    const customDirs = scanDirs.filter((d) => !defaultSet.has(d));
+    const choices = [
+      { value: "add", label: "Add discovery path" },
+      ...(customDirs.length > 0 ? [{ value: "remove", label: "Remove discovery path" }] : []),
+      { value: "back", label: "Back to models" },
+    ];
+    const action = await prompt.choice("Settings", choices, "back");
+
+    if (!action || action === "back") return;
+
+    if (action === "add") {
+      const dir = await prompt.text("Path to model directory", "");
+      if (!dir || !dir.trim()) continue;
+      const cleanDir = dir.trim();
+      if (!existsSync(cleanDir)) {
+        console.log(pc.red(`Directory not found: ${cleanDir}`));
+        continue;
+      }
+      await addModelScanDir(cleanDir);
+      console.log(pc.green(`Added: ${cleanDir}`));
+    }
+
+    if (action === "remove") {
+      const removeChoices = customDirs.map((d) => ({ value: d, label: d }));
+      const toRemove = await prompt.choice("Remove path", removeChoices);
+      if (!toRemove) continue;
+      await removeModelScanDir(toRemove);
+      console.log(pc.green(`Removed: ${toRemove}`));
+    }
+  }
 }
