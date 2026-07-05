@@ -252,27 +252,16 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
 
 /**
  * Install the HuggingFace CLI. Tries, in order:
- *   1. Homebrew (`brew install hf`) — handles Python dependency automatically
- *   2. Standalone installer (`curl -LsSf https://hf.co/cli/install.sh | bash`)
- *      HF's recommended method, works without Python pre-installed
+ *   1. Standalone installer (`curl -LsSf https://hf.co/cli/install.sh | bash`)
+ *      HF's recommended method, no Python or Homebrew needed
+ *   2. Homebrew (`brew install hf`) — handles Python dependency automatically
  *   3. pip3 / python3 -m pip — traditional fallback if Python is available
  * @returns {Promise<boolean>} true if hf CLI is available after install
  */
 async function installHfCli() {
   console.log(pc.cyan("Installing HuggingFace CLI..."));
 
-  // 1. Homebrew (macOS / Linuxbrew)
-  if (await hasHomebrew()) {
-    try {
-      await runCommand("brew", ["install", "hf"], { label: "hf", verbose: true });
-      if (await hasHfCli()) {
-        console.log(pc.green("HuggingFace CLI installed via Homebrew."));
-        return true;
-      }
-    } catch { /* fall through to standalone installer */ }
-  }
-
-  // 2. Standalone installer (HF recommended — no Python needed)
+  // 1. Standalone installer (HF recommended — zero dependencies)
   try {
     await runCommand("/bin/bash", ["-c", "curl -LsSf https://hf.co/cli/install.sh | bash"], { label: "hf standalone", verbose: true });
     // The installer puts hf in ~/.local/bin — add to PATH for this process
@@ -284,7 +273,18 @@ async function installHfCli() {
       console.log(pc.green("HuggingFace CLI installed via standalone installer."));
       return true;
     }
-  } catch { /* fall through to pip */ }
+  } catch { /* fall through to Homebrew */ }
+
+  // 2. Homebrew (macOS / Linuxbrew)
+  if (await hasHomebrew()) {
+    try {
+      await runCommand("brew", ["install", "hf"], { label: "hf", verbose: true });
+      if (await hasHfCli()) {
+        console.log(pc.green("HuggingFace CLI installed via Homebrew."));
+        return true;
+      }
+    } catch { /* fall through to pip */ }
+  }
 
   // 3. pip3 / python3 -m pip (requires Python)
   try {
