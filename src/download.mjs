@@ -258,7 +258,7 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
  *   3. pip3 / python3 -m pip — traditional fallback if Python is available
  * @returns {Promise<boolean>} true if hf CLI is available after install
  */
-async function installHfCli() {
+export async function installHfCli() {
   console.log(pc.cyan("Installing HuggingFace CLI..."));
 
   // 1. Standalone installer (HF recommended — zero dependencies)

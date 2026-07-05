@@ -54,8 +54,7 @@ async function showModelPicker(catalog) {
   const normalized = normalizeCatalog(catalog);
   const allItems = buildCatalogItems(normalized);
   if (allItems.length === 0) {
-    console.log(pc.dim("No models found."));
-    return;
+    console.log(pc.dim("No models found yet — download one to get started.\n"));
   }
 
   const runningProfilesNow = [];
@@ -131,7 +130,7 @@ async function showModelPicker(catalog) {
   const omlxInstalled = isAppleSilicon ? await hasOmlx() : true;
   const actionItems = [];
   if (isAppleSilicon && !omlxInstalled) {
-    actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")}` });
+    actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
   }
   actionItems.push({ value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` });
   actionItems.push({ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` });

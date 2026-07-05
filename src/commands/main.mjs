@@ -5,8 +5,7 @@ import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
-import { hasLmStudioInstalled, scanManagedModels } from "../managed.mjs";
-import { recommendedModel } from "../recommendations.mjs";
+import { scanManagedModels } from "../managed.mjs";
 import { pc, startInteractive, createPrompt, renderCard } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
@@ -48,14 +47,12 @@ export async function mainFlow() {
     return await onboardFlow();
   }
 
-  if (!hasAnyModels && profiles.length === 0) {
-    if (!process.stdin.isTTY) throw new Error("No models found. Download a model, then run offgrid-ai.");
-    await printNoModelsHelp(llamaBinary);
-    return;
+  if (!process.stdin.isTTY) {
+    if (!hasAnyModels && profiles.length === 0) throw new Error("No models found. Download a model, then run offgrid-ai.");
+    return await statusCommand();
   }
 
-  if (!process.stdin.isTTY) return await statusCommand();
-
+  // Interactive: show the picker (even with no models — user can download)
   startInteractive("offgrid-ai");
   printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: await hasOmlx(), profiles });
   console.log(pc.dim("  No models? Pick \"↓ Download a model\" below — offgrid-ai downloads from HuggingFace"));
@@ -79,29 +76,3 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
   console.log("");
 }
 
-async function printNoModelsHelp(llamaBinary) {
-  console.log(pc.yellow("No models found."));
-  console.log(pc.dim("You need to download a model to use offgrid-ai.\n"));
-
-  const omlxInstalled = await hasOmlx();
-  const lmStudioInstalled = hasLmStudioInstalled();
-  const hasBackends = llamaBinary || omlxInstalled || lmStudioInstalled;
-  if (!hasBackends) {
-    console.log(pc.dim("Run offgrid-ai to install a backend and download a model."));
-    return;
-  }
-
-  console.log(pc.bold("Backend status:"));
-  console.log(`  ${lmStudioInstalled ? pc.green("✓") : pc.red("✗")} LM Studio ${lmStudioInstalled ? "— installed" : "— not installed"}`);
-  console.log(`  ${omlxInstalled ? pc.green("✓") : pc.red("✗")} oMLX ${omlxInstalled ? "— installed" : "— not installed"}`);
-  console.log(`  ${llamaBinary ? pc.green("✓") : pc.red("✗")} llama-server ${llamaBinary ? "— installed" : "— not installed"}`);
-  console.log();
-
-  const model = recommendedModel();
-  console.log(pc.bold("Next step — download a model:"));
-  if (lmStudioInstalled) {
-    console.log("  Open LM Studio → browse models → download");
-    console.log(pc.dim(`  Recommended: ${model.label}`));
-  }
-  if (omlxInstalled) console.log(pc.bold("  omlx start"));
-}
