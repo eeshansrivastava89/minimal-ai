@@ -4,7 +4,7 @@ import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
-import { offerManagedOmlxUpdate, hasOmlx } from "../omlx-runtime.mjs";
+import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasLmStudioInstalled, scanManagedModels } from "../managed.mjs";
 import { recommendedModel } from "../recommendations.mjs";
 import { pc, startInteractive, createPrompt, renderCard } from "../ui.mjs";
@@ -19,7 +19,6 @@ export async function mainFlow() {
     const runtimePrompt = createPrompt();
     try {
       await offerManagedLlamaRuntimeUpdate(runtimePrompt);
-      await offerManagedOmlxUpdate(runtimePrompt);
     } finally {
       runtimePrompt.close();
     }
