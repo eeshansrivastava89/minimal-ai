@@ -3,7 +3,7 @@
 
 import { hasHuggingfaceHub, parseHfRef, resolveHfDownload, downloadToHfCache, listGgufFiles } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
-import { allFittingModels, selectFormat } from "./recommendations.mjs";
+import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
@@ -41,17 +41,37 @@ export async function downloadFlow(prompt) {
     const selected = await prompt.choice("Select a model", choices, choices[0].value);
     if (!selected) return false;
 
-    const format = selectFormat(selected, hardware);
-    if (format === "gguf" && selected.gguf) {
-      const ref = parseHfRef(selected.gguf);
-      repo = ref.repo;
-      filename = ref.filename;
-    } else if (format === "mlx" && selected.mlx) {
-      repo = selected.mlx;
-      filename = undefined;
+    // Determine available formats (ignore empty strings)
+    const hasGguf = Boolean(selected.gguf);
+    const hasMlx = Boolean(selected.mlx && selected.mlx.trim());
+
+    let format;
+    if (hasGguf && hasMlx) {
+      // Both available — let the user choose
+      const formatChoices = [
+        { value: "gguf", label: `GGUF (llama.cpp) — ${selected.gguf.split("/").pop()}` },
+        { value: "mlx", label: `MLX (oMLX) — ${selected.mlx}` },
+      ];
+      // Default to MLX on Apple Silicon, GGUF elsewhere
+      const defaultFormat = (hardware.platform === "darwin" && hardware.arch === "arm64") ? "mlx" : "gguf";
+      format = await prompt.choice("Download format", formatChoices, defaultFormat);
+      if (!format) return false;
+    } else if (hasGguf) {
+      format = "gguf";
+    } else if (hasMlx) {
+      format = "mlx";
     } else {
       console.log(pc.yellow("No download path available for this model."));
       return false;
+    }
+
+    if (format === "gguf") {
+      const ref = parseHfRef(selected.gguf);
+      repo = ref.repo;
+      filename = ref.filename;
+    } else {
+      repo = selected.mlx;
+      filename = undefined;
     }
   } else {
     const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/gemma-4-E2B-it-GGUF)", "");
