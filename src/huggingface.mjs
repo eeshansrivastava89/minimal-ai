@@ -92,11 +92,11 @@ async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch }
   return await response.json();
 }
 
-/** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters). */
+/** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors). */
 export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
   const tree = await getHfTree(repo, { fetchImpl });
   return tree
-    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && !isDrafterFile(f.path))
+    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && !isDrafterFile(f.path) && !isMmprojFile(f.path))
     .map((f) => ({
       path: f.path,
       sizeBytes: f.lfs?.size ?? f.size ?? 0,
@@ -114,6 +114,23 @@ function isDrafterFile(path) {
   // Contains -MTP. or -mtp. before extension: gemma-4-E2B-it-Q8_0-MTP.gguf
   if (/-mtp\./i.test(name)) return true;
   return false;
+}
+
+/** Check if a GGUF file is a vision projector (mmproj) based on its name. */
+function isMmprojFile(path) {
+  const name = path.split("/").pop() ?? path;
+  return /mmproj/i.test(name);
+}
+
+/** List all mmproj (vision projector) GGUF files in a HuggingFace repo. */
+export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
+  const tree = await getHfTree(repo, { fetchImpl });
+  return tree
+    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && isMmprojFile(f.path))
+    .map((f) => ({
+      path: f.path,
+      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+    }));
 }
 
 /** Fetch model metadata from the HF API. */
@@ -178,6 +195,7 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
  * @param {object} model - from resolveHfDownload
  * @param {object} [options]
  * @param {string} [options.localDir] - for MLX: target directory
+ * @param {string[]} [options.extraFiles] - additional files to download (e.g. mmproj)
  * @returns {Promise<{ localDir: string, format: string }>}
  */
 export async function downloadModel(model, options = {}) {
@@ -188,6 +206,10 @@ export async function downloadModel(model, options = {}) {
     // Single file to HF cache — scanner finds it there
     await mkdir(HF_HUB_DIR, { recursive: true });
     args.push(model.files[0].filename, "--cache-dir", HF_HUB_DIR);
+    // Include additional files (e.g. vision projector) in the same download
+    for (const file of options.extraFiles ?? []) {
+      args.push(file);
+    }
     localDir = HF_HUB_DIR;
   } else if (options.localDir) {
     // Full repo to a flat local directory (oMLX)

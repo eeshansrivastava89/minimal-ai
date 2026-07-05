@@ -1,7 +1,7 @@
 // Model download flow — HuggingFace downloads with quant picker and RAM fit.
 // Used by onboarding (no models found) and the model picker (↓ Download a model).
 
-import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, getHfModelInfo, isMlxRepo } from "./huggingface.mjs";
+import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
@@ -140,6 +140,22 @@ export async function downloadFlow(prompt) {
     return false;
   }
 
+  // For GGUF, check if the repo has a vision projector (mmproj) to download alongside
+  let extraFiles = [];
+  if (plan.format === "gguf") {
+    try {
+      const mmprojFiles = await listMmprojFiles(repo);
+      if (mmprojFiles.length > 0) {
+        const mmproj = mmprojFiles[0];
+        extraFiles = [mmproj.path];
+        plan.totalSizeBytes += mmproj.sizeBytes;
+        console.log(pc.dim(`Includes vision projector: ${mmproj.path} (${formatBytes(mmproj.sizeBytes)})`));
+      }
+    } catch {
+      // If we can't check for mmproj, proceed without it
+    }
+  }
+
   console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})`));
   if (plan.format === "mlx") {
     const modelParts = repo.split("/").filter(Boolean);
@@ -158,7 +174,7 @@ export async function downloadFlow(prompt) {
       console.log(pc.green("\n✓ Download complete."));
       await offerOmlxRestart(prompt, "to load the new model");
     } else {
-      await downloadModel(plan);
+      await downloadModel(plan, { extraFiles });
       console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
     }
     return true;
