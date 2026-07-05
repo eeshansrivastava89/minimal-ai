@@ -1,6 +1,6 @@
 {
   "name": "offgrid-ai",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, and chat",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
@@ -11,7 +11,6 @@
     "bin/*.mjs",
     "src/*.mjs",
     "src/commands/*.mjs",
-    "resources/*.py",
     "resources/recommendations.json",
     "install.sh"
   ],

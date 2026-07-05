@@ -133,13 +133,6 @@ export async function downloadFlow(prompt) {
     return false;
   }
 
-  // Check disk space
-  const freeBytes = getFreeDiskBytes(HF_HUB_DIR);
-  if (plan.totalSizeBytes > 0 && freeBytes < plan.totalSizeBytes * 1.1) {
-    console.log(pc.red(`Not enough disk space: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.`));
-    return false;
-  }
-
   // For GGUF, check if the repo has a vision projector (mmproj) to download alongside
   let extraFiles = [];
   if (plan.format === "gguf") {
@@ -154,6 +147,17 @@ export async function downloadFlow(prompt) {
     } catch {
       // If we can't check for mmproj, proceed without it
     }
+  }
+
+  // Check disk space at the actual download target (HF cache for GGUF,
+  // ~/.omlx/models/ for MLX) — they may be on different volumes.
+  const diskCheckDir = plan.format === "mlx"
+    ? join(homedir(), ".omlx", "models")
+    : HF_HUB_DIR;
+  const freeBytes = getFreeDiskBytes(diskCheckDir);
+  if (plan.totalSizeBytes > 0 && freeBytes < plan.totalSizeBytes * 1.1) {
+    console.log(pc.red(`Not enough disk space: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.`));
+    return false;
   }
 
   console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})`));
