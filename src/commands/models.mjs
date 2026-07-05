@@ -12,6 +12,7 @@ import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
+import { downloadFlow } from "../download.mjs";
 
 const { stripVTControlCharacters } = await import("node:util");
 
@@ -114,7 +115,10 @@ async function showModelPicker(catalog) {
     groups.push({ separator: `  ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
 
-  groups.push({ separator: " ", items: [{ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` }] });
+  groups.push({ separator: " ", items: [
+    { value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` },
+    { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
+  ] });
 
   const prompt = createPrompt();
   try {
@@ -123,6 +127,11 @@ async function showModelPicker(catalog) {
 
     if (selected === "__settings__") {
       await settingsFlow(prompt);
+      return "rescan";
+    }
+
+    if (selected === "__download__") {
+      await downloadFlow(prompt);
       return "rescan";
     }
 

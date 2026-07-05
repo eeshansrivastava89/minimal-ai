@@ -96,6 +96,18 @@ async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch }
   return await response.json();
 }
 
+/** List all GGUF files in a HuggingFace repo with their sizes. */
+export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
+  const tree = await getHfTree(repo, { fetchImpl });
+  return tree
+    .filter((f) => f.type === "file" && f.path.endsWith(".gguf"))
+    .map((f) => ({
+      path: f.path,
+      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+    }))
+    .sort((a, b) => a.sizeBytes - b.sizeBytes);
+}
+
 /** Resolve a user-provided HF reference into a download plan. */
 export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } = {}) {
   const { repo, filename } = parseHfRef(input);

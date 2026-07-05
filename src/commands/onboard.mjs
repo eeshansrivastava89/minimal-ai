@@ -1,16 +1,13 @@
-import { ensureDirs, findLlamaServer, ensureHomebrewFor, HF_HUB_DIR } from "../config.mjs";
+import { ensureDirs, findLlamaServer } from "../config.mjs";
 import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { ensureOmlxRuntime } from "../omlx-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { BACKEND_INSTALL_CHOICES, BACKEND_INSTALLERS } from "../backend-installers.mjs";
-import { recommendedModel, selectFormat, allFittingModels } from "../recommendations.mjs";
-import { hasHuggingfaceHub, resolveHfDownload, downloadToHfCache } from "../huggingface.mjs";
-import { detectHardware, getFreeDiskBytes, installedRamGB } from "../hardware.mjs";
+import { downloadFlow } from "../download.mjs";
 import { runCommand } from "../exec.mjs";
-import { pc, formatBytes, renderRows, renderSection, startInteractive, createPrompt } from "../ui.mjs";
+import { pc, renderRows, renderSection, startInteractive, createPrompt } from "../ui.mjs";
 
 export async function onboardFlow() {
   await ensureDirs();
@@ -37,12 +34,10 @@ export async function onboardFlow() {
     if (hasModels) {
       printFoundModels(ggufModels, managedModels, llamaBinary);
     } else {
-      const canDownload = await hasHuggingfaceHub();
-      if (canDownload) {
-        const downloaded = await offerModelDownload(prompt);
-        if (downloaded) return;
+      const downloaded = await downloadFlow(prompt);
+      if (!downloaded) {
+        console.log(pc.dim("\nRun offgrid-ai again when you've downloaded a model."));
       }
-      await offerBackendInstall(prompt, run);
       return;
     }
 
@@ -109,98 +104,3 @@ function printFoundModels(ggufModels, managedModels, llamaBinary) {
   }
 }
 
-async function offerModelDownload(prompt) {
-  const hardware = detectHardware();
-  const candidates = allFittingModels(hardware)
-    .map((entry) => ({ entry, format: selectFormat(entry, hardware) }))
-    .filter((item) => item.format === "gguf");
-  if (candidates.length === 0) {
-    console.log(pc.yellow("No curated models fit your hardware."));
-    return false;
-  }
-
-  const primary = candidates[0];
-  console.log(renderSection("Download a recommended model", renderRows([
-    ["Model", pc.bold(primary.entry.label)],
-    ["Format", primary.format],
-    ["Minimum RAM", String(primary.entry.minRamGb) + " GB"],
-    ["Your RAM", installedRamGB() + " GB"],
-  ]), { formatBorder: pc.cyan }));
-
-  const shouldDownload = await prompt.yesNo("Download " + primary.entry.label + " (" + primary.format + ")?", true);
-  if (!shouldDownload) return false;
-
-  const hfRef = primary.entry.gguf;
-  try {
-    const plan = await resolveHfDownload(hfRef);
-    console.log(pc.dim("Total size: " + formatBytes(plan.totalSizeBytes)));
-    const freeBytes = getFreeDiskBytes(HF_HUB_DIR);
-    if (plan.totalSizeBytes > 0 && freeBytes < plan.totalSizeBytes * 1.1) {
-      console.log(pc.red(`Not enough disk space in ${HF_HUB_DIR}: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.`));
-      return false;
-    }
-    await downloadToHfCache(plan, {
-      onProgress({ percentage }) {
-        process.stdout.write(pc.cyan("\r  " + percentage + "% downloaded"));
-      },
-    });
-    process.stdout.write("\n");
-    console.log(pc.green("✓ Download complete. Run offgrid-ai to use the model."));
-    return true;
-  } catch (err) {
-    console.log(pc.red("Download failed: " + err.message));
-    return false;
-  }
-}
-
-async function offerBackendInstall(prompt, run) {
-  console.log(pc.yellow("\nNo models found."));
-  console.log(pc.dim("You need at least one model backend to use offgrid-ai.\n"));
-  const choice = await prompt.choice("Install a model backend?", BACKEND_INSTALL_CHOICES, "lmstudio");
-  const model = recommendedModel();
-
-  if (choice === "skip") {
-    console.log(pc.dim("Run offgrid-ai again when you've set up a model backend."));
-    return;
-  }
-  if (choice === "all") {
-    await installAllBackends(prompt, run, model);
-    return;
-  }
-  await installBackend(prompt, run, choice, model);
-}
-
-async function installBackend(prompt, run, backendId, model) {
-  const installer = BACKEND_INSTALLERS[backendId];
-  if (!(await ensureHomebrewFor(prompt, run, installer.label))) return;
-  console.log(pc.cyan(`Installing ${installer.label} via Homebrew...`));
-  try {
-    await runInstallerCommands(run, installer);
-    installer.success(model);
-  } catch {
-    console.log(pc.red(`✗ ${installer.label} installation failed.`));
-    console.log(pc.dim(installer.failure));
-  }
-}
-
-async function installAllBackends(prompt, run, model) {
-  if (!(await ensureHomebrewFor(prompt, run, "model backends"))) return;
-  const installed = [];
-  for (const installer of Object.values(BACKEND_INSTALLERS)) {
-    console.log(pc.cyan(`Installing ${installer.label} via Homebrew...`));
-    try {
-      await runInstallerCommands(run, installer);
-      installed.push(installer.label);
-    } catch {
-      console.log(pc.yellow(installer.allFailure));
-    }
-  }
-  if (installed.length > 0) {
-    console.log(pc.green(`\n✓ Installed: ${installed.join(", ")}`));
-    console.log(pc.dim(`Recommended for your machine (${installedRamGB()}GB RAM): ${model.label}`));
-  }
-}
-
-async function runInstallerCommands(run, installer) {
-  for (const [cmd, args, label] of installer.commands) await run(cmd, args, label);
-}

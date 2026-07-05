@@ -59,10 +59,7 @@ export async function mainFlow() {
 
   startInteractive("offgrid-ai");
   printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: await hasOmlx(), profiles });
-  console.log(pc.dim("  How to get models — offgrid-ai finds them on disk after you download:"));
-  console.log(pc.dim("    LM Studio       Open LM Studio app, browse and download"));
-  console.log(pc.dim("    oMLX            Open oMLX app, browse and download"));
-  console.log(pc.dim("    HuggingFace     hf download mlx-community/gemma-4-e2b-it-4bit"));
+  console.log(pc.dim("  No models? Pick \"↓ Download a model\" below — offgrid-ai downloads from HuggingFace"));
   console.log("");
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
