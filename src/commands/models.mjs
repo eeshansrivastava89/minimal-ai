@@ -67,6 +67,15 @@ async function showModelPicker(catalog) {
       if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
   }
+  // Flag all missing profiles (file missing for llama.cpp, model missing
+  // for oMLX managed-server) so actionsForItem/performAction can handle both
+  // cases uniformly.
+  for (const item of allItems) {
+    if (item.type === "profile") {
+      item.missing = item.fileMissing || modelMissingIds.has(item.profile.id);
+    }
+  }
+
   const nameWidth = modelNameWidth(allItems);
 
   const statusFor = (item) => {
@@ -153,13 +162,13 @@ function formatActions(rawActions) {
   const width = Math.max(17, maxName + 2);
   return rawActions.map((a) => {
     const name = a.dimmed ? pc.dim(pc.strikethrough(a.name.padEnd(width).slice(0, width))) : pc.bold(a.name.padEnd(width).slice(0, width));
-    const desc = a.dimmed ? pc.red("file not found") : pc.dim(a.desc);
+    const desc = a.dimmed ? pc.red("not available") : pc.dim(a.desc);
     return { value: a.value, label: name + sep + desc };
   });
 }
 
 function actionsForItem(item) {
-  const missing = item.type === "profile" && item.fileMissing;
+  const missing = item.type === "profile" && item.missing;
   if (item.type === "profile") {
     const available = [
       { value: "inspect", name: "Details", desc: "Paths, ports, flags" },
@@ -192,9 +201,11 @@ function actionsForItem(item) {
 }
 
 async function performAction(prompt, action, item) {
-  const missing = item.type === "profile" && item.fileMissing;
+  const missing = item.type === "profile" && item.missing;
   if (missing && ["run", "reconfigure"].includes(action)) {
-    console.log(pc.red("This model's file is no longer on disk. Remove the setup or move the file back."));
+    const backend = item.type === "profile" ? backendFor(item.profile.backend) : null;
+    const reason = backend?.type === "managed-server" ? "model is no longer available on the server" : "model file is no longer on disk";
+    console.log(pc.red(`This model's ${reason}. Remove the setup or restore the model.`));
     return;
   }
   if (action === "inspect") {
