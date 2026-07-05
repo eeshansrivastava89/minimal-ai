@@ -3,7 +3,7 @@ import { BACKENDS } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
-import { ensureOmlxRuntime } from "../omlx-runtime.mjs";
+import { hasOmlx } from "../omlx-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { downloadFlow } from "../download.mjs";
 import { runCommand } from "../exec.mjs";
@@ -19,7 +19,7 @@ export async function onboardFlow() {
     console.log(pc.dim("Let's make sure you have everything you need to run local models.\n"));
 
     const llamaBinary = await ensureLlamaRuntime(prompt);
-    await ensureOmlxRuntime(prompt);
+    await noteOmlxStatus();
     if (!(await ensurePi(prompt))) return;
 
     const [{ models: ggufModels }, managedModels] = await Promise.all([
@@ -86,6 +86,17 @@ async function ensurePi(prompt) {
   }
   console.log(pc.green("✓ Pi found"));
   return true;
+}
+
+// Check oMLX status without blocking — just note it and move on.
+// Users can install oMLX later from the model picker.
+async function noteOmlxStatus() {
+  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+  if (await hasOmlx()) {
+    console.log(pc.green("✓ oMLX found"));
+  } else {
+    console.log(pc.dim("oMLX not installed — you can install it later from the model picker."));
+  }
 }
 
 function printFoundModels(ggufModels, managedModels, llamaBinary) {

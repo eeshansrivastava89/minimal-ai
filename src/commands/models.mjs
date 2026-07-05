@@ -8,7 +8,7 @@ import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
-import { hasOmlx, offerOmlxRestart } from "../omlx-runtime.mjs";
+import { hasOmlx, offerOmlxRestart, installOmlx } from "../omlx-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
 import { findOmlxModelDir } from "../mlx-discovery.mjs";
 import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows } from "../ui.mjs";
@@ -126,10 +126,16 @@ async function showModelPicker(catalog) {
     groups.push({ separator: `  ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
 
-  groups.push({ separator: " ", items: [
-    { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
-    { value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` },
-  ] });
+  // Build action items — conditionally include oMLX install on Apple Silicon
+  const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
+  const omlxInstalled = isAppleSilicon ? await hasOmlx() : true;
+  const actionItems = [];
+  if (isAppleSilicon && !omlxInstalled) {
+    actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")}` });
+  }
+  actionItems.push({ value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` });
+  actionItems.push({ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` });
+  groups.push({ separator: " ", items: actionItems });
 
   const prompt = createPrompt();
   try {
@@ -146,6 +152,12 @@ async function showModelPicker(catalog) {
       await downloadFlow(prompt);
       console.log("");
       return;
+    }
+
+    if (selected === "__install_omlx__") {
+      await installOmlx(prompt);
+      console.log("");
+      return "rescan";
     }
 
     const item = allItems.find((candidate) => itemKey(candidate) === selected);

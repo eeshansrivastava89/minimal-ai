@@ -7,6 +7,7 @@ import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
 import { offerOmlxRestart } from "./omlx-runtime.mjs";
+import { runCommand, commandExists } from "./exec.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
@@ -116,11 +117,17 @@ export async function downloadFlow(prompt) {
     }
   }
 
-  // Check for huggingface_hub
+  // Ensure HuggingFace CLI is available — offer to install if missing
   if (!(await hasHfCli())) {
-    console.log(pc.yellow("HuggingFace CLI is required to download models."));
-    console.log(pc.dim("Install it: pip3 install huggingface_hub"));
-    return false;
+    const shouldInstall = await prompt.yesNo(
+      "HuggingFace CLI is required to download models. Install it now?", true,
+    );
+    if (!shouldInstall) {
+      console.log(pc.dim("Install it manually: pip3 install huggingface_hub"));
+      return false;
+    }
+    const installed = await installHfCli();
+    if (!installed) return false;
   }
 
   // Resolve download plan
@@ -238,4 +245,37 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
 
   const defaultValue = recommended?.path;
   return await prompt.choice("Quantization", choices, defaultValue);
+}
+
+// ── HuggingFace CLI installation ─────────────────────────────────────────────
+
+/**
+ * Install the HuggingFace CLI (huggingface_hub) via pip3.
+ * Tries pip3, then python3 -m pip as a fallback.
+ * @returns {Promise<boolean>} true if hf CLI is available after install
+ */
+async function installHfCli() {
+  console.log(pc.cyan("Installing HuggingFace CLI..."));
+  try {
+    if (await commandExists("pip3")) {
+      await runCommand("pip3", ["install", "huggingface_hub"], { label: "huggingface_hub", verbose: true });
+    } else if (await commandExists("python3")) {
+      await runCommand("python3", ["-m", "pip", "install", "huggingface_hub"], { label: "huggingface_hub", verbose: true });
+    } else {
+      console.log(pc.red("Python 3 / pip not found. Install Python 3 first, then: pip3 install huggingface_hub"));
+      return false;
+    }
+  } catch (err) {
+    console.log(pc.red(`Installation failed: ${err.message}`));
+    console.log(pc.dim("Install it manually: pip3 install huggingface_hub"));
+    return false;
+  }
+  // Verify it's now available
+  if (!(await hasHfCli())) {
+    console.log(pc.yellow("HuggingFace CLI was installed but not found on PATH."));
+    console.log(pc.dim("Restart your terminal and run offgrid-ai again."));
+    return false;
+  }
+  console.log(pc.green("HuggingFace CLI installed."));
+  return true;
 }
