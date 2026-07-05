@@ -10,8 +10,13 @@ export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
   const prefix = typeof architecture === "string" ? architecture : null;
   const layers = numberMeta(metadata, prefix && `${prefix}.block_count`);
   const headKv = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.head_count_kv`);
-  const keyLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.key_length`);
-  const valueLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.value_length`);
+  const embeddingLength = numberMeta(metadata, prefix && `${prefix}.embedding_length`);
+  const headCount = numberMeta(metadata, prefix && `${prefix}.attention.head_count`);
+  // key_length and value_length are not always present in GGUF metadata.
+  // llama.cpp derives them from embedding_length / head_count when missing.
+  const defaultLength = embeddingLength && headCount ? embeddingLength / headCount : undefined;
+  const keyLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.key_length`) ?? defaultLength;
+  const valueLength = numberOrArrayMeta(metadata, prefix && `${prefix}.attention.value_length`) ?? defaultLength;
   const slidingWindow = numberMeta(metadata, prefix && `${prefix}.attention.sliding_window`);
   const slidingWindowPattern = booleanArrayMeta(metadata, prefix && `${prefix}.attention.sliding_window_pattern`);
   const keyLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.key_length_swa`);
@@ -65,10 +70,13 @@ function estimateKvBytes(input) {
         keyLength = input.keyLengthSwa ?? keyLength;
         valueLength = input.valueLengthSwa ?? valueLength;
       }
-      if (!headKv || !keyLength || !valueLength) {
+      if (headKv == null || keyLength == null || valueLength == null) {
         return { bytes: 0, note: "KV estimate unavailable: incomplete layer-specific GGUF metadata.", mode: "unknown" };
       }
-      total += layerCtx * parallel * headKv * ((keyLength * bytesK) + (valueLength * bytesV));
+      // Layers with headKv = 0 have no KV cache — skip them
+      if (headKv && keyLength && valueLength) {
+        total += layerCtx * parallel * headKv * ((keyLength * bytesK) + (valueLength * bytesV));
+      }
     }
     return { bytes: total, note: "", mode: input.slidingWindowPattern?.length ? "layered-swa" : "layered" };
   }

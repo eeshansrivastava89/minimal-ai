@@ -92,16 +92,28 @@ async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch }
   return await response.json();
 }
 
-/** List all GGUF files in a HuggingFace repo with their sizes. */
+/** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters). */
 export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
   const tree = await getHfTree(repo, { fetchImpl });
   return tree
-    .filter((f) => f.type === "file" && f.path.endsWith(".gguf"))
+    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && !isDrafterFile(f.path))
     .map((f) => ({
       path: f.path,
       sizeBytes: f.lfs?.size ?? f.size ?? 0,
     }))
     .sort((a, b) => a.sizeBytes - b.sizeBytes);
+}
+
+/** Check if a GGUF file is an MTP drafter based on its path/name. */
+function isDrafterFile(path) {
+  // In an MTP/ subdirectory: MTP/gemma-4-E2B-it-Q8_0-MTP.gguf
+  if (path.includes("/MTP/") || path.includes("/mtp/")) return true;
+  const name = path.split("/").pop() ?? path;
+  // Starts with mtp- or mtp_: mtp-ornith-9b-mtp-kl-Q8_0.gguf
+  if (/^mtp[-_]/i.test(name)) return true;
+  // Contains -MTP. or -mtp. before extension: gemma-4-E2B-it-Q8_0-MTP.gguf
+  if (/-mtp\./i.test(name)) return true;
+  return false;
 }
 
 /** Fetch model metadata from the HF API. */
