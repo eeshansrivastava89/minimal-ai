@@ -148,18 +148,26 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
 }
 
 /**
- * Download a resolved model into the HF hub cache.
- * Progress bars are shown via tqdm on stderr (huggingface_hub default).
+ * Download a resolved model.
+ * GGUF: downloads to HF cache (offgrid-ai scanner finds it there).
+ * MLX: downloads directly to a local directory (oMLX scans ~/.omlx/models).
  * @param {object} model - from resolveHfDownload
+ * @param {object} [options]
+ * @param {string} [options.localDir] - for MLX: target directory (e.g. ~/.omlx/models/org/model)
  * @returns {Promise<{ localDir: string, format: string }>}
  */
-export async function downloadToHfCache(model) {
-  await mkdir(HF_HUB_DIR, { recursive: true });
-
+export async function downloadToHfCache(model, options = {}) {
   const script = HF_DOWNLOAD_SCRIPT;
-  const args = ["--repo", model.repo, "--cache-dir", HF_HUB_DIR];
+  const args = ["--repo", model.repo];
+
   if (model.format === "gguf") {
-    args.push("--file", model.files[0].filename);
+    await mkdir(HF_HUB_DIR, { recursive: true });
+    args.push("--file", model.files[0].filename, "--cache-dir", HF_HUB_DIR);
+  } else if (options.localDir) {
+    args.push("--local-dir", options.localDir);
+  } else {
+    await mkdir(HF_HUB_DIR, { recursive: true });
+    args.push("--cache-dir", HF_HUB_DIR);
   }
 
   return new Promise((resolve, reject) => {

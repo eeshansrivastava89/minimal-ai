@@ -6,6 +6,8 @@ import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
 
 const GB = 1024 ** 3;
@@ -124,12 +126,16 @@ export async function downloadFlow(prompt) {
   console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...\n`));
 
   try {
-    await downloadToHfCache(plan);
     if (plan.format === "mlx") {
+      // Download directly to ~/.omlx/models/<org>/<model> — oMLX scans this dir
+      const modelParts = repo.split("/").filter(Boolean);
+      const localDir = join(homedir(), ".omlx", "models", ...modelParts);
+      await downloadToHfCache(plan, { localDir });
       console.log(pc.green("\n✓ Download complete."));
       console.log(pc.yellow("Restart oMLX to load the new model: omlx restart"));
       console.log(pc.dim("Then run offgrid-ai again."));
     } else {
+      await downloadToHfCache(plan);
       console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
     }
     return true;
