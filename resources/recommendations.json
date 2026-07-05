@@ -30,14 +30,14 @@
     },
     {
       "id": "qwen-3.6-35b-compact",
-      "label": "Qwen 3.6 35B",
+      "label": "Qwen 3.6 35B (Q4_K_S)",
       "minRamGb": 32,
       "gguf": "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_S.gguf",
       "mlx": "mlx-community/Qwen3.6-35B-A3B-4bit"
     },
     {
       "id": "qwen-3.6-35b",
-      "label": "Qwen 3.6 35B",
+      "label": "Qwen 3.6 35B (Q4_K_M)",
       "minRamGb": 48,
       "gguf": "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
       "mlx": ""
