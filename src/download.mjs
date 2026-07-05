@@ -124,13 +124,12 @@ export async function downloadFlow(prompt) {
   console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...\n`));
 
   try {
+    await downloadToHfCache(plan);
     if (plan.format === "mlx") {
-      console.log(pc.green("\n✓ Model is in the HuggingFace cache."));
-      console.log(pc.yellow("Open the oMLX app to add this model to your oMLX library."));
-      console.log(pc.dim("Model repo: " + repo));
+      console.log(pc.green("\n✓ Download complete."));
+      console.log(pc.yellow("Restart oMLX to load the new model: omlx restart"));
       console.log(pc.dim("Then run offgrid-ai again."));
     } else {
-      await downloadToHfCache(plan);
       console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
     }
     return true;
