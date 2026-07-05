@@ -7,10 +7,6 @@ import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
-import { existsSync } from "node:fs";
-import { symlink, mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
 
 const GB = 1024 ** 3;
 
@@ -128,22 +124,13 @@ export async function downloadFlow(prompt) {
   console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})...\n`));
 
   try {
-    const result = await downloadToHfCache(plan);
-    if (plan.format === "mlx" && result.localDir) {
-      // Symlink into ~/.omlx/models so oMLX discovers the model on restart
-      const modelParts = repo.split("/").filter(Boolean);
-      if (modelParts.length >= 2) {
-        const omlxModelPath = join(homedir(), ".omlx", "models", ...modelParts);
-        if (!existsSync(omlxModelPath)) {
-          await mkdir(dirname(omlxModelPath), { recursive: true });
-          await symlink(result.localDir, omlxModelPath);
-          console.log(pc.dim(`Linked to oMLX: ${omlxModelPath}`));
-        }
-      }
-      console.log(pc.green("\n✓ Download complete."));
-      console.log(pc.yellow("Restart oMLX to load the new model: omlx restart"));
+    if (plan.format === "mlx") {
+      console.log(pc.green("\n✓ Model is in the HuggingFace cache."));
+      console.log(pc.yellow("Open the oMLX app to add this model to your oMLX library."));
+      console.log(pc.dim("Model repo: " + repo));
       console.log(pc.dim("Then run offgrid-ai again."));
     } else {
+      await downloadToHfCache(plan);
       console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
     }
     return true;

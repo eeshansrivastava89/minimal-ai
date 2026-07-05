@@ -273,23 +273,6 @@ async function removeProfileInteractive(id) {
     await stopProfile(profile);
   }
   await removeFromPiConfig(profile);
-  // If oMLX model was downloaded by offgrid-ai, remove the symlink from ~/.omlx/models
-  if (profile.backend === "omlx" && profile.omlxModel) {
-    const omlxModelsDir = join(homedir(), ".omlx", "models");
-    try {
-      const { readdir } = await import("node:fs/promises");
-      const { lstatSync } = await import("node:fs");
-      const orgs = await readdir(omlxModelsDir);
-      for (const org of orgs) {
-        const modelPath = join(omlxModelsDir, org, profile.omlxModel);
-        if (existsSync(modelPath) && lstatSync(modelPath).isSymbolicLink()) {
-          const { unlink } = await import("node:fs/promises");
-          await unlink(modelPath);
-          console.log(pc.dim(`Removed symlink: ${modelPath}`));
-        }
-      }
-    } catch { /* not critical */ }
-  }
   await deleteProfile(id);
   console.log(pc.green(`Removed ${profile.label} (${profile.id})`));
 }
