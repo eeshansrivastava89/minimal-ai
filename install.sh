@@ -11,7 +11,7 @@
 #   1. Checks for Node.js
 #   2. If not found, installs it via nvm (no sudo needed)
 #   3. Installs offgrid-ai globally via npm
-#   4. Puts offgrid-ai on PATH (symlink or shell config)
+#   4. Ensures everything is on PATH (nvm + ~/.local/bin in .zprofile)
 #   5. Runs offgrid-ai
 #
 # Flags:
@@ -23,14 +23,12 @@
 
 set -euo pipefail
 
-# Track if we installed Node via nvm (affects PATH setup)
 NVM_INSTALLED=false
 
 # ── Flags ───────────────────────────────────────────────────────────────────
 
 DRY_RUN=false
 SKIP_RUN=false
-DEFAULT_RC="${DEFAULT_RC:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -84,7 +82,7 @@ else
   dry curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh -o /tmp/nvm-install.sh
   dry bash /tmp/nvm-install.sh
 
-  # Source nvm
+  # Source nvm in this script
   if ! $DRY_RUN; then
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
   fi
@@ -104,6 +102,26 @@ else
     echo "  Restart your terminal, or run: source ~/.nvm/nvm.sh"
     echo "  Then re-run this installer."
     exit 0
+  fi
+fi
+
+# ── Ensure ~/.local/bin is on PATH (for HuggingFace CLI) ────────────────────
+# The HF CLI standalone installer puts hf in ~/.local/bin. Add it to .zprofile
+# (or .bashrc on Linux) so it's available in future shells. Also add it to the
+# current script's PATH so it's available immediately.
+
+LOCAL_BIN="$HOME/.local/bin"
+if ! $DRY_RUN; then
+  # Add to current process PATH
+  [[ -d "$LOCAL_BIN" ]] && export PATH="$LOCAL_BIN:$PATH"
+
+  # Persist to shell profile (same file nvm uses)
+  PROFILE_FILE="$HOME/.zprofile"
+  [[ "$OSTYPE" != darwin* ]] && PROFILE_FILE="$HOME/.bashrc"
+  if ! grep -qF '.local/bin' "$PROFILE_FILE" 2>/dev/null; then
+    echo '' >> "$PROFILE_FILE"
+    echo '# Added by offgrid-ai installer (HuggingFace CLI)' >> "$PROFILE_FILE"
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$PROFILE_FILE"
   fi
 fi
 
@@ -127,123 +145,21 @@ if $DRY_RUN; then
   exit 0
 fi
 
-# ── Determine npm global bin directory ──────────────────────────────────────
-
-NPM_BIN=""
-if command -v npm &>/dev/null; then
-  NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
-  if [[ -n "$NPM_PREFIX" ]]; then
-    NPM_BIN="${NPM_PREFIX%/}/bin"
-  fi
-  if [[ ! -x "$NPM_BIN/offgrid-ai" ]]; then
-    NPM_BIN=""
-  fi
-fi
-
-# ── Put offgrid-ai on PATH ──────────────────────────────────────────────────
-#
-# When nvm is used, offgrid-ai is on PATH within this script (nvm is sourced
-# here), but NOT in the user's current shell. We try, in order:
-#   1. Symlink into a writable dir already on the user's PATH (/usr/local/bin,
-#      /opt/homebrew/bin) — works immediately, no sourcing needed
-#   2. Add the bin dir to .zshrc/.bashrc — works after source or new terminal
-#
-# When nvm is NOT used (user already had Node), the npm global bin is usually
-# already on PATH. If not, we add it to .zshrc/.bashrc.
+# ── Get installed version ───────────────────────────────────────────────────
 
 INSTALLED_VERSION=""
-
-if [[ -n "$NPM_BIN" && -x "$NPM_BIN/offgrid-ai" ]]; then
+NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+NPM_BIN="${NPM_PREFIX%/}/bin"
+if [[ -x "$NPM_BIN/offgrid-ai" ]]; then
   INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 "$NPM_BIN/offgrid-ai" version 2>/dev/null | sed -E 's/^offgrid-ai v//' || echo "")"
   ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed"
-
-  if $NVM_INSTALLED; then
-    # nvm case: try symlink first (makes offgrid-ai work in the current shell)
-    LINKED=false
-    for BIN_DIR in /usr/local/bin /opt/homebrew/bin; do
-      if [[ -d "$BIN_DIR" && -w "$BIN_DIR" ]]; then
-        ln -sf "$NPM_BIN/offgrid-ai" "$BIN_DIR/offgrid-ai"
-        ok "Linked offgrid-ai → $BIN_DIR/offgrid-ai"
-        LINKED=true
-        break
-      fi
-    done
-    # Fallback: add to shell config for future sessions
-    if ! $LINKED; then
-      [[ "$OSTYPE" == darwin* ]] && [[ -z "${DEFAULT_RC}" ]] && DEFAULT_RC="$HOME/.zshrc"
-      RC_CANDIDATES=("${DEFAULT_RC:-}" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
-      for RC_FILE in "${RC_CANDIDATES[@]}"; do
-        [[ -z "$RC_FILE" ]] && continue
-        if [[ -f "$RC_FILE" || "$RC_FILE" == "$HOME/.zshrc" ]]; then
-          if ! grep -qF "$NPM_BIN" "$RC_FILE" 2>/dev/null; then
-            { echo ''; echo '# Added by offgrid-ai installer'; echo "export PATH=\"$NPM_BIN:\$PATH\""; } >> "$RC_FILE"
-            ok "Added $NPM_BIN to $RC_FILE (run: source $RC_FILE)"
-          fi
-          break
-        fi
-      done
-    fi
-
-  elif ! command -v offgrid-ai &>/dev/null; then
-    # Non-nvm case: offgrid-ai not on PATH — add it
-    export PATH="$NPM_BIN:$PATH"
-    ADDED_TO_RC=false
-    [[ "$OSTYPE" == darwin* ]] && [[ -z "${DEFAULT_RC}" ]] && DEFAULT_RC="$HOME/.zshrc"
-    RC_CANDIDATES=("${DEFAULT_RC:-}" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
-    for RC_FILE in "${RC_CANDIDATES[@]}"; do
-      [[ -z "$RC_FILE" ]] && continue
-      if [[ -f "$RC_FILE" || "$RC_FILE" == "$HOME/.zshrc" ]]; then
-        if ! grep -qF "$NPM_BIN" "$RC_FILE" 2>/dev/null; then
-          { echo ''; echo '# Added by offgrid-ai installer'; echo "export PATH=\"$NPM_BIN:\$PATH\""; } >> "$RC_FILE"
-          ok "Added $NPM_BIN to $RC_FILE"
-          ADDED_TO_RC=true
-          break
-        fi
-      fi
-    done
-    if $ADDED_TO_RC; then
-      echo ""
-      echo "To use it right now, run:"
-      echo "  source ${RC_FILE}"
-      echo ""
-      echo "Or open a new terminal window/tab."
-    fi
-  fi
 else
-  # Fallback: try to find it anywhere on PATH after install
-  if command -v offgrid-ai &>/dev/null; then
-    INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 offgrid-ai version 2>/dev/null | sed -E 's/^offgrid-ai v//' || echo "")"
-    ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed at $(command -v offgrid-ai)"
-  else
-    echo ""
-    warn "offgrid-ai was installed but could not be found."
-    echo "  Restart your terminal and run: offgrid-ai"
-    echo "  Or run: npx offgrid-ai"
-    echo ""
-    printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-    printf "${BOLD}${GREEN}  offgrid-ai is installed!${RESET}\n"
-    printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-    echo ""
-    echo "  Run: offgrid-ai"
-    echo ""
-    exit 0
-  fi
+  warn "offgrid-ai was installed but could not be found at $NPM_BIN"
+  echo "  Restart your terminal and run: offgrid-ai"
+  echo "  Or run: npx offgrid-ai"
 fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
-
-# If the symlink worked, offgrid-ai is on PATH right now.
-# If not (nvm + no writable PATH dir), user needs to source .zshrc or new terminal.
-if command -v offgrid-ai &>/dev/null; then
-  RUN_CMD="offgrid-ai"
-  RUN_HINT=""
-elif $NVM_INSTALLED; then
-  RUN_CMD="source ~/.zshrc && offgrid-ai"
-  RUN_HINT="(or open a new terminal window)"
-else
-  RUN_CMD="offgrid-ai"
-  RUN_HINT=""
-fi
 
 echo ""
 printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
@@ -253,17 +169,34 @@ echo ""
 echo "  First run will walk you through setting up everything you need"
 echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
 echo ""
-echo "  Run: ${RUN_CMD}"
-[[ -n "$RUN_HINT" ]] && echo "  ${RUN_HINT}"
-echo ""
 
-# Auto-launch — use /dev/tty so the prompt works even when piped from curl|bash
+# ── Auto-launch offgrid-ai ──────────────────────────────────────────────────
+# Use /dev/tty for both the prompt and the process stdin, since this script
+# is piped from curl (stdin is the pipe, not a terminal).
+
 if ! $SKIP_RUN && [[ -c /dev/tty ]]; then
   printf "${BOLD}Run offgrid-ai now? [Y/n]${RESET} "
   read -r response < /dev/tty
   response="${response:-Y}"
   if [[ "$response" =~ ^[Yy]$ ]]; then
-    # Redirect stdin from /dev/tty so offgrid-ai sees a TTY (not the curl pipe)
-    exec offgrid-ai < /dev/tty
+    # Run offgrid-ai (not exec — we need to continue after it exits)
+    "$NPM_BIN/offgrid-ai" < /dev/tty
   fi
+fi
+
+# ── Start a fresh shell with everything on PATH ─────────────────────────────
+#
+# When nvm was used, node/npm/pi/offgrid-ai are in nvm's bin directory, which
+# is only on PATH when nvm is sourced (.zprofile). The user's current shell
+# doesn't have nvm sourced. Instead of telling them to "source" something,
+# we start a new login shell that sources .zprofile automatically.
+#
+# This is the root-cause fix — no symlinks, no PATH hacks, no instructions.
+
+if $NVM_INSTALLED && [[ -c /dev/tty ]]; then
+  echo ""
+  printf "${BOLD}Starting a new shell with everything on PATH...${RESET}\n"
+  echo ""
+  SHELL="${SHELL:-/bin/zsh}"
+  exec "$SHELL" -l < /dev/tty
 fi
