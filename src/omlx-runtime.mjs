@@ -74,6 +74,24 @@ export async function latestOmlxRelease(fetchImpl = globalThis.fetch) {
 
 // ── Restart ────────────────────────────────────────────────────────────────
 
+/**
+ * Start the oMLX managed server and hide the app (menubar icon only).
+ * `omlx start` launches the app if needed — which may bring it to the
+ * foreground. We force-hide it with osascript so only the menubar icon
+ * appears, keeping the user in offgrid-ai/Pi instead of the oMLX window.
+ * Best-effort: osascript may fail without Accessibility permissions.
+ * @throws if oMLX is not installed or the CLI start fails.
+ */
+export async function startOmlxServerHidden() {
+  const bin = await findOmlx();
+  if (!bin) throw new Error("oMLX is not installed");
+  await execFileAsync(bin, ["start"], { timeout: 30000 });
+  // Force-hide the app — menubar icon only, no foreground window.
+  try {
+    await execFileAsync("osascript", ["-e", 'tell application "System Events" to set visible of process "oMLX" to false']);
+  } catch { /* non-critical — may need Accessibility permissions */ }
+}
+
 /** Offer to restart oMLX so it picks up new or deleted models. */
 export async function offerOmlxRestart(prompt, reason = "to update its model list") {
   const bin = await findOmlx();
@@ -244,15 +262,10 @@ export async function installOmlx() {
     }, null, 2) + "\n");
   }
 
-  // 9. Launch the app hidden (menubar icon only — no onboarding window)
-  //    and start the managed server. The sleep gives the app time to
-  //    finish starting hidden before omlx start talks to it — otherwise
-  //    omlx start may re-launch it in the foreground.
+  // 9. Start the server and hide the app (menubar icon only).
   console.log(pc.dim("Starting oMLX server..."));
   try {
-    await execFileAsync("open", ["-gj", "/Applications/oMLX.app"]);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    await execFileAsync(OMLX_CLI_SHIM, ["start"], { timeout: 30000 });
+    await startOmlxServerHidden();
     console.log(pc.green("✓ oMLX server started"));
   } catch {
     console.log(pc.dim("Start oMLX manually: omlx start"));
