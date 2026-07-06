@@ -12,7 +12,7 @@
 #   2. If not found, installs it via nvm (no sudo needed)
 #   3. Installs offgrid-ai globally via npm
 #   4. Ensures everything is on PATH (nvm + ~/.local/bin in .zprofile)
-#   5. Starts a new login shell so nvm/node are on PATH
+#   5. Launches offgrid-ai (chained: onboarding → model picker in one flow)
 #
 # Flags:
 #   --dry-run    Show what would happen without making changes
@@ -167,19 +167,22 @@ echo "  First run will walk you through setting up everything you need"
 echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
 echo ""
 
-# ── Start a fresh shell with everything on PATH ─────────────────────────────
+# ── Launch offgrid-ai ──────────────────────────────────────────────────────
 #
-# When nvm was used, node/npm/pi/offgrid-ai are in nvm's bin directory, which
-# is only on PATH when nvm is sourced (.zprofile). The user's current shell
-# doesn't have nvm sourced. Instead of telling them to "source" something,
-# we start a new login shell that sources .zprofile automatically.
-#
-# This is the root-cause fix — no symlinks, no PATH hacks, no instructions.
+# Chain the flow: install.sh → offgrid-ai onboarding → model picker.
+# When nvm was used, node/npm/offgrid-ai are in nvm's bin directory, only on
+# PATH when nvm is sourced (.zprofile). We start a new login shell that
+# sources .zprofile and immediately runs offgrid-ai — one continuous flow.
+# When nvm wasn't needed (Node already present), offgrid-ai is already on
+# PATH, so just run it directly.
 
-if $NVM_INSTALLED && [[ -c /dev/tty ]]; then
+if [[ -c /dev/tty ]]; then
+  echo "${BOLD}Launching offgrid-ai...${RESET}"
   echo ""
-  printf "${BOLD}Starting a new shell with everything on PATH...${RESET}\n"
-  echo ""
-  SHELL="${SHELL:-/bin/zsh}"
-  exec "$SHELL" -l < /dev/tty
+  if $NVM_INSTALLED; then
+    SHELL="${SHELL:-/bin/zsh}"
+    exec "$SHELL" -l -c "offgrid-ai" < /dev/tty
+  else
+    exec offgrid-ai < /dev/tty
+  fi
 fi

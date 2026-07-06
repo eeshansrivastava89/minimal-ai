@@ -29,12 +29,18 @@ export async function mainFlow() {
     if (!process.stdin.isTTY) throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run offgrid-ai interactively to install.`);
     console.log(pc.yellow(`Missing: ${missingDeps.join(", ")}`));
     console.log(pc.dim("offgrid-ai needs these to run. Let's finish setup.\n"));
-    return await onboardFlow();
+    const result = await onboardFlow();
+    // Chain: on success, re-scan and continue to the picker (fresh state).
+    // On decline or failure, exit.
+    if (result === "success") return mainFlow();
+    return;
   }
 
   if (!hasAnyBackend && !hasAnyModels && profiles.length === 0) {
     if (!process.stdin.isTTY) throw new Error("No local LLM backends found. Run offgrid-ai interactively to set up.");
-    return await onboardFlow();
+    const result = await onboardFlow();
+    if (result === "success") return mainFlow();
+    return;
   }
 
   if (!process.stdin.isTTY) {

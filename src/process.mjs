@@ -132,7 +132,7 @@ async function startManagedServer(profile, backend) {
     try {
       const omlxBin = await findOmlx();
       if (!omlxBin) {
-        throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or install manually: brew tap jundot/omlx && brew install omlx`);
+        throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`);
       }
       await execFileAsync(omlxBin, ["start"], { timeout: 10000 });
     } catch (err) {

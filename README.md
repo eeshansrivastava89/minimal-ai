@@ -40,11 +40,7 @@ Open your terminal and run:
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
 
-This installs offgrid-ai and its prerequisite (Node.js via nvm if needed). The first time you run `offgrid-ai`, it walks you through installing the rest — the llama.cpp runtime, the Pi chat agent, and the HuggingFace CLI. Then open a new terminal window and run:
-
-```bash
-offgrid-ai
-```
+This installs offgrid-ai and its prerequisite (Node.js via nvm if needed), then launches `offgrid-ai` automatically. The first launch walks you through installing the rest — the llama.cpp runtime, the Pi chat agent, and the HuggingFace CLI — then drops you into the model picker to download a model and start chatting. All in one flow.
 
 If you already have Node.js installed, you can also install with npm:
 

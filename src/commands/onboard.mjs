@@ -6,6 +6,13 @@ import { hasHfCli } from "../huggingface.mjs";
 import { runCommand } from "../exec.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 
+/**
+ * Onboarding flow — installs missing deps (llama.cpp, Pi, HuggingFace CLI).
+ * @returns {Promise<"success"|"declined"|"failed">}
+ *   "success"  — everything installed (or already present), continue to picker
+ *   "declined" — user said No to Proceed, exit
+ *   "failed"   — one or more installs failed, exit with message
+ */
 export async function onboardFlow() {
   await ensureDirs();
   startInteractive("offgrid-ai setup");
@@ -28,8 +35,7 @@ export async function onboardFlow() {
 
     if (toInstall.length === 0) {
       console.log(pc.green("Everything is already set up!"));
-      console.log(pc.dim("Run offgrid-ai to pick and run a model."));
-      return;
+      return "success";
     }
 
     // Show what will be installed and ask once
@@ -42,10 +48,11 @@ export async function onboardFlow() {
     const proceed = await prompt.yesNo("Proceed?", true);
     if (!proceed) {
       console.log(pc.dim("You can install these manually later. Run offgrid-ai to get started."));
-      return;
+      return "declined";
     }
 
     // ── Install everything without further individual prompts ──
+    const failures = [];
 
     // 1. llama.cpp — direct install, no prompt (user already said Proceed)
     if (!llamaBinary) {
@@ -57,9 +64,11 @@ export async function onboardFlow() {
           await installLlamaRelease(latest);
         } else {
           console.log(pc.red("Could not fetch llama.cpp release info. Try again later."));
+          failures.push("llama.cpp");
         }
       } catch (err) {
         console.log(pc.red(`llama.cpp install failed: ${err.message}`));
+        failures.push("llama.cpp");
       }
     }
 
@@ -73,24 +82,32 @@ export async function onboardFlow() {
           console.log(pc.green("✓ Pi installed"));
           await setupPiConfig();
         } else {
-          console.log(pc.yellow("Pi was installed but not found on PATH. Restart your terminal and run offgrid-ai again."));
+          console.log(pc.yellow("Pi was installed but not found on PATH."));
+          failures.push("Pi");
         }
       } catch {
         console.log(pc.red("✗ Failed to install Pi."));
         console.log(pc.dim("Install it manually: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"));
+        failures.push("Pi");
       }
     }
 
     // 3. HuggingFace CLI — direct install, no prompt
     if (!hfInstalled) {
       console.log();
-      await installHfCli();
+      const hfOk = await installHfCli();
+      if (!hfOk) failures.push("HuggingFace CLI");
     }
 
-    // Done — tell user to run offgrid-ai to download a model
+    // Result
     console.log();
+    if (failures.length > 0) {
+      console.log(pc.red(`Setup incomplete — failed: ${failures.join(", ")}.`));
+      console.log(pc.dim("Run offgrid-ai again to retry."));
+      return "failed";
+    }
     console.log(pc.green("✓ Setup complete!"));
-    console.log(pc.dim("Run offgrid-ai to download a model and start chatting."));
+    return "success";
   } finally {
     prompt.close();
   }

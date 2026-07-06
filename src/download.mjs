@@ -29,7 +29,7 @@ export async function downloadFlow(prompt) {
 
   if (!method) return false;
 
-  let repo, filename;
+  let repo, filename, format = null;
 
   if (method === "recommended") {
     const hardware = detectHardware();
@@ -50,7 +50,6 @@ export async function downloadFlow(prompt) {
     const hasGguf = Boolean(selected.gguf);
     const hasMlx = Boolean(selected.mlx && selected.mlx.trim());
 
-    let format;
     const omlxInstalled = await hasOmlx();
     if (hasGguf && hasMlx) {
       // Both available — let the user choose
@@ -93,8 +92,10 @@ export async function downloadFlow(prompt) {
     filename = ref.filename;
   }
 
-  // For GGUF repos without a specific file, show quant picker
-  if (!filename) {
+  // For GGUF repos without a specific file, show quant picker.
+  // Skip when the user already chose MLX from the recommended list —
+  // format is known, no detection needed.
+  if (!filename && format !== "mlx") {
     let ggufFiles;
     try {
       ggufFiles = await listGgufFiles(repo);

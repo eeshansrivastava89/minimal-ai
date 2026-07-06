@@ -232,9 +232,23 @@ export async function installOmlx() {
   await writeFile(OMLX_CLI_SHIM, `#!/bin/sh\nexec '${appCli}' "$@"\n`);
   await execFileAsync("chmod", ["+x", OMLX_CLI_SHIM]);
 
-  // 8. Start the server (no GUI — just the server process)
+  // 8. Pre-create oMLX settings to skip the API key onboarding prompt.
+  //    The app checks skip_api_key_verification on launch — if true, it
+  //    skips the onboarding window entirely. Only create if settings.json
+  //    doesn't already exist (never overwrite existing config).
+  const settingsPath = join(homedir(), ".omlx", "settings.json");
+  if (!existsSync(settingsPath)) {
+    await writeFile(settingsPath, JSON.stringify({
+      version: "1.0",
+      auth: { skip_api_key_verification: true },
+    }, null, 2) + "\n");
+  }
+
+  // 9. Launch the app hidden (menubar icon only — no onboarding window)
+  //    and start the managed server.
   console.log(pc.dim("Starting oMLX server..."));
   try {
+    await execFileAsync("open", ["-gj", "/Applications/oMLX.app"]);
     await execFileAsync(OMLX_CLI_SHIM, ["start"], { timeout: 30000 });
     console.log(pc.green("✓ oMLX server started"));
   } catch {
