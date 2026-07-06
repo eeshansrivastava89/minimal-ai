@@ -1,6 +1,6 @@
 import { ensureDirs, findLlamaServer } from "../config.mjs";
 import { hasPi, setupPiConfig } from "../harness-pi.mjs";
-import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
+import { latestLlamaRelease, installLlamaRelease } from "../runtime.mjs";
 import { installHfCli } from "../download.mjs";
 import { hasHfCli } from "../huggingface.mjs";
 import { runCommand } from "../exec.mjs";
@@ -27,7 +27,6 @@ export async function onboardFlow() {
     if (!hfInstalled) toInstall.push("HuggingFace CLI — downloads models");
 
     if (toInstall.length === 0) {
-      // Everything already installed — shouldn't normally reach onboarding
       console.log(pc.green("Everything is already set up!"));
       console.log(pc.dim("Run offgrid-ai to pick and run a model."));
       return;
@@ -46,12 +45,25 @@ export async function onboardFlow() {
       return;
     }
 
-    // Install everything without further individual prompts
+    // ── Install everything without further individual prompts ──
+
+    // 1. llama.cpp — direct install, no prompt (user already said Proceed)
     if (!llamaBinary) {
       console.log();
-      await offerManagedLlamaRuntimeUpdate(prompt);
+      try {
+        const latest = await latestLlamaRelease();
+        if (latest) {
+          console.log(pc.dim(`Installing llama.cpp ${latest.tag}...`));
+          await installLlamaRelease(latest);
+        } else {
+          console.log(pc.red("Could not fetch llama.cpp release info. Try again later."));
+        }
+      } catch (err) {
+        console.log(pc.red(`llama.cpp install failed: ${err.message}`));
+      }
     }
 
+    // 2. Pi — direct npm install, no prompt
     if (!piInstalled) {
       console.log();
       console.log(pc.cyan("Installing Pi..."));
@@ -69,6 +81,7 @@ export async function onboardFlow() {
       }
     }
 
+    // 3. HuggingFace CLI — direct install, no prompt
     if (!hfInstalled) {
       console.log();
       await installHfCli();
