@@ -209,11 +209,12 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
   const totalRam = hardware.totalRamBytes;
   const availableRam = totalRam - 4 * GB; // leave 4GB for OS
 
-  // Sort by size descending (highest quality first)
-  const sorted = [...ggufFiles].sort((a, b) => b.sizeBytes - a.sizeBytes);
+  // Sort by size ascending (smallest first, largest last)
+  const sorted = [...ggufFiles].sort((a, b) => a.sizeBytes - b.sizeBytes);
 
-  // Find recommended: largest file that fits comfortably
-  const recommended = sorted.find((f) => f.sizeBytes + 2 * GB <= availableRam);
+  // Find recommended: largest file that fits comfortably (last one that fits)
+  const fitting = sorted.filter((f) => f.sizeBytes + 2 * GB <= availableRam);
+  const recommended = fitting[fitting.length - 1];
 
   console.log("");
   console.log(renderCard("Select quantization", renderRows([

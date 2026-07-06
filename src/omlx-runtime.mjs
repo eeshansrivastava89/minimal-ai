@@ -1,21 +1,17 @@
-// oMLX runtime management — discovery, version checking, update prompts,
-// and installation. Mirrors the llama.cpp runtime pattern in runtime.mjs.
+// oMLX runtime management — discovery, version checking, and installation.
 //
-// oMLX is installed either via the macOS app (DMG from GitHub Releases, which
-// installs a ~/.omlx/bin/omlx CLI shim with in-app auto-update) or via Homebrew
-// (brew tap jundot/omlx && brew install omlx). offgrid-ai does NOT download
-// binaries directly — it uses brew for automated installs, and prompts for the
-// DMG when brew is unavailable.
+// oMLX is installed as a macOS app (DMG from GitHub Releases). The app
+// includes in-app auto-update and installs a ~/.omlx/bin/omlx CLI shim
+// that offgrid-ai uses for model discovery, server control, etc.
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { compareVersions } from "./updates.mjs";
-import { hasHomebrew, ensureHomebrewFor } from "./config.mjs";
 import { commandExists, runCommand } from "./exec.mjs";
-import { pc, renderCard, renderRows } from "./ui.mjs";
+import { pc, formatBytes } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,47 +20,32 @@ const RELEASE_API = "https://api.github.com/repos/jundot/omlx/releases/latest";
 
 // ── Discovery ──────────────────────────────────────────────────────────────
 
-/**
- * Find the oMLX CLI binary. Checks the app-installed shim first (it shadows
- * brew on PATH), then falls back to PATH. Returns the path or null.
- */
+/** Find the oMLX CLI binary — checks the app shim first, then PATH. */
 export async function findOmlx() {
-  // 1. macOS app CLI shim (shadows brew on PATH)
   if (existsSync(OMLX_CLI_SHIM)) return OMLX_CLI_SHIM;
-
-  // 2. PATH (brew install)
   try {
     const { stdout } = await execFileAsync("which", ["omlx"]);
     const path = stdout.trim();
     if (path && existsSync(path)) return path;
   } catch { /* not on PATH */ }
-
   return null;
 }
 
-/**
- * Check if oMLX is installed (app shim or on PATH).
- */
+/** Check if oMLX is installed. */
 export async function hasOmlx() {
   return (await findOmlx()) !== null;
 }
 
-/**
- * Detect how oMLX was installed: "app" (macOS app CLI shim) or "brew" (on PATH
- * but not the shim) or null (not installed).
- */
+/** Detect install method: "app" (shim) or "cli" (PATH only) or null. */
 export async function omlxInstallMethod() {
   if (existsSync(OMLX_CLI_SHIM)) return "app";
-  if (await commandExists("omlx")) return "brew";
+  if (await commandExists("omlx")) return "cli";
   return null;
 }
 
 // ── Version checking ───────────────────────────────────────────────────────
 
-/**
- * Get the installed oMLX version by running `omlx --version`.
- * Returns null if oMLX is not installed or the version can't be parsed.
- */
+/** Get installed oMLX version via `omlx --version`. */
 export async function installedOmlxVersion() {
   const bin = await findOmlx();
   if (!bin) return null;
@@ -77,11 +58,7 @@ export async function installedOmlxVersion() {
   }
 }
 
-/**
- * Check for the latest oMLX release on GitHub.
- * Returns { tag, version } or null if the check fails.
- * Callers must treat null as "check failed, skip prompt".
- */
+/** Check for the latest oMLX release on GitHub. Returns { tag, version } or null. */
 export async function latestOmlxRelease(fetchImpl = globalThis.fetch) {
   try {
     const response = await fetchImpl(RELEASE_API, { signal: AbortSignal.timeout(5000) });
@@ -89,75 +66,15 @@ export async function latestOmlxRelease(fetchImpl = globalThis.fetch) {
     const body = await response.json();
     const tag = typeof body?.tag_name === "string" ? body.tag_name : null;
     if (!tag) return null;
-    const version = tag.replace(/^v/u, "");
-    return { tag, version };
+    return { tag, version: tag.replace(/^v/u, "") };
   } catch {
     return null;
   }
 }
 
-// ── Update prompt ──────────────────────────────────────────────────────────
+// ── Restart ────────────────────────────────────────────────────────────────
 
-/**
- * Check if an oMLX update is available and offer to install it.
- * Returns true if an update was installed, false otherwise.
- *
- * For brew installs: runs `brew upgrade omlx`.
- * For app installs: the app has in-app auto-update, so we just inform the user.
- */
-export async function offerManagedOmlxUpdate(prompt, { fetchImpl = globalThis.fetch } = {}) {
-  const latest = await latestOmlxRelease(fetchImpl);
-  if (!latest) return false;
-
-  const installed = await installedOmlxVersion();
-  if (installed && compareVersions(installed, latest.version) >= 0) return false;
-
-  const method = await omlxInstallMethod();
-
-  console.log("\n" + renderCard("oMLX runtime", renderRows([
-    ["Installed", installed ?? pc.yellow("not installed")],
-    ["Latest", pc.green(latest.version)],
-    ["Source", method === "app" ? "macOS app (in-app auto-update)" : "Homebrew"],
-  ]), { formatBorder: pc.cyan }));
-
-  // App installs have their own auto-update — just inform the user
-  if (method === "app" && installed) {
-    console.log(pc.dim("  Update oMLX via the app's in-app updater, then restart offgrid-ai."));
-    return false;
-  }
-
-  // Not installed, or brew install — offer to install/upgrade
-  if (!installed) {
-    const shouldInstall = await prompt.yesNo("Install oMLX runtime?", false);
-    if (!shouldInstall) return false;
-    return await installOmlx(prompt);
-  }
-
-  // Brew install with an update available
-  const shouldUpdate = await prompt.yesNo("Update oMLX runtime?", false);
-  if (!shouldUpdate) return false;
-
-  try {
-    console.log(pc.dim("Updating oMLX via Homebrew..."));
-    await runCommand("brew", ["update"], { label: "brew update", verbose: true });
-    await runCommand("brew", ["upgrade", "omlx"], { label: "brew upgrade omlx", verbose: true });
-    console.log(pc.green(`✓ Updated oMLX to latest`));
-    return true;
-  } catch (err) {
-    console.log(pc.red(`✗ Update failed: ${err.message}`));
-    console.log(pc.dim("Update manually: brew update && brew upgrade omlx"));
-    return false;
-  }
-}
-
-// ── Installation ───────────────────────────────────────────────────────────
-
-/**
- * Offer to restart oMLX so it picks up new or deleted models.
- * @param {object} prompt - UI prompt interface (yesNo)
- * @param {string} [reason] - why we're restarting (e.g. "to load the new model")
- * @returns {Promise<boolean>} true if oMLX was restarted
- */
+/** Offer to restart oMLX so it picks up new or deleted models. */
 export async function offerOmlxRestart(prompt, reason = "to update its model list") {
   const bin = await findOmlx();
   if (!bin) {
@@ -180,75 +97,145 @@ export async function offerOmlxRestart(prompt, reason = "to update its model lis
   }
 }
 
-/**
- * Install oMLX. Uses Homebrew if available (automating tap + install).
- * If Homebrew is not available, prompts to download the DMG from GitHub
- * Releases or install Homebrew first.
- *
- * @param {object} prompt - UI prompt interface (yesNo, choice)
- * @returns {Promise<boolean>} true if installation succeeded
- */
-export async function installOmlx(prompt) {
-  const hasBrew = await hasHomebrew();
+// ── Installation (macOS app via DMG) ────────────────────────────────────────
 
-  // Always show brew output for installs — these are long-running operations
-  // the user explicitly approved, so they deserve to see progress bars.
-  const verboseRun = (cmd, args, label) => runCommand(cmd, args, { label, verbose: true });
+/** Get macOS major version (e.g. 15, 26, 27). */
+async function getMacosMajorVersion() {
+  try {
+    const { stdout } = await execFileAsync("sw_vers", ["-productVersion"]);
+    return parseInt(stdout.trim().split(".")[0], 10);
+  } catch {
+    return null;
+  }
+}
 
-  if (!hasBrew) {
-    if (!(await ensureHomebrewFor(prompt, verboseRun, "oMLX"))) {
-      console.log(pc.dim("Install oMLX manually:"));
-      console.log(pc.dim("  brew tap jundot/omlx && brew install omlx"));
-      console.log(pc.dim("  — or download the macOS app from https://github.com/jundot/omlx/releases"));
-      return false;
+/** Find the DMG asset that matches the macOS version. */
+function pickDmgForMacos(assets, majorVersion) {
+  for (const asset of assets) {
+    if (!asset.name?.endsWith(".dmg")) continue;
+    // Parse "macos15-sequoia" or "macos26-27" from the filename
+    const match = asset.name.match(/macos(\d+)(?:-(\d+))?/i);
+    if (!match) continue;
+    const start = parseInt(match[1], 10);
+    const end = match[2] ? parseInt(match[2], 10) : start;
+    if (majorVersion >= start && majorVersion <= end) {
+      return { name: asset.name, url: asset.browser_download_url, size: asset.size };
     }
   }
+  return null;
+}
 
-  // Install oMLX via Homebrew
-  console.log(pc.cyan("Installing oMLX via Homebrew..."));
-  console.log(pc.dim("  This may take a few minutes — grab a coffee.\n"));
+/** Parse hdiutil output to find the mount point. */
+function parseMountPoint(stdout) {
+  const match = stdout.match(/\/Volumes\/\S+/);
+  return match ? match[0] : null;
+}
+
+/** Find the .app inside a mounted DMG volume. */
+function findAppInVolume(mountPoint) {
   try {
-    await verboseRun("brew", ["tap", "jundot/omlx", "https://github.com/jundot/omlx"], "oMLX tap");
-    await verboseRun("brew", ["install", "omlx"], "oMLX");
-    console.log(pc.green("\n✓ oMLX installed"));
-    return true;
-  } catch (err) {
-    console.log(pc.red(`✗ oMLX installation failed: ${err.message}`));
-    console.log(pc.dim("Install manually: brew tap jundot/omlx && brew install omlx"));
-    console.log(pc.dim("  — or download the macOS app from https://github.com/jundot/omlx/releases"));
-    return false;
+    const entries = readdirSync(mountPoint);
+    const app = entries.find((e) => e.endsWith(".app"));
+    return app ? join(mountPoint, app) : null;
+  } catch {
+    return null;
   }
 }
 
 /**
- * Ensure oMLX runtime is available. For onboarding: if not installed, offer
- * to install it. This is the oMLX equivalent of ensureLlamaRuntime().
- *
- * @param {object} prompt - UI prompt interface
- * @returns {Promise<boolean>} true if oMLX is available (installed or pre-existing)
+ * Install oMLX by downloading the macOS app DMG from GitHub Releases,
+ * mounting it, copying the app to /Applications, and launching it
+ * to create the ~/.omlx/bin/omlx CLI shim.
+ * @returns {Promise<boolean>} true if installation succeeded
  */
-export async function ensureOmlxRuntime(prompt) {
-  let omlxBin = await findOmlx();
-  if (!omlxBin) {
-    console.log(renderCard("oMLX runtime", renderRows([
-      ["Status", pc.yellow("not installed")],
-      ["Used for", "local MLX models (Apple Silicon optimized)"],
-      ["Install", "managed by offgrid-ai via Homebrew"],
-    ]), { formatBorder: pc.cyan }));
-
-    const shouldInstall = await prompt.yesNo("Install oMLX runtime?", true);
-    if (shouldInstall) {
-      await installOmlx(prompt);
-      omlxBin = await findOmlx();
-    }
-
-    if (!omlxBin) {
-      console.log(pc.yellow("Skipping oMLX for now. You can still use llama.cpp, or run offgrid-ai again to install."));
-      return false;
-    }
+export async function installOmlx() {
+  // 1. Fetch the latest release (with assets)
+  let release;
+  try {
+    const response = await fetch(RELEASE_API, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    release = await response.json();
+  } catch {
+    console.log(pc.red("Could not fetch oMLX release info. Try again later."));
+    return false;
   }
 
-  const version = await installedOmlxVersion();
-  console.log(pc.green(`✓ oMLX: ${omlxBin}${version ? ` (v${version})` : ""}`));
+  // 2. Detect macOS version and pick the right DMG
+  const macosMajor = await getMacosMajorVersion();
+  if (!macosMajor) {
+    console.log(pc.red("Could not detect macOS version."));
+    return false;
+  }
+
+  const dmg = pickDmgForMacos(release.assets ?? [], macosMajor);
+  if (!dmg) {
+    console.log(pc.red(`No oMLX release found for macOS ${macosMajor}.`));
+    console.log(pc.dim("Download manually from https://github.com/jundot/omlx/releases"));
+    return false;
+  }
+
+  // 3. Download the DMG
+  const tmpDmg = join(tmpdir(), dmg.name);
+  console.log(pc.cyan(`Downloading oMLX ${release.tag_name} (${formatBytes(dmg.size)})...`));
+  console.log(pc.dim("  This is a large download — it may take a few minutes.\n"));
+  try {
+    await runCommand("curl", ["-L", "--progress-bar", "-o", tmpDmg, dmg.url], { label: "oMLX DMG", verbose: true });
+  } catch (err) {
+    console.log(pc.red(`Download failed: ${err.message}`));
+    return false;
+  }
+
+  // 4. Mount the DMG
+  let mountPoint;
+  try {
+    console.log(pc.dim("\nMounting DMG..."));
+    const { stdout } = await execFileAsync("hdiutil", ["attach", "-nobrowse", tmpDmg]);
+    mountPoint = parseMountPoint(stdout);
+    if (!mountPoint) throw new Error("could not find mount point");
+  } catch (err) {
+    console.log(pc.red(`Mount failed: ${err.message}`));
+    await unlink(tmpDmg).catch(() => {});
+    return false;
+  }
+
+  // 5. Find and copy the .app to /Applications
+  try {
+    const appPath = findAppInVolume(mountPoint);
+    if (!appPath) throw new Error("could not find .app in DMG");
+    console.log(pc.dim("Installing oMLX.app to /Applications..."));
+    await execFileAsync("cp", ["-R", appPath, "/Applications/"]);
+  } catch (err) {
+    console.log(pc.red(`Install failed: ${err.message}`));
+    await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
+    await unlink(tmpDmg).catch(() => {});
+    return false;
+  }
+
+  // 6. Unmount and clean up
+  await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
+  await unlink(tmpDmg).catch(() => {});
+
+  // 7. Launch the app to create the CLI shim
+  console.log(pc.dim("Launching oMLX..."));
+  try {
+    await execFileAsync("open", ["-a", "oMLX"]);
+  } catch {
+    console.log(pc.yellow("Could not launch oMLX automatically. Open it from Applications."));
+  }
+
+  // 8. Wait for the CLI shim to appear (app creates it on first launch)
+  console.log(pc.dim("Waiting for oMLX CLI..."));
+  for (let i = 0; i < 30; i++) {
+    if (existsSync(OMLX_CLI_SHIM)) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  if (!existsSync(OMLX_CLI_SHIM)) {
+    console.log(pc.yellow("oMLX app installed. Open it from Applications to finish setup."));
+    console.log(pc.dim("The app creates the omlx CLI command on first launch."));
+    return false;
+  }
+
+  console.log(pc.green(`✓ oMLX ${release.tag_name} installed`));
   return true;
 }
