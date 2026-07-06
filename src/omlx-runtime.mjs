@@ -6,7 +6,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { unlink, mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -215,25 +215,36 @@ export async function installOmlx() {
   await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
   await unlink(tmpDmg).catch(() => {});
 
-  // 7. Launch the app to create the CLI shim
-  console.log(pc.dim("Launching oMLX..."));
+  // 7. Find the CLI binary inside the app bundle and copy it to ~/.omlx/bin/
+  //    This avoids launching the GUI app (which has its own onboarding flow).
+  await mkdir(join(homedir(), ".omlx", "bin"), { recursive: true });
+  let cliFound = false;
   try {
-    await execFileAsync("open", ["-a", "oMLX"]);
-  } catch {
-    console.log(pc.yellow("Could not launch oMLX automatically. Open it from Applications."));
-  }
+    const { stdout } = await execFileAsync("find", ["/Applications/oMLX.app", "-name", "omlx", "-type", "f", "-maxdepth", "4"]);
+    const candidates = stdout.trim().split("\n").filter(Boolean);
+    for (const candidate of candidates) {
+      if (candidate.endsWith("/omlx")) {
+        await execFileAsync("cp", [candidate, OMLX_CLI_SHIM]);
+        await execFileAsync("chmod", ["+x", OMLX_CLI_SHIM]);
+        cliFound = true;
+        break;
+      }
+    }
+  } catch { /* find failed — app bundle might not have the CLI */ }
 
-  // 8. Wait for the CLI shim to appear (app creates it on first launch)
-  console.log(pc.dim("Waiting for oMLX CLI..."));
-  for (let i = 0; i < 30; i++) {
-    if (existsSync(OMLX_CLI_SHIM)) break;
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-
-  if (!existsSync(OMLX_CLI_SHIM)) {
-    console.log(pc.yellow("oMLX app installed. Open it from Applications to finish setup."));
-    console.log(pc.dim("The app creates the omlx CLI command on first launch."));
+  if (!cliFound) {
+    console.log(pc.yellow("oMLX app installed to /Applications."));
+    console.log(pc.dim("Open oMLX from Applications once to set up the CLI, then run offgrid-ai again."));
     return false;
+  }
+
+  // 8. Start the server (no GUI — just the server process)
+  console.log(pc.dim("Starting oMLX server..."));
+  try {
+    await execFileAsync(OMLX_CLI_SHIM, ["start"], { timeout: 30000 });
+    console.log(pc.green("✓ oMLX server started"));
+  } catch {
+    console.log(pc.dim("Start oMLX manually: omlx start"));
   }
 
   console.log(pc.green(`✓ oMLX ${release.tag_name} installed`));

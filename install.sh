@@ -170,20 +170,6 @@ echo "  First run will walk you through setting up everything you need"
 echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
 echo ""
 
-# ── Auto-launch offgrid-ai ──────────────────────────────────────────────────
-# Use /dev/tty for both the prompt and the process stdin, since this script
-# is piped from curl (stdin is the pipe, not a terminal).
-
-if ! $SKIP_RUN && [[ -c /dev/tty ]]; then
-  printf "${BOLD}Run offgrid-ai now? [Y/n]${RESET} "
-  read -r response < /dev/tty
-  response="${response:-Y}"
-  if [[ "$response" =~ ^[Yy]$ ]]; then
-    # Run offgrid-ai (not exec — we need to continue after it exits)
-    "$NPM_BIN/offgrid-ai" < /dev/tty
-  fi
-fi
-
 # ── Start a fresh shell with everything on PATH ─────────────────────────────
 #
 # When nvm was used, node/npm/pi/offgrid-ai are in nvm's bin directory, which

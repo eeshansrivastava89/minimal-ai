@@ -1,11 +1,11 @@
 {
   "models": [
     {
-      "id": "gemma-4-e2b",
-      "label": "Gemma 4 E2B (Q4_K_S)",
+      "id": "qwen-3.5-4b",
+      "label": "Qwen 3.5 4B (Q4_K_M)",
       "minRamGb": 8,
-      "gguf": "unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_S.gguf",
-      "mlx": "mlx-community/gemma-4-e2b-it-4bit"
+      "gguf": "unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf",
+      "mlx": "mlx-community/Qwen3.5-4B-4bit"
     },
     {
       "id": "qwen-3.5-9b",
