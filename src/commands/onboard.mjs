@@ -88,9 +88,15 @@ export async function onboardFlow() {
     }
 
     // Done — tell user to run offgrid-ai to download a model
+    // If running via nvm, the binary isn't on PATH in the user's current shell
+    const isNvmInstall = process.execPath.includes(".nvm");
     console.log();
     console.log(pc.green("✓ Setup complete!"));
-    console.log(pc.dim("Run offgrid-ai to download a model and start chatting."));
+    if (isNvmInstall) {
+      console.log(pc.dim("Run: source ~/.zprofile && offgrid-ai  (or open a new terminal)"));
+    } else {
+      console.log(pc.dim("Run offgrid-ai to download a model and start chatting."));
+    }
   } finally {
     prompt.close();
   }
