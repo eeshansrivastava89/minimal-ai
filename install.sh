@@ -181,7 +181,10 @@ if [[ -c /dev/tty ]]; then
   echo ""
   if $NVM_INSTALLED; then
     SHELL="${SHELL:-/bin/zsh}"
-    exec "$SHELL" -l -c "offgrid-ai" < /dev/tty
+    # Login shell sources .zprofile (nvm → PATH), runs offgrid-ai,
+    # then execs into an interactive login shell so the user stays in
+    # a shell with everything on PATH after offgrid-ai exits.
+    exec "$SHELL" -l -c 'offgrid-ai; exec "$SHELL" -il' < /dev/tty
   else
     exec offgrid-ai < /dev/tty
   fi

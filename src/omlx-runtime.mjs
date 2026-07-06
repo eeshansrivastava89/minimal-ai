@@ -245,10 +245,13 @@ export async function installOmlx() {
   }
 
   // 9. Launch the app hidden (menubar icon only — no onboarding window)
-  //    and start the managed server.
+  //    and start the managed server. The sleep gives the app time to
+  //    finish starting hidden before omlx start talks to it — otherwise
+  //    omlx start may re-launch it in the foreground.
   console.log(pc.dim("Starting oMLX server..."));
   try {
     await execFileAsync("open", ["-gj", "/Applications/oMLX.app"]);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     await execFileAsync(OMLX_CLI_SHIM, ["start"], { timeout: 30000 });
     console.log(pc.green("✓ oMLX server started"));
   } catch {
