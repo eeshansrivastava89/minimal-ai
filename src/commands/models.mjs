@@ -128,11 +128,12 @@ async function showModelPicker(catalog) {
   // Build action items — conditionally include oMLX install on Apple Silicon
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
   const omlxInstalled = isAppleSilicon ? await hasOmlx() : true;
-  const actionItems = [];
+  const actionItems = [
+    { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
+  ];
   if (isAppleSilicon && !omlxInstalled) {
     actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
   }
-  actionItems.push({ value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` });
   actionItems.push({ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` });
   groups.push({ separator: " ", items: actionItems });
 

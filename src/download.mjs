@@ -6,7 +6,7 @@ import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, hasHomebrew } from "./config.mjs";
-import { offerOmlxRestart } from "./omlx-runtime.mjs";
+import { offerOmlxRestart, hasOmlx } from "./omlx-runtime.mjs";
 import { runCommand, commandExists } from "./exec.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -51,19 +51,25 @@ export async function downloadFlow(prompt) {
     const hasMlx = Boolean(selected.mlx && selected.mlx.trim());
 
     let format;
+    const omlxInstalled = await hasOmlx();
     if (hasGguf && hasMlx) {
       // Both available — let the user choose
+      const mlxHint = !omlxInstalled ? " (install oMLX first)" : "";
       const formatChoices = [
         { value: "gguf", label: `GGUF (llama.cpp) — ${selected.gguf.split("/").pop()}` },
-        { value: "mlx", label: `MLX (oMLX) — ${selected.mlx}` },
+        { value: "mlx", label: `MLX (oMLX) — ${selected.mlx}${mlxHint}` },
       ];
-      // Default to MLX on Apple Silicon, GGUF elsewhere
-      const defaultFormat = (hardware.platform === "darwin" && hardware.arch === "arm64") ? "mlx" : "gguf";
+      // Default to GGUF if oMLX isn't installed (even on Apple Silicon)
+      const defaultFormat = (hardware.platform === "darwin" && hardware.arch === "arm64" && omlxInstalled) ? "mlx" : "gguf";
       format = await prompt.choice("Download format", formatChoices, defaultFormat);
       if (!format) return false;
     } else if (hasGguf) {
       format = "gguf";
     } else if (hasMlx) {
+      if (!omlxInstalled) {
+        console.log(pc.yellow("oMLX is not installed — this MLX model won't run until you install it."));
+        console.log(pc.dim("Install oMLX from the model picker, then run offgrid-ai again."));
+      }
       format = "mlx";
     } else {
       console.log(pc.yellow("No download path available for this model."));
