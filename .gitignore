@@ -6,4 +6,5 @@ node_modules/
 .codex/
 internal-docs/
 reports/
+report/
 .DS_Store
