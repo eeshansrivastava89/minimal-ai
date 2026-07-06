@@ -86,7 +86,7 @@ export async function downloadFlow(prompt) {
     }
   } else {
     console.log(pc.dim("  Browse models at huggingface.co/models"));
-    const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/gemma-4-E2B-it-GGUF)", "");
+    const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
     if (!input || !input.trim()) return false;
     const ref = parseHfRef(input.trim());
     repo = ref.repo;

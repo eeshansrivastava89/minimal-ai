@@ -12,11 +12,10 @@
 #   2. If not found, installs it via nvm (no sudo needed)
 #   3. Installs offgrid-ai globally via npm
 #   4. Ensures everything is on PATH (nvm + ~/.local/bin in .zprofile)
-#   5. Runs offgrid-ai
+#   5. Starts a new login shell so nvm/node are on PATH
 #
 # Flags:
 #   --dry-run    Show what would happen without making changes
-#   --no-run     Install but don't launch offgrid-ai after
 #   --help       Show this help
 #
 # This script never uses sudo. Everything installs to user-writable directories.
@@ -28,13 +27,11 @@ NVM_INSTALLED=false
 # ── Flags ───────────────────────────────────────────────────────────────────
 
 DRY_RUN=false
-SKIP_RUN=false
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run)  DRY_RUN=true; echo "[dry-run] No changes will be made." ;;
-    --no-run)   SKIP_RUN=true ;;
-    --help|-h)   echo "Usage: curl -fsSL <url> | bash -s -- [--dry-run] [--no-run]"; exit 0 ;;
+    --help|-h)   echo "Usage: curl -fsSL <url> | bash -s -- [--dry-run]"; exit 0 ;;
   esac
 done
 

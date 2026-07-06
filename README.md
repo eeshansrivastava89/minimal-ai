@@ -40,7 +40,7 @@ Open your terminal and run:
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
 
-This installs offgrid-ai and dependencies (node, npm, and llama.cpp). Then open a new terminal window and run:
+This installs offgrid-ai and its prerequisite (Node.js via nvm if needed). The first time you run `offgrid-ai`, it walks you through installing the rest — the llama.cpp runtime, the Pi chat agent, and the HuggingFace CLI. Then open a new terminal window and run:
 
 ```bash
 offgrid-ai
@@ -56,7 +56,7 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 ### 2. Pick a model
 
-The first time you run offgrid-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — just pick "↓ Download a model" and enter a repo ID (e.g. `unsloth/gemma-4-E2B-it-GGUF`).
+The first time you run offgrid-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — just pick "↓ Download a model" and enter a repo ID (e.g. `unsloth/Qwen3.5-4B-GGUF`).
 
 <img width="808" height="274" alt="image" src="https://github.com/user-attachments/assets/6e1583ab-65db-423c-b0eb-b627586fbf86" />
 
