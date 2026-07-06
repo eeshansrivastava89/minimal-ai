@@ -23,7 +23,7 @@ export async function onboardFlow() {
     // Build the install summary — only list what's missing
     const toInstall = [];
     if (!llamaBinary) toInstall.push("llama.cpp runtime — runs GGUF models");
-    if (!piInstalled) toInstall.push("Pi coding agent — chat interface");
+    if (!piInstalled) toInstall.push("Pi coding agent — chat interface (with recommended skills & extensions)");
     if (!hfInstalled) toInstall.push("HuggingFace CLI — downloads models");
 
     if (toInstall.length === 0) {

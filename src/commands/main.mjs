@@ -3,25 +3,15 @@ import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
-import { offerManagedLlamaRuntimeUpdate } from "../runtime.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { pc, startInteractive, createPrompt, renderCard } from "../ui.mjs";
+import { pc, startInteractive, renderCard } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
 import { statusCommand } from "./status.mjs";
 
 export async function mainFlow() {
   await ensureDirs();
-
-  if (process.stdin.isTTY) {
-    const runtimePrompt = createPrompt();
-    try {
-      await offerManagedLlamaRuntimeUpdate(runtimePrompt);
-    } finally {
-      runtimePrompt.close();
-    }
-  }
 
   const llamaBinary = await findLlamaServer();
   const { models: ggufModels, drafters } = await scanGgufModels();
