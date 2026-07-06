@@ -7,7 +7,7 @@ import { LOG_DIR } from "./config.mjs";
 import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
-import { startOmlxServerHidden } from "./omlx-runtime.mjs";
+import { startOmlxServer } from "./omlx-runtime.mjs";
 import { pc } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -130,7 +130,7 @@ async function startManagedServer(profile, backend) {
   // Try to start the managed server via CLI
   if (backend.id === "omlx") {
     try {
-      await startOmlxServerHidden();
+      await startOmlxServer();
     } catch (err) {
       if (err.message.includes("not installed")) throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`, { cause: err });
       throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });

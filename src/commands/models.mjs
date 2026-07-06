@@ -155,7 +155,7 @@ async function showModelPicker(catalog) {
     }
 
     if (selected === "__install_omlx__") {
-      // installOmlx() owns the full lifecycle: download DMG → install app
+      // installOmlx() owns the full lifecycle: brew install → start server.
       // → start server (not the GUI) → return. Exit afterward, consistent
       // with download/settings/run/reconfigure — never return to picker.
       await installOmlx();
