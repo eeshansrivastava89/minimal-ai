@@ -41,7 +41,11 @@ export async function run(argv) {
   if (command === "help" || command === "--help" || command === "-h") return printHelp();
   if (command === "version" || command === "--version" || command === "-v") return printVersion();
   if (command === "models") return modelsCommand(argv.slice(1));
-  if (command === "run") return runCommand(argv.slice(1));
+  if (command === "run") {
+    const runArgs = argv.slice(1);
+    if (!runArgs[0]) return mainFlow();
+    return runCommand(runArgs);
+  }
   if (command === "status") return statusCommand();
   if (command === "stop") return stopCommand(argv.slice(1));
   if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));

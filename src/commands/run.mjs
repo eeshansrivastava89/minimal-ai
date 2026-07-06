@@ -11,10 +11,7 @@ import { pc, formatBytes, renderRows, renderSection, parseOptions } from "../ui.
 export async function runCommand(argv) {
   await ensureDirs();
   const { positional, options } = parseOptions(argv);
-  if (!positional[0]) {
-    const { mainFlow } = await import("./main.mjs");
-    return await mainFlow();
-  }
+  if (!positional[0]) throw new Error("Specify a model name: offgrid-ai run <model>");
   return await runProfile(await readProfile(positional[0]), options);
 }
 

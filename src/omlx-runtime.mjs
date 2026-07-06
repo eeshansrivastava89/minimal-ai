@@ -13,7 +13,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { commandExists, runCommand } from "./exec.mjs";
+import { runCommand } from "./exec.mjs";
 import { hasHomebrew } from "./config.mjs";
 import { pc } from "./ui.mjs";
 
@@ -22,7 +22,6 @@ const execFileAsync = promisify(execFile);
 // Legacy shim path from the old DMG-based install. Kept for backward
 // compatibility — findOmlx() checks this first, then PATH.
 const OMLX_CLI_SHIM = join(homedir(), ".omlx", "bin", "omlx");
-const RELEASE_API = "https://api.github.com/repos/jundot/omlx/releases/latest";
 
 // ── Discovery ──────────────────────────────────────────────────────────────
 
@@ -42,13 +41,6 @@ export async function hasOmlx() {
   return (await findOmlx()) !== null;
 }
 
-/** Detect install method: "app" (legacy shim) or "cli" (PATH/Homebrew) or null. */
-export async function omlxInstallMethod() {
-  if (existsSync(OMLX_CLI_SHIM)) return "app";
-  if (await commandExists("omlx")) return "cli";
-  return null;
-}
-
 // ── Version checking ───────────────────────────────────────────────────────
 
 /** Get installed oMLX version via `omlx --version`. */
@@ -59,20 +51,6 @@ export async function installedOmlxVersion() {
     const { stdout } = await execFileAsync(bin, ["--version"], { timeout: 5000 });
     const match = stdout.trim().match(/(\d+\.\d+\.\d+)/u);
     return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Check for the latest oMLX release on GitHub. Returns { tag, version } or null. */
-export async function latestOmlxRelease(fetchImpl = globalThis.fetch) {
-  try {
-    const response = await fetchImpl(RELEASE_API, { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) return null;
-    const body = await response.json();
-    const tag = typeof body?.tag_name === "string" ? body.tag_name : null;
-    if (!tag) return null;
-    return { tag, version: tag.replace(/^v/u, "") };
   } catch {
     return null;
   }

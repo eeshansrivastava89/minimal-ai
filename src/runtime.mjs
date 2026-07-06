@@ -1,37 +1,16 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { MANAGED_LLAMA_SERVER, RUNTIME_DIR } from "./config.mjs";
-import { compareVersions } from "./updates.mjs";
-import { pc, renderCard, renderRows } from "./ui.mjs";
+import { pc } from "./ui.mjs";
 
 const execFileAsync = promisify(execFile);
 const RELEASE_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
 const VERSION_PATH = join(RUNTIME_DIR, "llama.cpp", "VERSION.json");
-
-export async function offerManagedLlamaRuntimeUpdate(prompt, { fetchImpl = globalThis.fetch } = {}) {
-  const latest = await latestLlamaRelease(fetchImpl);
-  if (!latest) return false;
-
-  const installed = await installedRuntime();
-  if (installed?.tag && compareBuildTags(installed.tag, latest.tag) >= 0 && existsSync(MANAGED_LLAMA_SERVER)) return false;
-
-  console.log("\n" + renderCard("llama.cpp runtime", renderRows([
-    ["Installed", installed?.tag ?? "none"],
-    ["Latest", pc.green(latest.tag)],
-    ["Source", "official GitHub release binary"],
-  ]), { formatBorder: pc.cyan }));
-
-  const shouldInstall = await prompt.yesNo(installed ? "Update llama.cpp runtime?" : "Install llama.cpp runtime?", false);
-  if (!shouldInstall) return false;
-
-  await installLlamaRelease(latest, { fetchImpl });
-  return true;
-}
 
 /**
  * Check for the latest llama.cpp release on GitHub.
@@ -48,19 +27,6 @@ export async function latestLlamaRelease(fetchImpl = globalThis.fetch) {
     const asset = selectAsset(body?.assets ?? [], process.platform, process.arch);
     if (!tag || !asset) return null;
     return { tag, asset };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read the installed runtime version from disk.
- * Returns null if not installed or if the version file is missing/corrupt.
- * Callers must treat null as "runtime not installed" — not as a hidden default.
- */
-export async function installedRuntime() {
-  try {
-    return JSON.parse(await readFile(VERSION_PATH, "utf8"));
   } catch {
     return null;
   }
@@ -127,10 +93,6 @@ function assetSuffix(platform, arch) {
   if (platform === "darwin") return `bin-macos-${cpu}.tar.gz`;
   if (platform === "linux") return `bin-ubuntu-${cpu}.tar.gz`;
   return null;
-}
-
-function compareBuildTags(a, b) {
-  return compareVersions(String(a).replace(/^b/u, ""), String(b).replace(/^b/u, ""));
 }
 
 function verifyDigest(bytes, digest) {
