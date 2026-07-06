@@ -8,7 +8,7 @@ import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
-import { hasOmlx, offerOmlxRestart, installOmlx, findOmlx } from "../omlx-runtime.mjs";
+import { hasOmlx, offerOmlxRestart, installOmlx } from "../omlx-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
 import { findOmlxModelDir } from "../mlx-discovery.mjs";
 import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows } from "../ui.mjs";
@@ -155,23 +155,12 @@ async function showModelPicker(catalog) {
     }
 
     if (selected === "__install_omlx__") {
-      const installed = await installOmlx();
-      if (installed) {
-        // Start the oMLX server so it's ready to use
-        const bin = await findOmlx();
-        if (bin) {
-          try {
-            console.log(pc.dim("Starting oMLX server..."));
-            await execFileAsync(bin, ["start"], { timeout: 30000 });
-            console.log(pc.green("✓ oMLX server started"));
-          } catch {
-            // Server might already be running, or start failed — not critical
-            console.log(pc.dim("Start oMLX manually: omlx start"));
-          }
-        }
-      }
+      // installOmlx() owns the full lifecycle: download DMG → install app
+      // → start server (not the GUI) → return. Exit afterward, consistent
+      // with download/settings/run/reconfigure — never return to picker.
+      await installOmlx();
       console.log("");
-      return "rescan";
+      return;
     }
 
     const item = allItems.find((candidate) => itemKey(candidate) === selected);

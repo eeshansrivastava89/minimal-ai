@@ -6,7 +6,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { unlink, mkdir } from "node:fs/promises";
+import { unlink, mkdir, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -215,28 +215,22 @@ export async function installOmlx() {
   await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
   await unlink(tmpDmg).catch(() => {});
 
-  // 7. Find the CLI binary inside the app bundle and copy it to ~/.omlx/bin/
-  //    This avoids launching the GUI app (which has its own onboarding flow).
+  // 7. Create a CLI shim at ~/.omlx/bin/omlx that execs the app's bundled
+  //    omlx-cli — without launching the GUI app (which has its own onboarding).
+  //    omlx-cli is a shell script that resolves its own location via realpath
+  //    to find the bundled Python framework relative to itself, so it must be
+  //    exec'd in place inside the app bundle — copying it out would break
+  //    those relative paths. This mirrors the shim the app itself creates.
   await mkdir(join(homedir(), ".omlx", "bin"), { recursive: true });
-  let cliFound = false;
-  try {
-    const { stdout } = await execFileAsync("find", ["/Applications/oMLX.app", "-name", "omlx", "-type", "f", "-maxdepth", "4"]);
-    const candidates = stdout.trim().split("\n").filter(Boolean);
-    for (const candidate of candidates) {
-      if (candidate.endsWith("/omlx")) {
-        await execFileAsync("cp", [candidate, OMLX_CLI_SHIM]);
-        await execFileAsync("chmod", ["+x", OMLX_CLI_SHIM]);
-        cliFound = true;
-        break;
-      }
-    }
-  } catch { /* find failed — app bundle might not have the CLI */ }
-
-  if (!cliFound) {
+  const appCli = "/Applications/oMLX.app/Contents/MacOS/omlx-cli";
+  if (!existsSync(appCli)) {
     console.log(pc.yellow("oMLX app installed to /Applications."));
     console.log(pc.dim("Open oMLX from Applications once to set up the CLI, then run offgrid-ai again."));
     return false;
   }
+
+  await writeFile(OMLX_CLI_SHIM, `#!/bin/sh\nexec '${appCli}' "$@"\n`);
+  await execFileAsync("chmod", ["+x", OMLX_CLI_SHIM]);
 
   // 8. Start the server (no GUI — just the server process)
   console.log(pc.dim("Starting oMLX server..."));
