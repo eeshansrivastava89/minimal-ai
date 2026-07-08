@@ -233,6 +233,22 @@ export async function downloadModel(model, options = {}) {
     const child = spawn("hf", args, { stdio: "inherit", env: process.env });
     child.on("error", reject);
     child.on("exit", resolve);
+
+    // Forward Ctrl+C (SIGINT) to hf. The hf CLI catches SIGINT and may not
+    // exit on its own — escalate to SIGKILL after 2 seconds so the user
+    // can always cancel a download.
+    const onSigInt = () => {
+      child.kill("SIGINT");
+      const killTimer = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already exited */ }
+      }, 2000);
+      child.on("exit", () => {
+        clearTimeout(killTimer);
+        process.exit(130);
+      });
+    };
+    process.once("SIGINT", onSigInt);
+    child.on("exit", () => process.removeListener("SIGINT", onSigInt));
   });
 
   if (exitCode !== 0) {
