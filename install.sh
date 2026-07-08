@@ -184,7 +184,10 @@ if [[ -c /dev/tty ]]; then
     # Login shell sources .zprofile (nvm → PATH), runs offgrid-ai,
     # then execs into an interactive login shell so the user stays in
     # a shell with everything on PATH after offgrid-ai exits.
-    exec "$SHELL" -l -c 'offgrid-ai; exec "$SHELL" -il' < /dev/tty
+    # trap ":" INT keeps the shell alive if the user presses Ctrl+C
+    # inside offgrid-ai (e.g. cancelling a download) — without it, SIGINT
+    # kills the shell too, skipping exec "$SHELL" -il and dropping PATH.
+    exec "$SHELL" -l -c 'trap ":" INT; offgrid-ai; exec "$SHELL" -il' < /dev/tty
   else
     exec offgrid-ai < /dev/tty
   fi

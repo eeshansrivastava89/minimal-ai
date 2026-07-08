@@ -236,16 +236,14 @@ export async function downloadModel(model, options = {}) {
 
     // Forward Ctrl+C (SIGINT) to hf. The hf CLI catches SIGINT and may not
     // exit on its own — escalate to SIGKILL after 2 seconds so the user
-    // can always cancel a download.
+    // can always cancel a download. No process.exit — let the download
+    // fail gracefully so offgrid-ai exits via normal error handling.
     const onSigInt = () => {
       child.kill("SIGINT");
       const killTimer = setTimeout(() => {
         try { child.kill("SIGKILL"); } catch { /* already exited */ }
       }, 2000);
-      child.on("exit", () => {
-        clearTimeout(killTimer);
-        process.exit(130);
-      });
+      child.on("exit", () => clearTimeout(killTimer));
     };
     process.once("SIGINT", onSigInt);
     child.on("exit", () => process.removeListener("SIGINT", onSigInt));
