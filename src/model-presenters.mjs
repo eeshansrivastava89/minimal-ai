@@ -113,9 +113,16 @@ function optionSizeLabel(item) {
 }
 
 export function modelNameWidth(items) {
-  const maxName = Math.max(...items.map((item) =>
-    stripVTControlCharacters(item.label ?? item.model?.label ?? item.profile?.label ?? "").length,
-  ));
+  const maxName = Math.max(...items.map((item) => {
+    const base = stripVTControlCharacters(item.label ?? item.model?.label ?? item.profile?.label ?? "");
+    // Setup items (new/managed) render "label · backendLabel" in the name
+    // slot in compact mode — account for the suffix so columns align.
+    if (item.type !== "profile") {
+      const backendLabel = backendFor(inferBackendId(item))?.label ?? "";
+      return base.length + 3 + backendLabel.length; // " · " = 3 chars
+    }
+    return base.length;
+  }));
   return Math.max(20, maxName + 2);
 }
 
