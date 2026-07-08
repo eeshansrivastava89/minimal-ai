@@ -122,7 +122,7 @@ async function showModelPicker(catalog) {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `  ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
+    groups.push({ separator: `    ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
 
   // Build action items — conditionally include oMLX install on Apple Silicon

@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { estimateMemory } from "./estimate.mjs";
+import { promisify, stripVTControlCharacters } from "node:util";
+import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
+import { detectHardware } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { baseUrlForFlags } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
@@ -20,20 +21,94 @@ const CACHE_CHOICES = [
   { value: "q4_0", label: "q4_0", hint: "4-bit · quarter memory · quality tradeoff · 0.5 bytes/elem" },
 ];
 
-function quickKvBytes(modelPath, flags) {
-  try {
-    return estimateMemory(modelPath, null, null, flags).kvBytes;
-  } catch {
-    return 0;
-  }
+// ── Context × KV cache heatmap ──────────────────────────────────────────────
+
+const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
+const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
+const FIT_GREEN = 0.70;  // ≤ 70% of system RAM = comfortable
+const FIT_YELLOW = 0.90; // ≤ 90% = tight, may work
+
+function fitColor(totalBytes, systemRamBytes) {
+  const ratio = totalBytes / systemRamBytes;
+  if (ratio <= FIT_GREEN) return pc.green;
+  if (ratio <= FIT_YELLOW) return pc.yellow;
+  return pc.red;
 }
 
-function cacheMemoryRows(modelPath, flags, ctxSize) {
-  const combos = [["bf16", "bf16"], ["f16", "f16"], ["q8_0", "q8_0"], ["q4_0", "q4_0"]];
-  return combos.map(([k, v]) => {
-    const bytes = quickKvBytes(modelPath, { ...flags, ctxSize, cacheTypeK: k, cacheTypeV: v });
-    return [`${k}/${v} KV cache`, bytes ? `~${formatBytes(bytes)}` : "unknown"];
+function formatCtxLabel(ctx) {
+  if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
+  if (ctx >= 1024) return `${(ctx / 1024).toFixed(0)}k`;
+  return String(ctx);
+}
+
+function padCol(text, width) {
+  const visible = stripVTControlCharacters(text).length;
+  return text + " ".repeat(Math.max(1, width - visible));
+}
+
+function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) {
+  const presets = [...CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx)];
+  // Include current ctx if it's not a standard preset
+  const currentCtx = baseFlags.ctxSize;
+  if (!presets.includes(currentCtx) && currentCtx >= 1024 && currentCtx <= maxCtx) {
+    presets.push(currentCtx);
+    presets.sort((a, b) => a - b);
+  }
+  const parallel = baseFlags.parallel ?? 1;
+
+  // Compute all cells
+  const rows = presets.map((ctx) => {
+    const cells = HEATMAP_CACHE_TYPES.map((cacheType) => {
+      try {
+        return computeMemoryTotal(prepared, { ...baseFlags, ctxSize: ctx, cacheTypeK: cacheType, cacheTypeV: cacheType });
+      } catch {
+        return { totalBytes: 0 };
+      }
+    });
+    return { ctx, cells };
   });
+
+  // Column labels with bytes/elem hint
+  const cacheLabels = HEATMAP_CACHE_TYPES.map((t) => {
+    const choice = CACHE_CHOICES.find((c) => c.value === t);
+    const bytesInfo = choice?.hint?.match(/([\d.]+ bytes\/elem)/)?.[1] ?? "";
+    return `${t} ${pc.dim(bytesInfo ? `(${bytesInfo})` : "")}`;
+  });
+
+  // Column widths (visible length)
+  const ctxLabels = presets.map(formatCtxLabel);
+  const col0Width = Math.max(stripVTControlCharacters("Context").length, ...ctxLabels.map((l) => l.length), "Custom".length) + 3;
+  const colWidths = HEATMAP_CACHE_TYPES.map((_, colIdx) => {
+    const cellLens = rows.map((row) => {
+      const est = row.cells[colIdx];
+      return est.totalBytes ? `~${formatBytes(est.totalBytes)}`.length : 1;
+    });
+    return Math.max(...cellLens, stripVTControlCharacters(cacheLabels[colIdx]).length) + 3;
+  });
+
+  // Build lines
+  const lines = [];
+  const fixedBytes = prepared.modelBytes + prepared.mmprojBytes + prepared.draftBytes + prepared.overheadBytes;
+  lines.push(pc.dim(`System RAM: ${formatBytes(systemRamBytes)}  ·  Fixed (model+overhead): ${formatBytes(fixedBytes)}  ·  Parallel: ${parallel} slot(s)`));
+  lines.push(pc.dim(`Legend: ${pc.green("✓ fits")} · ${pc.yellow("~ tight")} · ${pc.red("✗ won't fit")}`));
+  lines.push("");
+  // Header row
+  lines.push(pc.bold(padCol("Context", col0Width)) + cacheLabels.map((label, i) => pc.dim(padCol(label, colWidths[i]))).join(""));
+  // Data rows
+  for (const row of rows) {
+    const label = formatCtxLabel(row.ctx);
+    const ctxCell = (row.ctx === currentCtx ? pc.cyan : pc.dim)(padCol(label, col0Width));
+    const memCells = row.cells.map((est, colIdx) => {
+      if (!est.totalBytes) return pc.dim(padCol("—", colWidths[colIdx]));
+      const color = fitColor(est.totalBytes, systemRamBytes);
+      return padCol(color(`~${formatBytes(est.totalBytes)}`), colWidths[colIdx]);
+    });
+    lines.push(ctxCell + memCells.join(""));
+  }
+  // Custom row
+  lines.push(pc.dim(padCol("Custom", col0Width) + colWidths.map((w) => padCol("—", w)).join("")));
+
+  return renderSection("Context & KV cache", lines.join("\n"));
 }
 
 const GENERAL_DEFAULTS = {
@@ -123,43 +198,93 @@ export async function configureLocalProfile(prompt, profile) {
     configured = useThinking ? applyThinkingDefaults(configured) : removeThinkingDefaults(configured);
   }
 
-  // ── Context window ─────────────────────────────────────────────────────
+  // ── Context & KV cache (heatmap) ────────────────────────────────────────
   const maxCtx = caps.metaCtx ?? 1048576;
-  console.log("");
-  console.log(renderSection("Context window", renderRows([
-    ["What it does", "Maximum tokens the model can process at once (prompt + response + history)"],
-    ["Range", `1,024 – ${maxCtx.toLocaleString()} tokens`],
-    ["Memory", "KV cache grows linearly — larger context = more RAM"],
-    ["Guidance", "8k–32k: chat · 32k–80k: coding/long convos · 128k+: long documents"],
-    ["Model max", `${maxCtx.toLocaleString()} tokens`],
-    ["Default", `${configured.flags.ctxSize.toLocaleString()} tokens`],
-  ])));
-  const ctxSize = await prompt.number("Context window tokens", configured.flags.ctxSize, 1024, maxCtx);
-  configured = applyRuntimeFlagOverrides(configured, { ctxSize });
+  const systemRamBytes = detectHardware().totalRamBytes;
+  const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath);
+  const hasKvParams = Boolean(prepared.kvParams.layers);
 
-  // ── K cache precision ──────────────────────────────────────────────────
-  console.log("");
-  console.log(renderSection("K cache precision", renderRows([
-    ["What it is", "KV cache stores attention 'keys' — previous token states used for prediction"],
-    ["Tradeoff", "Lower precision = less memory, potential quality loss"],
-    ...cacheMemoryRows(profile.modelPath, configured.flags, ctxSize),
-  ])));
-  const cacheTypeK = await prompt.choice("K cache precision", CACHE_CHOICES, configured.flags.cacheTypeK);
-  configured = applyRuntimeFlagOverrides(configured, { cacheTypeK });
+  if (hasKvParams) {
+    // Show the heatmap table: context presets × cache types, color-coded vs system RAM
+    console.log("");
+    console.log(renderContextCacheHeatmap(prepared, configured.flags, maxCtx, systemRamBytes));
 
-  // ── V cache precision ──────────────────────────────────────────────────
-  console.log("");
-  console.log(renderSection("V cache precision", renderRows([
-    ["What it is", "KV cache stores attention 'values' — token representations from previous layers"],
-    ["Tradeoff", "Same as K cache. Some models are more sensitive to V precision than K"],
-    ...cacheMemoryRows(profile.modelPath, configured.flags, ctxSize),
-  ])));
-  const cacheTypeV = await prompt.choice("V cache precision", CACHE_CHOICES, configured.flags.cacheTypeV);
-  configured = applyRuntimeFlagOverrides(configured, { cacheTypeV });
+    // Context selection (presets + custom)
+    const ctxPresets = CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx);
+    const currentCtx = configured.flags.ctxSize;
+    const ctxDefault = ctxPresets.includes(currentCtx) ? currentCtx : "custom";
+    const ctxChoices = [
+      ...ctxPresets.map((ctx) => ({ value: ctx, label: formatCtxLabel(ctx) })),
+      { value: "custom", label: "Custom (enter tokens)" },
+    ];
+    console.log("");
+    const ctxChoice = await prompt.choice("Select context window", ctxChoices, ctxDefault);
+    let ctxSize;
+    if (ctxChoice === "custom") {
+      ctxSize = await prompt.number("Context window tokens", currentCtx, 1024, maxCtx);
+    } else {
+      ctxSize = ctxChoice;
+    }
+    configured = applyRuntimeFlagOverrides(configured, { ctxSize });
+
+    // Cache type selection — show live memory at the chosen context for each option
+    const cacheChoices = CACHE_CHOICES.map((c) => {
+      const flags = { ...configured.flags, ctxSize, cacheTypeK: c.value, cacheTypeV: c.value };
+      try {
+        const est = computeMemoryTotal(prepared, flags);
+        const color = fitColor(est.totalBytes, systemRamBytes);
+        return {
+          value: c.value,
+          label: `${c.label.padEnd(6)} ${color(`~${formatBytes(est.totalBytes)}`)}`,
+          hint: c.hint,
+        };
+      } catch {
+        return { value: c.value, label: c.label, hint: c.hint };
+      }
+    });
+    const cacheType = await prompt.choice("KV cache precision (K = V)", cacheChoices, configured.flags.cacheTypeK);
+
+    // Optional: separate V cache precision (advanced — most users want K = V)
+    const sameV = await prompt.yesNo("Use same precision for V cache?", true);
+    let cacheTypeK = cacheType, cacheTypeV = cacheType;
+    if (!sameV) {
+      cacheTypeV = await prompt.choice("V cache precision", CACHE_CHOICES, cacheType);
+    }
+    configured = applyRuntimeFlagOverrides(configured, { cacheTypeK, cacheTypeV });
+  } else {
+    // Fallback: metadata unavailable — simple prompts without memory estimates
+    console.log("");
+    console.log(renderSection("Context window", renderRows([
+      ["What it does", "Maximum tokens the model can process at once (prompt + response + history)"],
+      ["Range", `1,024 – ${maxCtx.toLocaleString()} tokens`],
+      ["Memory", "KV cache grows linearly — larger context = more RAM"],
+      ["Guidance", "8k–32k: chat · 32k–80k: coding/long convos · 128k+: long documents"],
+      ["Model max", `${maxCtx.toLocaleString()} tokens`],
+      ["Default", `${configured.flags.ctxSize.toLocaleString()} tokens`],
+    ])));
+    const ctxSize = await prompt.number("Context window tokens", configured.flags.ctxSize, 1024, maxCtx);
+    configured = applyRuntimeFlagOverrides(configured, { ctxSize });
+
+    console.log("");
+    console.log(renderSection("K cache precision", renderRows([
+      ["What it is", "KV cache stores attention 'keys' — previous token states used for prediction"],
+      ["Tradeoff", "Lower precision = less memory, potential quality loss"],
+    ])));
+    const cacheTypeK = await prompt.choice("K cache precision", CACHE_CHOICES, configured.flags.cacheTypeK);
+    configured = applyRuntimeFlagOverrides(configured, { cacheTypeK });
+
+    console.log("");
+    console.log(renderSection("V cache precision", renderRows([
+      ["What it is", "KV cache stores attention 'values' — token representations from previous layers"],
+      ["Tradeoff", "Same as K cache. Some models are more sensitive to V precision than K"],
+    ])));
+    const cacheTypeV = await prompt.choice("V cache precision", CACHE_CHOICES, configured.flags.cacheTypeV);
+    configured = applyRuntimeFlagOverrides(configured, { cacheTypeV });
+  }
 
   // ── Memory estimate (with chosen context + cache) ──────────────────────
   console.log("");
-  console.log(renderMemoryEstimate(configured));
+  console.log(renderMemoryEstimate(configured, prepared));
 
   // ── Temperature ────────────────────────────────────────────────────────
   console.log("");
@@ -287,7 +412,7 @@ export async function configureLocalProfile(prompt, profile) {
   ])));
 
   console.log("");
-  console.log(renderMemoryEstimate(configured));
+  console.log(renderMemoryEstimate(configured, prepared));
   if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
   return configured;
 }
@@ -396,9 +521,11 @@ function applyProfileFlags(profile, flags) {
 }
 
 
-function renderMemoryEstimate(profile) {
+function renderMemoryEstimate(profile, prepared) {
   try {
-    const est = estimateMemory(profile.modelPath, profile.mmprojPath, profile.drafterPath, profile.flags);
+    const est = prepared
+      ? computeMemoryTotal(prepared, profile.flags)
+      : computeMemoryTotal(prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath), profile.flags);
     return renderSection("Memory estimate", renderRows([
       ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
       ["Model", formatBytes(est.modelBytes)],

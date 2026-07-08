@@ -1,7 +1,12 @@
 import { existsSync, statSync } from "node:fs";
 import { readGgufMetadata } from "./gguf.mjs";
 
-export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
+/**
+ * Read model file sizes + GGUF architecture metadata once.
+ * The returned object is reusable across many flag combinations —
+ * call computeMemoryTotal(prepared, flags) for each variant.
+ */
+export function prepareMemoryEstimate(modelPath, mmprojPath, draftModelPath) {
   const modelBytes = statSync(modelPath).size;
   const mmprojBytes = mmprojPath && existsSync(mmprojPath) ? statSync(mmprojPath).size : 0;
   const draftBytes = draftModelPath && existsSync(draftModelPath) ? statSync(draftModelPath).size : 0;
@@ -21,32 +26,41 @@ export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
   const slidingWindowPattern = booleanArrayMeta(metadata, prefix && `${prefix}.attention.sliding_window_pattern`);
   const keyLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.key_length_swa`);
   const valueLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.value_length_swa`);
+  return {
+    modelBytes,
+    mmprojBytes,
+    draftBytes,
+    overheadBytes: 1024 ** 3,
+    kvParams: { layers, headKv, keyLength, valueLength, slidingWindow, slidingWindowPattern, keyLengthSwa, valueLengthSwa },
+  };
+}
+
+/** Compute KV cache + total memory for a specific flag combination. */
+export function computeMemoryTotal(prepared, flags) {
   const bytesK = bytesForCacheType(flags.cacheTypeK);
   const bytesV = bytesForCacheType(flags.cacheTypeV);
   const kv = estimateKvBytes({
     ctxSize: flags.ctxSize,
     parallel: flags.parallel ?? 1,
-    layers,
-    headKv,
-    keyLength,
-    valueLength,
-    slidingWindow,
-    slidingWindowPattern,
-    keyLengthSwa,
-    valueLengthSwa,
+    ...prepared.kvParams,
     bytesK,
     bytesV,
   });
-  const overheadBytes = 1024 ** 3;
   return {
-    modelBytes,
-    mmprojBytes,
-    draftBytes,
+    modelBytes: prepared.modelBytes,
+    mmprojBytes: prepared.mmprojBytes,
+    draftBytes: prepared.draftBytes,
     kvBytes: kv.bytes,
-    overheadBytes,
-    totalBytes: modelBytes + mmprojBytes + draftBytes + kv.bytes + overheadBytes,
+    overheadBytes: prepared.overheadBytes,
+    totalBytes: prepared.modelBytes + prepared.mmprojBytes + prepared.draftBytes + kv.bytes + prepared.overheadBytes,
     note: kv.note,
   };
+}
+
+/** Convenience: prepare + compute in one call (existing API, unchanged). */
+export function estimateMemory(modelPath, mmprojPath, draftModelPath, flags) {
+  const prepared = prepareMemoryEstimate(modelPath, mmprojPath, draftModelPath);
+  return computeMemoryTotal(prepared, flags);
 }
 
 function estimateKvBytes(input) {
