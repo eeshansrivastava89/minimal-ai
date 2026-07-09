@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { pc, formatBytes, renderSectionRows } from "./ui.mjs";
+import { pc, formatBytes, renderSectionRows, padCol } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 
@@ -15,12 +15,6 @@ const OPTION_SOURCE_WIDTH = 14;
 const OPTION_QUANT_WIDTH = 10;
 const OPTION_CTX_WIDTH = 5;
 
-function optionPad(text, color, width) {
-  const visible = stripVTControlCharacters(String(text)).length;
-  const padding = Math.max(1, width - visible);
-  return (color ? color(String(text)) : String(text)) + " ".repeat(padding);
-}
-
 function optionStatusTag(kind) {
   const statuses = {
     running: ["RUNNING", pc.green],
@@ -30,7 +24,7 @@ function optionStatusTag(kind) {
     setup: ["NEEDS SETUP", pc.yellow],
   };
   const [text, color] = statuses[kind] ?? [kind, pc.dim];
-  return optionPad(text, color, OPTION_STATUS_WIDTH);
+  return padCol(text, OPTION_STATUS_WIDTH, color);
 }
 
 function optionSourceTag(sourceId) {
@@ -42,7 +36,7 @@ function optionSourceTag(sourceId) {
     "llama.cpp": pc.cyan,
     gguf: pc.cyan,
   };
-  return optionPad(label, colors[sourceId] ?? pc.dim, OPTION_SOURCE_WIDTH);
+  return padCol(label, OPTION_SOURCE_WIDTH, colors[sourceId] ?? pc.dim);
 }
 
 function optionBackendTag(backendId) {
@@ -52,7 +46,7 @@ function optionBackendTag(backendId) {
     "llama-cpp": pc.cyan,
     omlx: pc.magenta,
   };
-  return optionPad(label, colors[backendId] ?? pc.dim, OPTION_BACKEND_WIDTH);
+  return padCol(label, OPTION_BACKEND_WIDTH, colors[backendId] ?? pc.dim);
 }
 
 export function formatSourceLabel(sourceId) {
@@ -92,18 +86,18 @@ export function discoverySourceForItem(item) {
 }
 
 function optionQuantLabel(item) {
-  if (item.quant) return optionPad(item.quant, null, OPTION_QUANT_WIDTH);
-  return optionPad("—", null, OPTION_QUANT_WIDTH);
+  if (item.quant) return padCol(item.quant, OPTION_QUANT_WIDTH);
+  return padCol("—", OPTION_QUANT_WIDTH);
 }
 
 function optionCtxLabel(item) {
   // Context window is a configured value — only profiles (READY/RUNNING)
   // have one. SETUP items (new/managed) show "—".
-  if (item.type !== "profile") return optionPad("—", null, OPTION_CTX_WIDTH);
+  if (item.type !== "profile") return padCol("—", OPTION_CTX_WIDTH);
   if (item.contextLength) {
-    return optionPad(`${(item.contextLength / 1000).toFixed(0)}k`, null, OPTION_CTX_WIDTH);
+    return padCol(`${(item.contextLength / 1000).toFixed(0)}k`, OPTION_CTX_WIDTH);
   }
-  return optionPad("—", null, OPTION_CTX_WIDTH);
+  return padCol("—", OPTION_CTX_WIDTH);
 }
 
 function optionSizeLabel(item) {
@@ -127,7 +121,7 @@ export function modelNameWidth(items) {
 }
 
 function optionLabel({ status, backend, source, name, quant, ctx, size, nameWidth }) {
-  return [status, backend, source, pc.bold(optionPad(name, null, nameWidth)), quant, ctx, pc.dim(size)].join(OPTION_SEPARATOR);
+  return [status, backend, source, pc.bold(padCol(name, nameWidth)), quant, ctx, pc.dim(size)].join(OPTION_SEPARATOR);
 }
 
 export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact = false }) {
@@ -148,7 +142,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       const indicator = status === "running" ? pc.green("●") : status === "missing" ? pc.red("✗") : pc.dim("○");
       return {
         value: itemKey(item),
-        label: [indicator, pc.bold(optionPad(item.label, null, nameWidth)), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+        label: [indicator, pc.bold(padCol(item.label, nameWidth)), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
         ...(hint ? { description: pc.red(hint) } : {}),
       };
     }
@@ -175,7 +169,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
     const full = `${item.label} · ${backendLabel}`;
     return {
       value: itemKey(item),
-      label: [pc.yellow("○"), pc.yellow(pc.bold(optionPad(full, null, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+      label: [pc.yellow("○"), pc.yellow(pc.bold(padCol(full, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), pc.dim(optionSizeLabel(item))].join(OPTION_SEPARATOR),
     };
   }
 

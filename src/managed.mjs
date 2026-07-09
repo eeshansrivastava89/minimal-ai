@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { BACKENDS } from "./backends.mjs";
 
 const MANAGED_BACKEND_IDS = ["omlx"];
@@ -15,8 +14,4 @@ export async function scanManagedModels() {
     }
   }
   return results;
-}
-
-export function hasLmStudioInstalled() {
-  return existsSync("/Applications/LM Studio.app");
 }

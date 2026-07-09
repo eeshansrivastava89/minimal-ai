@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 
-export const INSTALLER_PATH_MARKER = "# Added by offgrid-ai installer";
+const INSTALLER_PATH_MARKER = "# Added by offgrid-ai installer";
 
-export function defaultShellConfigFiles(home = homedir()) {
+function defaultShellConfigFiles(home = homedir()) {
   return [`${home}/.zshrc`, `${home}/.bashrc`, `${home}/.bash_profile`];
 }
 

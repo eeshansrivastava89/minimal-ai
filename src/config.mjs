@@ -64,7 +64,7 @@ export async function loadConfig() {
   }
 }
 
-export async function saveConfig(config) {
+async function saveConfig(config) {
   await mkdir(dirname(CONFIG_PATH), { recursive: true });
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
@@ -94,10 +94,7 @@ export async function removeModelScanDir(dir) {
 
 // ── Binary discovery ──────────────────────────────────────────────────────
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "./exec.mjs";
 
 export async function findLlamaServer() {
   // 1. Env override

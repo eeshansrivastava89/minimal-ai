@@ -1,5 +1,4 @@
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -8,9 +7,8 @@ import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { startOmlxServer } from "./omlx-runtime.mjs";
+import { execFileAsync } from "./exec.mjs";
 import { pc } from "./ui.mjs";
-
-const execFileAsync = promisify(execFile);
 
 // ── Compute server command from profile config ─────────────────────────────
 // Single source of truth: derives the full command (binary + args + env) from
@@ -164,7 +162,7 @@ async function startManagedServer(profile, backend) {
  * If the model is already loaded, oMLX will use the setting on next reload.
  */
 async function ensureOmlxMtpSetting(profile) {
-  const baseUrl = profile.baseUrl?.replace(/\/v1\/?$/u, "") || "";
+  const baseUrl = apiRootUrl(profile.baseUrl);
   const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
   const settingsUrl = `${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`;
   try {
@@ -293,8 +291,7 @@ export async function unloadModelFromServer(profile) {
 }
 
 async function unloadOmlxModel(profile) {
-  const baseUrl = profile.baseUrl?.replace(/\/v1\/?$/u, "") || "";
-  const adminUrl = `${baseUrl}/admin/api/models`;
+  const adminUrl = `${apiRootUrl(profile.baseUrl)}/admin/api/models`;
   const modelId = profile.modelAlias || profile.omlxModel || profile.id;
 
   try {

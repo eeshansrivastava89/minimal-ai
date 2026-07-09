@@ -3,12 +3,10 @@
 // The interactive model/quant selection happens in download.mjs; here we
 // just hand off to the CLI and let it handle progress bars, resumption, etc.
 
-import { spawn, execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { HF_HUB_DIR } from "./config.mjs";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "./exec.mjs";
 
 /** Check whether the `hf` CLI is available. */
 export async function hasHfCli() {

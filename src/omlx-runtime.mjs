@@ -6,16 +6,12 @@
 // omlx-cli in place) so offgrid-ai can control the server without
 // launching the GUI separately.
 
-import { execFile } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { unlink, mkdir, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { runCommand } from "./exec.mjs";
+import { runCommand, execFileAsync } from "./exec.mjs";
 import { pc, formatBytes } from "./ui.mjs";
-
-const execFileAsync = promisify(execFile);
 
 // Legacy shim path from the old DMG-based install. Kept for backward
 // compatibility — findOmlx() checks this first, then PATH.
@@ -43,7 +39,7 @@ export async function hasOmlx() {
 // ── Version checking ───────────────────────────────────────────────────────
 
 /** Get installed oMLX version via `omlx --version`. */
-export async function installedOmlxVersion() {
+async function installedOmlxVersion() {
   const bin = await findOmlx();
   if (!bin) return null;
   try {

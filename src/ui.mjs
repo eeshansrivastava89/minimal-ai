@@ -7,6 +7,13 @@ export { Separator };
 
 // ── Formatting helpers (no prompt dependency) ───────────────────────────────
 
+/** Pad text to a visible column width (min 1 space). Optional color applied before padding. */
+export function padCol(text, width, color) {
+  const visible = stripVTControlCharacters(String(text)).length;
+  const str = color ? color(String(text)) : String(text);
+  return str + " ".repeat(Math.max(1, width - visible));
+}
+
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
   const units = ["B", "KB", "MB", "GB", "TB"];

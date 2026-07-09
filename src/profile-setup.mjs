@@ -1,18 +1,15 @@
 import { existsSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify, stripVTControlCharacters } from "node:util";
+import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { detectHardware } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { baseUrlForFlags } from "./backends.mjs";
-import { pc, formatBytes, renderRows, renderSection } from "./ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, padCol } from "./ui.mjs";
+import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
-import { matchDrafter } from "./scan.mjs";
-import { scanGgufModels } from "./scan.mjs";
+import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
-
-const execFileAsync = promisify(execFile);
 
 const CACHE_CHOICES = [
   { value: "bf16", label: "bf16", hint: "16-bit · best quality · 2 bytes/elem" },
@@ -39,11 +36,6 @@ function formatCtxLabel(ctx) {
   if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
   if (ctx >= 1024) return `${(ctx / 1024).toFixed(0)}k`;
   return String(ctx);
-}
-
-function padCol(text, width) {
-  const visible = stripVTControlCharacters(text).length;
-  return text + " ".repeat(Math.max(1, width - visible));
 }
 
 function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) {
@@ -422,7 +414,7 @@ export function applyRuntimeFlagOverrides(profile, overrides) {
   return applyProfileFlags(profile, flags);
 }
 
-export function applyMtpDefaults(profile) {
+function applyMtpDefaults(profile) {
   return applyProfileFlags({
     ...profile,
     capabilities: { ...(profile.capabilities ?? {}), mtp: true },

@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { MANAGED_LLAMA_SERVER, RUNTIME_DIR } from "./config.mjs";
+import { execFileAsync } from "./exec.mjs";
 import { pc } from "./ui.mjs";
-
-const execFileAsync = promisify(execFile);
 const RELEASE_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
 const VERSION_PATH = join(RUNTIME_DIR, "llama.cpp", "VERSION.json");
 
@@ -103,7 +100,7 @@ function verifyDigest(bytes, digest) {
 }
 
 /** Read the installed llama.cpp release tag from VERSION.json. */
-export async function readInstalledLlamaTag() {
+async function readInstalledLlamaTag() {
   if (!existsSync(VERSION_PATH)) return null;
   try {
     const data = JSON.parse(await readFile(VERSION_PATH, "utf8"));

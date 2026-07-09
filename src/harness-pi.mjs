@@ -204,7 +204,7 @@ function modelInput(profile) {
   return ["text"];
 }
 
-export function modelCompat(profile) {
+function modelCompat(profile) {
   if (profile.compat) return profile.compat;
   const family = modelFamily(profile);
   if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) {
@@ -213,14 +213,14 @@ export function modelCompat(profile) {
   return null;
 }
 
-export function modelReasoning(profile) {
+function modelReasoning(profile) {
   if (profile.reasoning !== undefined) return Boolean(profile.reasoning);
   const family = modelFamily(profile);
   if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) return true;
   return undefined;
 }
 
-export function modelFamily(profile) {
+function modelFamily(profile) {
   return [profile.id, profile.label, profile.modelAlias, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
 }
 

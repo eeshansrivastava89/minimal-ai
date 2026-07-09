@@ -40,11 +40,11 @@ export async function stopCommand(argv) {
   }
 }
 
-export async function stopOne(id) {
+async function stopOne(id) {
   await printStopResult(await readProfile(id));
 }
 
-export async function stopAll() {
+async function stopAll() {
   const running = await runningProfiles();
   if (running.length === 0) {
     console.log(pc.dim("No offgrid-ai servers are running."));
