@@ -1,5 +1,7 @@
 import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
+import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
+import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
 import { runCommand } from "./commands/run.mjs";
@@ -31,9 +33,40 @@ async function offerUpdate(argv) {
   }
 }
 
+async function offerRuntimeUpdates() {
+  if (!process.stdin.isTTY) return;
+  const updates = [];
+  const llamaUpdate = await checkLlamaUpdate();
+  if (llamaUpdate) updates.push({ kind: "llama.cpp", ...llamaUpdate });
+  if (process.platform === "darwin" && process.arch === "arm64") {
+    const omlxUpdate = await checkOmlxUpdate();
+    if (omlxUpdate) updates.push({ kind: "oMLX", ...omlxUpdate });
+  }
+  if (updates.length === 0) return;
+  for (const u of updates) {
+    console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
+  }
+  const prompt = createPrompt();
+  try {
+    const shouldUpdate = await prompt.yesNo("Update now?", false);
+    if (!shouldUpdate) return;
+    for (const u of updates) {
+      if (u.kind === "llama.cpp") {
+        await installLlamaRelease(u.release);
+        console.log(pc.green("✓ llama.cpp updated."));
+      } else if (u.kind === "oMLX") {
+        await installOmlx();
+      }
+    }
+  } finally {
+    prompt.close();
+  }
+}
+
 export async function run(argv) {
   if (argv.length === 0) {
     if (await offerUpdate(argv)) return;
+    await offerRuntimeUpdates();
     return mainFlow();
   }
 

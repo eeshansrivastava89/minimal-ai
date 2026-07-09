@@ -48,8 +48,24 @@ export async function installedOmlxVersion() {
   if (!bin) return null;
   try {
     const { stdout } = await execFileAsync(bin, ["--version"], { timeout: 5000 });
-    const match = stdout.trim().match(/(\d+\.\d+\.\d+)/u);
+    const match = stdout.trim().match(/(\d+\.\d+\.\d+(?:\.\w+)*)/u);
     return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a newer oMLX release is available. Returns { installed, latest } or null. */
+export async function checkOmlxUpdate() {
+  const installed = await installedOmlxVersion();
+  if (!installed) return null;
+  try {
+    const response = await fetch(RELEASE_API, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) return null;
+    const release = await response.json();
+    const latest = release.tag_name?.replace(/^v/u, "");
+    if (!latest || installed === latest) return null;
+    return { installed, latest };
   } catch {
     return null;
   }

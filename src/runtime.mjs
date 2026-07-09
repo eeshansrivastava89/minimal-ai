@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -100,4 +100,25 @@ function verifyDigest(bytes, digest) {
   const expected = digest.slice("sha256:".length);
   const actual = createHash("sha256").update(bytes).digest("hex");
   if (actual !== expected) throw new Error("llama.cpp: checksum mismatch");
+}
+
+/** Read the installed llama.cpp release tag from VERSION.json. */
+export async function readInstalledLlamaTag() {
+  if (!existsSync(VERSION_PATH)) return null;
+  try {
+    const data = JSON.parse(await readFile(VERSION_PATH, "utf8"));
+    return data.tag ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a newer llama.cpp release is available. Returns { installed, latest, release } or null. */
+export async function checkLlamaUpdate() {
+  const installedTag = await readInstalledLlamaTag();
+  if (!installedTag) return null;
+  const latest = await latestLlamaRelease();
+  if (!latest) return null;
+  if (installedTag === latest.tag) return null;
+  return { installed: installedTag, latest: latest.tag, release: latest };
 }
