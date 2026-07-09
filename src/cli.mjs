@@ -23,7 +23,7 @@ async function offerUpdate(argv) {
 
   const prompt = createPrompt();
   try {
-    const shouldUpdate = await prompt.yesNo("Update now?", false);
+    const shouldUpdate = await prompt.yesNo("Update now?", true);
     if (!shouldUpdate) return false;
     await runUpdateCommand(plan);
     if (plan.mode === "install-global") console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
@@ -48,7 +48,7 @@ async function offerRuntimeUpdates() {
   }
   const prompt = createPrompt();
   try {
-    const shouldUpdate = await prompt.yesNo("Update now?", false);
+    const shouldUpdate = await prompt.yesNo("Update now?", true);
     if (!shouldUpdate) return;
     for (const u of updates) {
       if (u.kind === "llama.cpp") {
