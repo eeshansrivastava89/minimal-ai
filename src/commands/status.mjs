@@ -3,9 +3,9 @@ import { backendFor } from "../backends.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { profileRuntimeStatus } from "../process.mjs";
 import { existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { execFileAsync } from "../exec.mjs";
 import { pc, renderRows, renderCard } from "../ui.mjs";
 
 export async function statusCommand() {
@@ -46,7 +46,7 @@ export async function statusCommand() {
   const omlxCacheDir = join(homedir(), ".omlx", "cache");
   if (existsSync(omlxCacheDir)) {
     try {
-      const duOutput = execFileSync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
+      const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
       const cacheSize = duOutput.split(/\s+/)[0];
       console.log("\n" + renderCard("oMLX cache", renderRows([
         ["Location", pc.dim(omlxCacheDir)],

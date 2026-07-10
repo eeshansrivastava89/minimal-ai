@@ -1,14 +1,13 @@
 import { existsSync } from "node:fs";
 import { cp, readdir, mkdir } from "node:fs/promises";
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
-import { runCommand } from "./exec.mjs";
+import { runCommand, execFileAsync } from "./exec.mjs";
 import pc from "picocolors";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
@@ -44,8 +43,8 @@ export async function syncPiConfig(profile) {
   config.providers[profile.providerId] = {
     baseUrl: profile.baseUrl,
     api: "openai-completions",
-    apiKey: piApiKey(profile.providerId),
-    compat: providerCompat(profile.providerId),
+    apiKey: piApiKey(),
+    compat: providerCompat(),
     models: profiles.map(piModelConfig),
   };
   await writeJson(PI_CONFIG, config);
@@ -89,7 +88,7 @@ export async function launchPi(profile) {
 
 export async function hasPi() {
   try {
-    await promisify(execFile)("which", ["pi"]);
+    await execFileAsync("which", ["pi"]);
     return true;
   } catch {
     return false;
@@ -214,10 +213,7 @@ function modelCompat(profile) {
 }
 
 function modelReasoning(profile) {
-  if (profile.reasoning !== undefined) return Boolean(profile.reasoning);
-  const family = modelFamily(profile);
-  if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) return true;
-  return undefined;
+  return profile.capabilities?.thinking === true ? true : undefined;
 }
 
 function modelFamily(profile) {

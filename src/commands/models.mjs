@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile } from "../process.mjs";
+import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile, serverReady } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
 import { hasOmlx, offerOmlxRestart, installOmlx } from "../omlx-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
@@ -466,10 +466,7 @@ async function settingsFlow(prompt) {
 
     let omlxServerUp = false;
     if (omlxInstalled) {
-      try {
-        const res = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(2000) });
-        omlxServerUp = res.ok;
-      } catch { /* server down */ }
+      omlxServerUp = await serverReady(BACKENDS.omlx.defaultBaseUrl);
     }
 
     console.log("");

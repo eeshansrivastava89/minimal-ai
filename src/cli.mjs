@@ -64,6 +64,11 @@ async function offerRuntimeUpdates() {
 }
 
 export async function run(argv) {
+  if (process.platform === "win32") {
+    console.log(pc.red("offgrid-ai supports macOS and Linux only."));
+    console.log(pc.dim("Windows is not yet supported. Use WSL or a native macOS/Linux machine."));
+    return;
+  }
   if (argv.length === 0) {
     if (await offerUpdate(argv)) return;
     await offerRuntimeUpdates();
