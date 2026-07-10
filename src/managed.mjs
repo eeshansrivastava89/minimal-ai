@@ -1,12 +1,13 @@
 import { BACKENDS } from "./backends.mjs";
-import { omlxEnabled } from "./config.mjs";
-
-const MANAGED_BACKEND_IDS = ["omlx"];
+import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 
 export async function scanManagedModels() {
-  if (!(await omlxEnabled())) return [];
+  const enabledBackends = [];
+  if (await omlxEnabled()) enabledBackends.push("omlx");
+  if (await ollamaEnabled()) enabledBackends.push("ollama");
+  if (enabledBackends.length === 0) return [];
   const results = [];
-  for (const backendId of MANAGED_BACKEND_IDS) {
+  for (const backendId of enabledBackends) {
     const backend = BACKENDS[backendId];
     try {
       const models = await backend.scanModels();

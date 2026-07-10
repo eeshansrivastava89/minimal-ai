@@ -32,7 +32,7 @@ export async function runProfile(profile, options = {}) {
     }
     const available = await modelAvailableOnServer(profile);
     if (!available) {
-      const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.label;
+      const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
       throw new Error(`${modelId} is not available on ${backend.label} at ${profile.baseUrl}.`);
     }
     console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));

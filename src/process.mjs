@@ -7,6 +7,7 @@ import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor, backendBinaryFor } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { startOmlxServer } from "./omlx-runtime.mjs";
+import { startOllamaServer, unloadOllamaModel, ollamaLoadedModels } from "./ollama-runtime.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { pc } from "./ui.mjs";
 
@@ -132,6 +133,13 @@ async function startManagedServer(profile, backend) {
     } catch (err) {
       if (err.message.includes("not installed")) throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`, { cause: err });
       throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });
+    }
+  }
+  if (backend.id === "ollama") {
+    try {
+      await startOllamaServer();
+    } catch (err) {
+      throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`ollama serve\` manually.`, { cause: err });
     }
   }
 
@@ -269,7 +277,7 @@ async function processGone(pid) {
   }
 }
 
-// ── Unload model from a managed server (oMLX) ─────────────────────────────
+// ── Unload model from a managed server (oMLX, Ollama) ──────────────────
 // Counterpart to stopProfile for local-server backends: stopProfile kills the
 // server process (which unloads the model); unloadModelFromServer asks a
 // managed server to release the model from memory via its HTTP API, leaving the
@@ -287,7 +295,22 @@ export async function unloadModelFromServer(profile) {
     return await unloadOmlxModel(profile);
   }
 
+  if (backend.id === "ollama") {
+    return await unloadOllamaModelFromServer(profile);
+  }
+
   return { unloaded: false, backend: backend.id, reason: "unsupported backend" };
+}
+
+async function unloadOllamaModelFromServer(profile) {
+  const modelId = profile.ollamaModel || profile.modelAlias || profile.id;
+  try {
+    const ok = await unloadOllamaModel(modelId);
+    if (ok) return { unloaded: true, backend: "ollama", modelId };
+    return { unloaded: false, backend: "ollama", modelId, error: "Ollama did not confirm unload" };
+  } catch (err) {
+    return { unloaded: false, backend: "ollama", modelId, error: err.message };
+  }
 }
 
 async function unloadOmlxModel(profile) {
@@ -362,6 +385,11 @@ export async function isProfileServerUp(profile) {
 export async function modelLoadedOnServer(profile) {
   const backend = backendFor(profile.backend);
   if (backend.id === "omlx") return modelIdsMatch(await omlxLoadedModelIds(profile), expectedModelIds(profile));
+  if (backend.id === "ollama") {
+    const loaded = await ollamaLoadedModels();
+    const expected = expectedModelIds(profile);
+    return loaded.some((name) => expected.some((e) => e.toLowerCase() === name.toLowerCase()));
+  }
   const { matches } = await serverMatchesProfile(profile);
   return matches;
 }
@@ -370,6 +398,9 @@ export async function modelAvailableOnServer(profile) {
   const backend = backendFor(profile.backend);
   if (backend.id === "omlx") {
     // /v1/models lists discovered models; an ID must exist there to be usable.
+    return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
+  }
+  if (backend.id === "ollama") {
     return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
   }
   // Local servers are tied to a specific model file via their command argv.
@@ -516,6 +547,7 @@ function normalizeModelId(id) {
 function expectedModelIds(profile) {
   const fileName = profile.modelPath ? basename(profile.modelPath) : null;
   return [
+    profile.ollamaModel,
     profile.modelAlias,
     profile.label,
     profile.omlxModel,

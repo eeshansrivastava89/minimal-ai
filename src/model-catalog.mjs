@@ -24,7 +24,7 @@ export function normalizeCatalog(catalog) {
     const profiledAliases = new Set(
       profiles
         .filter((profile) => profile.backend === backendId)
-        .map((profile) => `omlx:${profile.omlxModel ?? profile.modelAlias}`),
+        .map((profile) => `${backendId}:${profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias}`),
     );
     for (const model of models) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
@@ -78,8 +78,8 @@ export function buildCatalogItems(normalized) {
     }
     if (!quant) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && profile.omlxModel) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
         if (managedModel) {
           item.label = managedModel.label;
           if (managedModel.quant) quant = managedModel.quant;
@@ -96,8 +96,8 @@ export function buildCatalogItems(normalized) {
     }
     if (!sizeBytes) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && profile.omlxModel) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
         if (managedModel?.sizeBytes) sizeBytes = managedModel.sizeBytes;
       }
     }
@@ -112,8 +112,8 @@ export function buildCatalogItems(normalized) {
     }
     if (!contextLength) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && profile.omlxModel) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel}`);
+      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
+        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
         if (managedModel?.contextLength) contextLength = managedModel.contextLength;
       }
     }
@@ -154,5 +154,6 @@ export function createManagedProfile(model, backendId) {
     modelAlias: model.aliasSuggestion,
     modelSizeBytes: model.sizeBytes || 0,
     ...(backendId === "omlx" ? { omlxModel: model.id } : {}),
+    ...(backendId === "ollama" ? { ollamaModel: model.id } : {}),
   });
 }

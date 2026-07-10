@@ -1,4 +1,4 @@
-import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR, omlxEnabled } from "../config.mjs";
+import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "../config.mjs";
 import { existsSync } from "node:fs";
 import { rm, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -9,6 +9,7 @@ import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profil
 import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile, serverReady } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
 import { hasOmlx, offerOmlxRestart, installOmlx } from "../omlx-runtime.mjs";
+import { hasOllama, installOllama, deleteOllamaModel } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
 import { findOmlxModelDir } from "../mlx-discovery.mjs";
 import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows } from "../ui.mjs";
@@ -125,14 +126,19 @@ async function showModelPicker(catalog) {
     groups.push({ separator: `    ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
 
-  // Build action items — conditionally include oMLX install on Apple Silicon
+  // Build action items — conditionally include managed backend installs
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
   const omlxInstalled = (isAppleSilicon && (await omlxEnabled())) ? await hasOmlx() : true;
+  const ollamaOn = await ollamaEnabled();
+  const ollamaInstalled = ollamaOn ? await hasOllama() : true;
   const actionItems = [
     { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
   ];
   if (isAppleSilicon && !omlxInstalled) {
     actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
+  }
+  if (ollamaOn && !ollamaInstalled) {
+    actionItems.push({ value: "__install_ollama__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install Ollama")} ${pc.dim("(managed model runner)")}` });
   }
   actionItems.push({ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` });
   groups.push({ separator: " ", items: actionItems });
@@ -159,6 +165,12 @@ async function showModelPicker(catalog) {
       // → start server (not the GUI) → return. Exit afterward, consistent
       // with download/settings/run/reconfigure — never return to picker.
       await installOmlx();
+      console.log("");
+      return;
+    }
+
+    if (selected === "__install_ollama__") {
+      await installOllama();
       console.log("");
       return;
     }
@@ -316,7 +328,10 @@ async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     if (backend.type === "managed-server") {
-      const modelId = item.profile.omlxModel || item.profile.modelAlias || item.profile.id;
+      const modelId = item.profile.omlxModel || item.profile.ollamaModel || item.profile.modelAlias || item.profile.id;
+      if (backend.id === "ollama") {
+        return { kind: "ollama", modelId };
+      }
       // oMLX model IDs may not include the org prefix, so search recursively
       const dir = await findOmlxModelDir(modelId);
       return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
@@ -339,6 +354,9 @@ async function modelLocationForItem(item) {
   if (item.type === "managed") {
     const modelId = item.model?.id;
     if (!modelId) return { kind: "unknown" };
+    if (item.backendId === "ollama") {
+      return { kind: "ollama", modelId };
+    }
     // oMLX model IDs may not include the org prefix, so search recursively
     const dir = await findOmlxModelDir(modelId);
     return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
@@ -360,6 +378,8 @@ async function deleteModelFromSource(prompt, item) {
     locationLabel = loc.path ?? loc.repoId;
   } else if (loc.kind === "mlx") {
     locationLabel = loc.dir;
+  } else if (loc.kind === "ollama") {
+    locationLabel = loc.modelId;
   } else if (loc.kind === "file") {
     locationLabel = loc.path;
   }
@@ -380,7 +400,20 @@ async function deleteModelFromSource(prompt, item) {
   }
 
   // Delete files
-  if (loc.kind === "hf-cache" && loc.repoId) {
+  if (loc.kind === "ollama") {
+    try {
+      const ok = await deleteOllamaModel(loc.modelId);
+      if (ok) {
+        console.log(pc.green(`✓ Deleted ${loc.modelId} from Ollama`));
+      } else {
+        console.log(pc.red(`✗ Ollama did not confirm deletion of ${loc.modelId}`));
+        console.log(pc.dim(`Delete manually: ollama rm ${loc.modelId}`));
+      }
+    } catch (err) {
+      console.log(pc.red(`✗ Failed: ${err.message}`));
+      console.log(pc.dim(`Delete manually: ollama rm ${loc.modelId}`));
+    }
+  } else if (loc.kind === "hf-cache" && loc.repoId) {
     const cacheDir = join(HF_HUB_DIR, `models--${loc.repoId.replace(/\//g, "--")}`);
     try {
       const { stdout } = await execFileAsync("hf", ["cache", "rm", `model/${loc.repoId}`, "--yes"], { timeout: 30000 });
@@ -463,11 +496,17 @@ async function settingsFlow(prompt) {
     const llamaBinary = await findLlamaServer();
     const omlxOn = await omlxEnabled();
     const omlxInstalled = omlxOn ? await hasOmlx() : false;
+    const ollamaOn = await ollamaEnabled();
+    const ollamaInstalled = ollamaOn ? await hasOllama() : false;
     const piInstalled = await hasPi();
 
     let omlxServerUp = false;
     if (omlxInstalled) {
       omlxServerUp = await serverReady(BACKENDS.omlx.defaultBaseUrl);
+    }
+    let ollamaServerUp = false;
+    if (ollamaInstalled) {
+      ollamaServerUp = await serverReady(BACKENDS.ollama.defaultBaseUrl);
     }
 
     const runtimeRows = [
@@ -475,6 +514,9 @@ async function settingsFlow(prompt) {
     ];
     if (omlxOn) {
       runtimeRows.push(["oMLX", omlxInstalled ? (omlxServerUp ? pc.green("✓ server up") : pc.yellow("✓ installed · server down")) : pc.red("✗ not found")]);
+    }
+    if (ollamaOn) {
+      runtimeRows.push(["Ollama", ollamaInstalled ? (ollamaServerUp ? pc.green("✓ server up") : pc.yellow("✓ installed · server down")) : pc.red("✗ not found")]);
     }
     runtimeRows.push(["Pi", piInstalled ? pc.green("✓ installed") : pc.red("✗ not found")]);
 

@@ -217,7 +217,7 @@ function modelReasoning(profile) {
 }
 
 function modelFamily(profile) {
-  return [profile.id, profile.label, profile.modelAlias, profile.omlxModel].filter(Boolean).join(" ").toLowerCase();
+  return [profile.id, profile.label, profile.modelAlias, profile.omlxModel, profile.ollamaModel].filter(Boolean).join(" ").toLowerCase();
 }
 
 function piApiKey() {

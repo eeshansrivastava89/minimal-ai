@@ -3,13 +3,14 @@ import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { detectHardware } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
-import { baseUrlForFlags } from "./backends.mjs";
+import { baseUrlForFlags, backendFor } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection, padCol } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
+import { ollamaModelInfo } from "./ollama-runtime.mjs";
 
 const CACHE_CHOICES = [
   { value: "bf16", label: "bf16", hint: "16-bit · best quality · 2 bytes/elem" },
@@ -429,9 +430,15 @@ export function removeMtpDefaults(profile) {
   }, profile.flags);
 }
 
-// ── oMLX (managed server) profile configuration ───────────────────────────
+// ── Managed server (oMLX, Ollama) profile configuration ──────────────────
 
 export async function configureManagedProfile(prompt, profile) {
+  const backend = backendFor(profile.backend);
+  if (backend.id === "ollama") return await configureOllamaProfile(prompt, profile);
+  return await configureOmlxProfile(prompt, profile);
+}
+
+async function configureOmlxProfile(prompt, profile) {
   let configured = profile;
   const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
 
@@ -465,6 +472,37 @@ export async function configureManagedProfile(prompt, profile) {
     ["Model", pc.bold(profile.label)],
     ["Backend", "oMLX"],
     ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
+  ])));
+
+  if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
+  return configured;
+}
+
+// ── Ollama (managed server) profile configuration ──────────────────────────
+
+async function configureOllamaProfile(prompt, profile) {
+  let configured = profile;
+  const modelId = profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+
+  // Query Ollama for model details (capabilities, parameters)
+  let capabilities = [];
+  try {
+    const info = await ollamaModelInfo(modelId);
+    const caps = info.capabilities ?? [];
+    if (caps.includes("vision")) capabilities.push("Vision");
+    if (caps.includes("tools")) capabilities.push("Tool calling");
+    if (info.model_info) {
+      const keys = Object.keys(info.model_info);
+      if (keys.some((k) => /mtp/i.test(k))) capabilities.push("MTP");
+    }
+  } catch { /* model info unavailable — continue without it */ }
+
+  console.log("");
+  console.log(renderSection("Model setup", renderRows([
+    ["Model", pc.bold(profile.label)],
+    ["Backend", "Ollama"],
+    ["Model ID", modelId],
+    ...(capabilities.length > 0 ? [["Capabilities", capabilities.join(" · ")]] : []),
   ])));
 
   if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;

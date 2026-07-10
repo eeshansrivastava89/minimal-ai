@@ -33,6 +33,7 @@ function optionSourceTag(sourceId) {
     huggingface: pc.cyan,
     lmstudio: pc.blue,
     omlx: pc.magenta,
+    ollama: pc.blue,
     "llama.cpp": pc.cyan,
     gguf: pc.cyan,
   };
@@ -45,6 +46,7 @@ function optionBackendTag(backendId) {
   const colors = {
     "llama-cpp": pc.cyan,
     omlx: pc.magenta,
+    ollama: pc.blue,
   };
   return padCol(label, OPTION_BACKEND_WIDTH, colors[backendId] ?? pc.dim);
 }
@@ -55,6 +57,7 @@ export function formatSourceLabel(sourceId) {
     huggingface: "HuggingFace",
     lmstudio: "LM Studio",
     omlx: "oMLX",
+    ollama: "Ollama",
     "llama.cpp": "llama.cpp",
     gguf: "GGUF file",
   };

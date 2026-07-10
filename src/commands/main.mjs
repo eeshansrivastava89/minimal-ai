@@ -1,9 +1,10 @@
-import { findLlamaServer, ensureDirs, omlxEnabled } from "../config.mjs";
+import { findLlamaServer, ensureDirs, omlxEnabled, ollamaEnabled } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
+import { hasOllama, OLLAMA_URLS } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { pc, startInteractive, renderCard } from "../ui.mjs";
 import { onboardFlow } from "./onboard.mjs";
@@ -50,14 +51,25 @@ export async function mainFlow() {
 
   // Interactive: show the picker (even with no models — user can download)
   const omlxOn = await omlxEnabled();
+  const ollamaOn = await ollamaEnabled();
   startInteractive("offgrid-ai");
-  printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: omlxOn ? await hasOmlx() : false, showOmlx: omlxOn, profiles });
+  printStatusHeader({
+    llamaBinary,
+    managedModels,
+    piInstalled,
+    omlxInstalled: omlxOn ? await hasOmlx() : false,
+    showOmlx: omlxOn,
+    ollamaInstalled: ollamaOn ? await hasOllama() : false,
+    ollamaServerUp: managedModels.some((m) => m.backendId === "ollama" && m.status === "ok"),
+    showOllama: ollamaOn,
+    profiles,
+  });
   console.log(pc.dim("  No models? Pick \"↓ Download a model\" below — offgrid-ai downloads from HuggingFace"));
   console.log("");
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
-function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, profiles }) {
+function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, showOllama, profiles }) {
   const parts = [
     llamaBinary ? pc.green("llama.cpp ✓") : pc.red("llama.cpp ✗"),
   ];
@@ -69,9 +81,15 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
       parts.push(pc.red("oMLX ✗"));
     }
   }
+  if (showOllama) {
+    if (ollamaInstalled) {
+      parts.push(ollamaServerUp ? pc.green("Ollama ✓ server up") : pc.yellow("Ollama ✓ server down"));
+    } else {
+      parts.push(pc.red("Ollama ✗"));
+    }
+  }
   parts.push(piInstalled ? pc.green("Pi ✓") : pc.red("Pi ✗"));
   if (profiles.length > 0) parts.push(pc.dim(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
   console.log(renderCard("offgrid-ai", parts.join(pc.dim("  ·  ")), { formatBorder: pc.cyan }));
   console.log("");
 }
-

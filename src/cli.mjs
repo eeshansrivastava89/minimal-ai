@@ -2,7 +2,8 @@ import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
-import { omlxEnabled } from "./config.mjs";
+import { checkOllamaUpdate, installOllama } from "./ollama-runtime.mjs";
+import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
 import { runCommand } from "./commands/run.mjs";
@@ -43,6 +44,10 @@ async function offerRuntimeUpdates() {
     const omlxUpdate = await checkOmlxUpdate();
     if (omlxUpdate) updates.push({ kind: "oMLX", ...omlxUpdate });
   }
+  if (await ollamaEnabled()) {
+    const ollamaUpdate = await checkOllamaUpdate();
+    if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
+  }
   if (updates.length === 0) return;
   for (const u of updates) {
     console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
@@ -57,6 +62,8 @@ async function offerRuntimeUpdates() {
         console.log(pc.green("✓ llama.cpp updated."));
       } else if (u.kind === "oMLX") {
         await installOmlx();
+      } else if (u.kind === "Ollama") {
+        await installOllama();
       }
     }
   } finally {

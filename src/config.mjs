@@ -49,6 +49,7 @@ const DEFAULT_CONFIG = {
   modelScanDirs: [],
   binaryOverrides: {},
   enable_omlx: false,
+  enable_ollama: false,
 };
 
 export async function loadConfig() {
@@ -85,7 +86,16 @@ const OMLX_MODELS_DIR = join(homedir(), ".omlx", "models");
  */
 export async function omlxEnabled(config) {
   const cfg = config ?? await loadConfig();
-  return cfg.enable_omlx === true;
+ return cfg.enable_omlx === true;
+}
+
+/**
+ * Check if Ollama backend is enabled.
+ * Same pattern as oMLX — disabled by default, enable via config.json.
+ */
+export async function ollamaEnabled(config) {
+  const cfg = config ?? await loadConfig();
+  return cfg.enable_ollama === true;
 }
 
 // ── Model scan directories ────────────────────────────────────────────────
