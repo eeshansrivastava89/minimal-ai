@@ -1,4 +1,4 @@
-import { ensureDirs } from "../config.mjs";
+import { ensureDirs, omlxEnabled } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { profileRuntimeStatus } from "../process.mjs";
@@ -42,18 +42,20 @@ export async function statusCommand() {
 
   console.log(renderCard("Status", renderRows(summaryRows), { formatBorder: running.length > 0 ? pc.green : pc.dim }));
 
-  // Show oMLX cache disk usage if cache exists
-  const omlxCacheDir = join(homedir(), ".omlx", "cache");
-  if (existsSync(omlxCacheDir)) {
-    try {
-      const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
-      const cacheSize = duOutput.split(/\s+/)[0];
-      console.log("\n" + renderCard("oMLX cache", renderRows([
-        ["Location", pc.dim(omlxCacheDir)],
-        ["Disk usage", pc.bold(cacheSize)],
-      ]), { formatBorder: pc.magenta }));
-    } catch {
-      // du not available — skip
+  // Show oMLX cache disk usage if oMLX enabled and cache exists
+  if (await omlxEnabled()) {
+    const omlxCacheDir = join(homedir(), ".omlx", "cache");
+    if (existsSync(omlxCacheDir)) {
+      try {
+        const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
+        const cacheSize = duOutput.split(/\s+/)[0];
+        console.log("\n" + renderCard("oMLX cache", renderRows([
+          ["Location", pc.dim(omlxCacheDir)],
+          ["Disk usage", pc.bold(cacheSize)],
+        ]), { formatBorder: pc.magenta }));
+      } catch {
+        // du not available — skip
+      }
     }
   }
 

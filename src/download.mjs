@@ -5,7 +5,7 @@ import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, 
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { HF_HUB_DIR, hasHomebrew } from "./config.mjs";
+import { HF_HUB_DIR, hasHomebrew, omlxEnabled } from "./config.mjs";
 import { offerOmlxRestart, hasOmlx } from "./omlx-runtime.mjs";
 import { runCommand, commandExists } from "./exec.mjs";
 import { homedir } from "node:os";
@@ -48,7 +48,7 @@ export async function downloadFlow(prompt) {
 
     // Determine available formats (ignore empty strings)
     const hasGguf = Boolean(selected.gguf);
-    const hasMlx = Boolean(selected.mlx && selected.mlx.trim());
+    const hasMlx = (await omlxEnabled()) && Boolean(selected.mlx && selected.mlx.trim());
 
     const omlxInstalled = await hasOmlx();
     if (hasGguf && hasMlx) {
@@ -107,7 +107,8 @@ export async function downloadFlow(prompt) {
       filename = await pickGgufQuant(prompt, repo, ggufFiles);
       if (!filename) return false;
     } else {
-      // No GGUF files — check if it's an MLX repo via HF metadata
+      // No GGUF files
+      const omlxOn = await omlxEnabled();
       let modelInfo;
       try {
         modelInfo = await getHfModelInfo(repo);
@@ -115,13 +116,14 @@ export async function downloadFlow(prompt) {
         console.log(pc.red(`Could not fetch repo info for ${repo}. Check the repo ID and try again.`));
         return false;
       }
-      if (!isMlxRepo(modelInfo)) {
-        console.log(pc.yellow(`This repo is not a GGUF or MLX model (library: ${modelInfo.library_name ?? "unknown"}).`));
+      if (omlxOn && isMlxRepo(modelInfo)) {
+        // It's MLX — download everything
+      } else {
+        console.log(pc.yellow(`This repo is not a GGUF model${omlxOn ? " or MLX model" : ""} (library: ${modelInfo.library_name ?? "unknown"}).`));
         console.log(pc.dim("For llama.cpp: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
-        console.log(pc.dim("For oMLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
+        if (omlxOn) console.log(pc.dim("For oMLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
         return false;
       }
-      // It's MLX — download everything
     }
   }
 

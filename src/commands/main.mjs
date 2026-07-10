@@ -1,4 +1,4 @@
-import { findLlamaServer, ensureDirs } from "../config.mjs";
+import { findLlamaServer, ensureDirs, omlxEnabled } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
@@ -49,22 +49,25 @@ export async function mainFlow() {
   }
 
   // Interactive: show the picker (even with no models — user can download)
+  const omlxOn = await omlxEnabled();
   startInteractive("offgrid-ai");
-  printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: await hasOmlx(), profiles });
+  printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled: omlxOn ? await hasOmlx() : false, showOmlx: omlxOn, profiles });
   console.log(pc.dim("  No models? Pick \"↓ Download a model\" below — offgrid-ai downloads from HuggingFace"));
   console.log("");
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
-function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, profiles }) {
-  const omlxServerUp = managedModels.some((m) => m.backendId === "omlx" && m.status === "ok");
+function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, profiles }) {
   const parts = [
     llamaBinary ? pc.green("llama.cpp ✓") : pc.red("llama.cpp ✗"),
   ];
-  if (omlxInstalled) {
-    parts.push(omlxServerUp ? pc.green("oMLX ✓ server up") : pc.yellow("oMLX ✓ server down"));
-  } else {
-    parts.push(pc.red("oMLX ✗"));
+  if (showOmlx) {
+    const omlxServerUp = managedModels.some((m) => m.backendId === "omlx" && m.status === "ok");
+    if (omlxInstalled) {
+      parts.push(omlxServerUp ? pc.green("oMLX ✓ server up") : pc.yellow("oMLX ✓ server down"));
+    } else {
+      parts.push(pc.red("oMLX ✗"));
+    }
   }
   parts.push(piInstalled ? pc.green("Pi ✓") : pc.red("Pi ✗"));
   if (profiles.length > 0) parts.push(pc.dim(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));

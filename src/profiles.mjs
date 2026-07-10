@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
+import { PROFILE_DIR, RUN_DIR, LOG_DIR, omlxEnabled } from "./config.mjs";
 import { backendFor, baseUrlForFlags, defaultFlagsForBackend, BACKENDS } from "./backends.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { computeFlags } from "./autodetect.mjs";
@@ -36,6 +36,7 @@ export function slugFromLabel(value) {
 // ── CRUD ───────────────────────────────────────────────────────────────────
 
 export async function loadProfiles() {
+  const omlxOn = await omlxEnabled();
   const entries = await readdir(PROFILE_DIR, { withFileTypes: true }).catch(() => []);
   const ids = entries
     .filter((e) => e.isDirectory() && existsSync(profileJsonPath(e.name)))
@@ -49,7 +50,8 @@ export async function loadProfiles() {
       }
       return p;
     })
-    .filter((p) => BACKENDS[p.backend]);
+    .filter((p) => BACKENDS[p.backend])
+    .filter((p) => omlxOn || p.backend !== "omlx");
 }
 
 export async function readProfile(id) {

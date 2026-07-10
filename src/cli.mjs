@@ -2,6 +2,7 @@ import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
+import { omlxEnabled } from "./config.mjs";
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
 import { runCommand } from "./commands/run.mjs";
@@ -38,7 +39,7 @@ async function offerRuntimeUpdates() {
   const updates = [];
   const llamaUpdate = await checkLlamaUpdate();
   if (llamaUpdate) updates.push({ kind: "llama.cpp", ...llamaUpdate });
-  if (process.platform === "darwin" && process.arch === "arm64") {
+  if (process.platform === "darwin" && process.arch === "arm64" && (await omlxEnabled())) {
     const omlxUpdate = await checkOmlxUpdate();
     if (omlxUpdate) updates.push({ kind: "oMLX", ...omlxUpdate });
   }

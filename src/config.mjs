@@ -48,6 +48,7 @@ const CONFIG_PATH = join(DATA_DIR, "config.json");
 const DEFAULT_CONFIG = {
   modelScanDirs: [],
   binaryOverrides: {},
+  enable_omlx: false,
 };
 
 export async function loadConfig() {
@@ -69,12 +70,34 @@ async function saveConfig(config) {
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
 
+// ── Feature flags ──────────────────────────────────────────────────────────
+
+const OMLX_MODELS_DIR = join(homedir(), ".omlx", "models");
+
+/**
+ * Check if oMLX backend is enabled.
+ * Disabled by default — enable via config.json ("enable_omlx": true).
+ * When disabled, all oMLX UI, scanning, profiling, and download paths are
+ * hidden. Existing oMLX profiles are preserved on disk but not shown.
+ * To enable for all users later, change the default below from === true
+ * to !== false (one line, no other code changes needed).
+ * @param {object} [config] - pre-loaded config (avoids redundant read)
+ */
+export async function omlxEnabled(config) {
+  const cfg = config ?? await loadConfig();
+  return cfg.enable_omlx === true;
+}
+
 // ── Model scan directories ────────────────────────────────────────────────
 
 export async function getModelScanDirs() {
   const config = await loadConfig();
-  // Dedupe (a user may list a default dir explicitly) so we never scan twice.
-  return [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs].filter((dir, i, arr) => arr.indexOf(dir) === i);
+  const dirs = [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs];
+  // Exclude ~/.omlx/models when oMLX is disabled
+  if (!(await omlxEnabled(config))) {
+    return dirs.filter((d) => d !== OMLX_MODELS_DIR).filter((dir, i, arr) => arr.indexOf(dir) === i);
+  }
+  return dirs.filter((dir, i, arr) => arr.indexOf(dir) === i);
 }
 
 export async function addModelScanDir(dir) {

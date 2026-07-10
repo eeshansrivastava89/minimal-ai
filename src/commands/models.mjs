@@ -1,4 +1,4 @@
-import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR } from "../config.mjs";
+import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, findLlamaServer, HF_HUB_DIR, omlxEnabled } from "../config.mjs";
 import { existsSync } from "node:fs";
 import { rm, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -127,7 +127,7 @@ async function showModelPicker(catalog) {
 
   // Build action items — conditionally include oMLX install on Apple Silicon
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  const omlxInstalled = isAppleSilicon ? await hasOmlx() : true;
+  const omlxInstalled = (isAppleSilicon && (await omlxEnabled())) ? await hasOmlx() : true;
   const actionItems = [
     { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
   ];
@@ -461,7 +461,8 @@ async function deleteModelFromSource(prompt, item) {
 async function settingsFlow(prompt) {
   while (true) {
     const llamaBinary = await findLlamaServer();
-    const omlxInstalled = await hasOmlx();
+    const omlxOn = await omlxEnabled();
+    const omlxInstalled = omlxOn ? await hasOmlx() : false;
     const piInstalled = await hasPi();
 
     let omlxServerUp = false;
@@ -469,12 +470,16 @@ async function settingsFlow(prompt) {
       omlxServerUp = await serverReady(BACKENDS.omlx.defaultBaseUrl);
     }
 
-    console.log("");
-    console.log(renderCard("Runtime status", renderRows([
+    const runtimeRows = [
       ["llama.cpp", llamaBinary ? pc.green("✓ ") + pc.dim(llamaBinary) : pc.red("✗ not found")],
-      ["oMLX", omlxInstalled ? (omlxServerUp ? pc.green("✓ server up") : pc.yellow("✓ installed · server down")) : pc.red("✗ not found")],
-      ["Pi", piInstalled ? pc.green("✓ installed") : pc.red("✗ not found")],
-    ]), { formatBorder: pc.cyan }));
+    ];
+    if (omlxOn) {
+      runtimeRows.push(["oMLX", omlxInstalled ? (omlxServerUp ? pc.green("✓ server up") : pc.yellow("✓ installed · server down")) : pc.red("✗ not found")]);
+    }
+    runtimeRows.push(["Pi", piInstalled ? pc.green("✓ installed") : pc.red("✗ not found")]);
+
+    console.log("");
+    console.log(renderCard("Runtime status", renderRows(runtimeRows), { formatBorder: pc.cyan }));
 
     const scanDirs = await getModelScanDirs();
     const defaultSet = new Set(DEFAULT_MODEL_DIRS);
