@@ -57,7 +57,12 @@ export async function loadConfig() {
     const raw = await readFile(CONFIG_PATH, "utf8");
     return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
   } catch (error) {
-    if (error?.code === "ENOENT") return { ...DEFAULT_CONFIG };
+    if (error?.code === "ENOENT") {
+      // Auto-create config.json with defaults so the user can find and edit it
+      await mkdir(dirname(CONFIG_PATH), { recursive: true });
+      await writeFile(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8").catch(() => {});
+      return { ...DEFAULT_CONFIG };
+    }
     throw new Error(
       `Failed to read config at ${CONFIG_PATH}: ${error.message}. ` +
       `Fix or remove the file, then try again.`,

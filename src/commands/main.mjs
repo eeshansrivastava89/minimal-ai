@@ -1,4 +1,5 @@
 import { findLlamaServer, ensureDirs, omlxEnabled, ollamaEnabled } from "../config.mjs";
+import { currentPackageVersion } from "../updates.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
@@ -90,6 +91,6 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
   }
   parts.push(piInstalled ? pc.green("Pi ✓") : pc.red("Pi ✗"));
   if (profiles.length > 0) parts.push(pc.dim(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
-  console.log(renderCard("offgrid-ai", parts.join(pc.dim("  ·  ")), { formatBorder: pc.cyan }));
+  console.log(renderCard(`offgrid-ai v${currentPackageVersion()}`, parts.join(pc.dim("  ·  ")), { formatBorder: pc.cyan }));
   console.log("");
 }
