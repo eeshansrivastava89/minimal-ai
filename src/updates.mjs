@@ -81,6 +81,23 @@ export function runUpdateCommand(plan) {
 }
 
 /**
+ * Force a clean reinstall by clearing npm's cache first, then installing.
+ * Used when a normal install reported success but didn't actually update.
+ */
+export function forceReinstall(plan) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npm", ["cache", "clean", "--force"], { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code !== 0) return reject(new Error(`npm cache clean exited with code ${code}`));
+      const child2 = spawn(plan.cmd, plan.args, { stdio: "inherit" });
+      child2.on("error", reject);
+      child2.on("exit", (code2) => code2 === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code2}`)));
+    });
+  });
+}
+
+/**
  * Read the version of the globally installed package.
  * Returns undefined if the package is not installed or the version
  * cannot be read (e.g. the package was installed via npx, not npm -g).

@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.4] - 2026-07-11
+
+### Fixed
+- **Auto-retry update when npm cache is stale** — when `npm install -g` reports success but doesn't actually update the package (a known npm cache issue), offgrid-ai now automatically clears npm's cache with `npm cache clean --force` and retries the install, then verifies the version changed. The user no longer has to manually fix cache issues or get stuck in an infinite update loop. If the retry also fails, a clear error is shown.
+
 ## [0.27.3] - 2026-07-11
 
 ### Fixed
