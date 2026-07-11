@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.3] - 2026-07-11
+
+### Fixed
+- **Update loop when npm cache is stale** — after `npm install -g offgrid-ai@latest` completes, offgrid-ai now verifies the installed version actually changed. If npm reports success but the version is still the same (a known npm cache issue), the user is shown a specific message: "npm reported success but the version is still v0.27.x. This is usually an npm cache issue. Try: npm cache verify && npm install -g offgrid-ai@latest". Previously, offgrid-ai trusted npm's exit code and printed "Updated" even when the install didn't take effect, causing an infinite update loop on the next launch.
+
 ## [0.27.2] - 2026-07-11
 
 ### Fixed

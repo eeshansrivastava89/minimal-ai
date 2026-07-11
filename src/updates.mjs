@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +78,34 @@ export function runUpdateCommand(plan) {
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code}`)));
   });
+}
+
+/**
+ * Read the version of the globally installed package.
+ * Returns undefined if the package is not installed or the version
+ * cannot be read (e.g. the package was installed via npx, not npm -g).
+ */
+export function installedGlobalVersion() {
+  try {
+    // Resolve the package's own package.json from the global node_modules.
+    // This works regardless of which Node version manager is in use.
+    const globalRoot = globalPackageRoot();
+    if (!globalRoot) return undefined;
+    const pkgPath = fileURLToPath(new URL(`file://${globalRoot}/${PACKAGE_NAME}/package.json`));
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version;
+  } catch {
+    return undefined;
+  }
+}
+
+function globalPackageRoot() {
+  try {
+    const root = execFileSync("npm", ["root", "-g"], { encoding: "utf8", timeout: 5000 }).trim();
+    return root;
+  } catch {
+    return null;
+  }
 }
 
 function updateResult(currentVersion, latestVersion) {

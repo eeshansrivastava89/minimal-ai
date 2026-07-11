@@ -1,5 +1,5 @@
 import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
-import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
+import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand, installedGlobalVersion } from "./updates.mjs";
 import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
 import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
@@ -37,7 +37,17 @@ async function offerUpdate(argv) {
   const shouldUpdate = await prompt.yesNo("Update now?", true);
   if (!shouldUpdate) return false;
   await runUpdateCommand(plan);
-  if (plan.mode === "install-global") console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+  if (plan.mode === "install-global") {
+    const installed = installedGlobalVersion();
+    if (installed && installed === update.latest) {
+      console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+    } else if (installed && installed === update.current) {
+      console.log(pc.yellow(`npm reported success but the version is still v${installed}.`));
+      console.log(pc.dim("This is usually an npm cache issue. Try:\n  npm cache verify && npm install -g offgrid-ai@latest"));
+    } else {
+      console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+    }
+  }
   return true;
 }
 
