@@ -1,4 +1,3 @@
-import { spawn, execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -70,59 +69,6 @@ export function updateCommand(invocation = detectInvocation(), argv = []) {
     display: shellCommand("npm", args),
     mode: "install-global",
   };
-}
-
-export function runUpdateCommand(plan) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(plan.cmd, plan.args, { stdio: "inherit" });
-    child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code}`)));
-  });
-}
-
-/**
- * Force a clean reinstall by clearing npm's cache first, then installing.
- * Used when a normal install reported success but didn't actually update.
- */
-export function forceReinstall(plan) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("npm", ["cache", "clean", "--force"], { stdio: "inherit" });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code !== 0) return reject(new Error(`npm cache clean exited with code ${code}`));
-      const child2 = spawn(plan.cmd, plan.args, { stdio: "inherit" });
-      child2.on("error", reject);
-      child2.on("exit", (code2) => code2 === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code2}`)));
-    });
-  });
-}
-
-/**
- * Read the version of the globally installed package.
- * Returns undefined if the package is not installed or the version
- * cannot be read (e.g. the package was installed via npx, not npm -g).
- */
-export function installedGlobalVersion() {
-  try {
-    // Resolve the package's own package.json from the global node_modules.
-    // This works regardless of which Node version manager is in use.
-    const globalRoot = globalPackageRoot();
-    if (!globalRoot) return undefined;
-    const pkgPath = fileURLToPath(new URL(`file://${globalRoot}/${PACKAGE_NAME}/package.json`));
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-    return pkg.version;
-  } catch {
-    return undefined;
-  }
-}
-
-function globalPackageRoot() {
-  try {
-    const root = execFileSync("npm", ["root", "-g"], { encoding: "utf8", timeout: 5000 }).trim();
-    return root;
-  } catch {
-    return null;
-  }
 }
 
 function updateResult(currentVersion, latestVersion) {

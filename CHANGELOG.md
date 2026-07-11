@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.5] - 2026-07-11
+
+### Changed
+- **Simplified update flow** — offgrid-ai no longer runs `npm install` inline. When an update is available, it shows the release notes and the command to run (`npm install -g offgrid-ai@latest`), then continues to the app. The user runs the update when ready. This matches how Pi handles updates and eliminates the infinite update loop, npm cache issues, and ETARGET errors that occurred when CI hadn't finished publishing.
+
 ## [0.27.4] - 2026-07-11
 
 ### Fixed
