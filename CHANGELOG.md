@@ -4,6 +4,19 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.23.0] - 2026-07-11
+
+### Added
+- **Benchmarking feature flag** — `enable_benchmarking` in `~/.offgrid-ai/config.json` (disabled by default). When disabled, the Benchmark action is hidden from the model picker entirely. Uses the same pattern as `enable_omlx` and `enable_ollama`. To enable: `"enable_benchmarking": true` in config.json.
+
+### Changed
+- **Phase 3 god-module split** — split the three largest files into focused modules:
+  - `src/commands/models.mjs` (812 → ~340 lines): extracted `models-benchmark.mjs` (benchmark logic), `models-delete.mjs` (model deletion), `models-settings.mjs` (settings flow). Zero external churn — only `cli.mjs` imports `modelsCommand`.
+  - `src/process.mjs` (613 → ~20 lines): converted to a re-export barrel. Implementation split into `server-command.mjs` (command derivation + script rendering), `server-lifecycle.mjs` (start/stop/unload), `server-status.mjs` (status checks, preflight, HTTP utils). All 6 external consumers unchanged.
+  - `src/profile-setup.mjs` (590 → ~450 lines): extracted `profile-flags.mjs` (pure flag-application engine: `applyRuntimeFlagOverrides`, `removeMtpDefaults`, and all `apply*`/`remove*` helpers). Test file updated to import from new location.
+- **`hfRepoFromPath` moved to `huggingface.mjs`** — was a private helper in `models.mjs`, now exported from `huggingface.mjs` and shared by `models-benchmark.mjs` and `models-delete.mjs`.
+- Health: 6,790 LLOC, complexity 1,293, 0 circular deps, 0 lint warnings, 0.79% duplication, 65/65 tests.
+
 ## [0.22.0] - 2026-07-10
 
 ### Added

@@ -51,6 +51,7 @@ const DEFAULT_CONFIG = {
   binaryOverrides: {},
   enable_omlx: false,
   enable_ollama: false,
+  enable_benchmarking: false,
   lastSeenVersion: null,
 };
 
@@ -105,6 +106,19 @@ export async function omlxEnabled(config) {
 export async function ollamaEnabled(config) {
   const cfg = config ?? await loadConfig();
   return cfg.enable_ollama === true;
+}
+
+/**
+ * Check if benchmarking is enabled.
+ * Disabled by default — enable via config.json ("enable_benchmarking": true).
+ * When disabled, the Benchmark action is hidden from the model picker.
+ * To enable for all users later, change the default below from === true
+ * to !== false (one line, no other code changes needed).
+ * @param {object} [config] - pre-loaded config (avoids redundant read)
+ */
+export async function benchmarkingEnabled(config) {
+  const cfg = config ?? await loadConfig();
+  return cfg.enable_benchmarking === true;
 }
 
 // ── Model scan directories ────────────────────────────────────────────────

@@ -8,6 +8,14 @@ import { mkdir } from "node:fs/promises";
 import { HF_HUB_DIR } from "./config.mjs";
 import { execFileAsync } from "./exec.mjs";
 
+/** Extract HuggingFace repo ID from a cache path (e.g. .../models--Qwen--Qwen3-8B/... → Qwen/Qwen3-8B). */
+export function hfRepoFromPath(path) {
+  const hubPart = path.slice(HF_HUB_DIR.length);
+  const match = hubPart.match(/models--(.+?)(?=\/|$)/);
+  if (!match) return null;
+  return match[1].replace(/--/g, "/");
+}
+
 /** Check whether the `hf` CLI is available. */
 export async function hasHfCli() {
   try {

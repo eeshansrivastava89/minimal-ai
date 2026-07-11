@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { detectHardware } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
-import { baseUrlForFlags, backendFor } from "./backends.mjs";
+import { backendFor } from "./backends.mjs";
 import { pc, formatBytes, renderRows, renderSection, padCol } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
@@ -11,6 +11,7 @@ import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
 import { ollamaModelInfo } from "./ollama-runtime.mjs";
+import { applyRuntimeFlagOverrides, removeMtpDefaults, applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults } from "./profile-flags.mjs";
 
 const CACHE_CHOICES = [
   { value: "bf16", label: "bf16", hint: "16-bit · best quality · 2 bytes/elem" },
@@ -103,19 +104,6 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) 
 
   return renderSection("Context & KV cache", lines.join("\n"));
 }
-
-const GENERAL_DEFAULTS = {
-  topK: 20,
-  presencePenalty: 1.5,
-  repeatPenalty: 1.0,
-};
-
-const THINKING_DEFAULTS = {
-  topK: 64,
-  presencePenalty: 0,
-  repeatPenalty: 1.1,
-  chatTemplateKwargs: { enable_thinking: true },
-};
 
 export async function configureLocalProfile(prompt, profile) {
   let configured = profile;
@@ -410,26 +398,6 @@ export async function configureLocalProfile(prompt, profile) {
   return configured;
 }
 
-export function applyRuntimeFlagOverrides(profile, overrides) {
-  const flags = { ...profile.flags, ...overrides };
-  return applyProfileFlags(profile, flags);
-}
-
-function applyMtpDefaults(profile) {
-  return applyProfileFlags({
-    ...profile,
-    capabilities: { ...(profile.capabilities ?? {}), mtp: true },
-  }, profile.flags);
-}
-
-export function removeMtpDefaults(profile) {
-  return applyProfileFlags({
-    ...profile,
-    drafterPath: null,
-    capabilities: { ...(profile.capabilities ?? {}), mtp: false },
-  }, profile.flags);
-}
-
 // ── Managed server (oMLX, Ollama) profile configuration ──────────────────
 
 export async function configureManagedProfile(prompt, profile) {
@@ -507,47 +475,6 @@ async function configureOllamaProfile(prompt, profile) {
 
   if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
   return configured;
-}
-
-function applyVisionDefaults(profile) {
-  if (!profile.mmprojPath) return profile;
-  return applyProfileFlags({
-    ...profile,
-    capabilities: { ...(profile.capabilities ?? {}), vision: true, visionDisabledReason: undefined },
-  }, profile.flags, { values: { "--mmproj": profile.mmprojPath } });
-}
-
-function removeVisionDefaults(profile, reason) {
-  return applyProfileFlags({
-    ...profile,
-    disabledMmprojPath: profile.mmprojPath,
-    mmprojPath: null,
-    capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: reason },
-  }, profile.flags, { remove: ["--mmproj"] });
-}
-
-function applyThinkingDefaults(profile) {
-  const flags = { ...profile.flags, ...THINKING_DEFAULTS };
-  return applyProfileFlags(profile, flags);
-}
-
-function removeThinkingDefaults(profile) {
-  const flags = { ...profile.flags, ...GENERAL_DEFAULTS };
-  delete flags.chatTemplateKwargs;
-  return applyProfileFlags(profile, flags);
-}
-
-function applyProfileFlags(profile, flags) {
-  const next = {
-    ...profile,
-    flags,
-    baseUrl: baseUrlForFlags(flags),
-    harnesses: {
-      ...(profile.harnesses ?? {}),
-      pi: { ...(profile.harnesses?.pi ?? {}), enabled: true, model: `${profile.providerId ?? profile.backend}/${profile.modelAlias ?? profile.id}` },
-    },
-  };
-  return next;
 }
 
 

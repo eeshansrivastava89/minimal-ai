@@ -12,7 +12,7 @@ function freshConfigImport() {
 import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
-import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-setup.mjs";
+import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-flags.mjs";
 import { parseOptions, renderRows } from "../src/ui.mjs";
 
 describe("regressions", () => {
