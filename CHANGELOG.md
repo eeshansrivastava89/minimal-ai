@@ -4,6 +4,12 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.22.0] - 2026-07-10
+
+### Added
+- **Stop server action** — when a model's server is running, the action menu now shows "Stop server" (active) and dims "Start server" as "Already running". Works for both local llama.cpp (stops process) and managed servers (unloads model from memory).
+- **Running models card in Settings** — the Settings screen now shows a green-bordered card listing all running model servers (model name, backend, status, URL) when any are active. Includes a "Stop a running server" menu option to stop individual servers without leaving the settings flow.
+
 ## [0.21.1] - 2026-07-10
 
 ### Changed

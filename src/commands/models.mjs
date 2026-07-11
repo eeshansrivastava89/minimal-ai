@@ -16,6 +16,7 @@ import { pc, startInteractive, createPrompt, modelSelect, renderCard, renderRows
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
+import { runningProfiles } from "./stop.mjs";
 import { downloadFlow } from "../download.mjs";
 import { execFileAsync, commandExists } from "../exec.mjs";
 import { spawn } from "node:child_process";
@@ -170,7 +171,7 @@ async function showModelPicker(catalog) {
   const item = allItems.find((candidate) => itemKey(candidate) === selected);
   if (!item) return;
 
-  const actions = actionsForItem(item);
+  const actions = actionsForItem(item, { runningProfilesNow });
   const action = await prompt.choice(item.label, actions, actions[0].value);
   if (!action) return;
   await performAction(prompt, action, item);
@@ -188,7 +189,7 @@ function formatActions(rawActions) {
   });
 }
 
-function actionsForItem(item) {
+function actionsForItem(item, { runningProfilesNow = [] } = {}) {
   const missing = item.type === "profile" && item.missing;
   if (item.type === "profile") {
     const available = [
@@ -198,9 +199,18 @@ function actionsForItem(item) {
       const profile = item.profile;
       const isManaged = backendFor(profile.backend).type === "managed-server";
       const benchySupported = Boolean(resolveBenchyModel(profile, isManaged));
+      const isRunning = runningProfilesNow.some((p) => p.id === profile.id);
+      const serverActions = isRunning
+        ? [
+            { value: "stop", name: "Stop server", desc: "Stop and free memory" },
+            { value: "server", name: "Start server", desc: "Already running", dimmed: true, dimmedDesc: "Already running" },
+          ]
+        : [
+            { value: "server", name: "Start server", desc: "API only, no Pi" },
+          ];
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
-        { value: "server", name: "Start server", desc: "API only, no Pi" },
+        ...serverActions,
         { value: "benchmark", name: "Benchmark", desc: benchySupported ? "Quick · Standard · Thorough" : "Needs HF model for tokenizer", dimmed: !benchySupported, dimmedDesc: "Needs HF model for tokenizer" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
@@ -253,6 +263,7 @@ async function performAction(prompt, action, item) {
   }
   if (action === "run") return await runItem(item);
   if (action === "server") return await startServerItem(item);
+  if (action === "stop") return await stopServerItem(item);
   if (action === "benchmark") return await benchmarkItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
   if (action === "remove_config" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
@@ -265,6 +276,24 @@ async function runItem(item) {
 
 async function startServerItem(item) {
   return await runProfile(await readProfile(item.profile.id), { with: "server" });
+}
+
+async function stopServerItem(item) {
+  const profile = await readProfile(item.profile.id);
+  const isManaged = backendFor(profile.backend).type === "managed-server";
+  if (isManaged) {
+    const result = await unloadModelFromServer(profile);
+    if (result.unloaded) {
+      console.log(pc.green(`[unload] ${profile.label}: model unloaded`));
+    } else if (result.reason) {
+      console.log(pc.dim(`[unload] ${profile.label}: ${result.reason}`));
+    } else if (result.error) {
+      console.log(pc.yellow(`[unload] ${profile.label}: ${result.error}`));
+    }
+  } else {
+    const result = await stopProfile(profile);
+    console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+  }
 }
 
 async function benchmarkItem(item) {
@@ -670,6 +699,9 @@ async function settingsFlow(prompt) {
     const ollamaInstalled = ollamaOn ? await hasOllama() : false;
     const piInstalled = await hasPi();
 
+    // Collect running profiles for the running-models card
+    const running = await runningProfiles();
+
     let omlxServerUp = false;
     if (omlxInstalled) {
       omlxServerUp = await serverReady(BACKENDS.omlx.defaultBaseUrl);
@@ -693,6 +725,17 @@ async function settingsFlow(prompt) {
     console.log("");
     console.log(renderCard("Runtime status", renderRows(runtimeRows), { formatBorder: pc.cyan }));
 
+    // Show running models card if any servers are active
+    if (running.length > 0) {
+      const runningRows = running.map(({ profile, status }) => {
+        const backend = backendFor(profile.backend);
+        const state = status.ready ? pc.green("running") : pc.yellow("starting");
+        return [`${pc.green("●")} ${profile.label}`, `${backend.label} · ${state} · ${profile.baseUrl}`];
+      });
+      console.log("");
+      console.log(renderCard("Running models", renderRows(runningRows), { formatBorder: pc.green }));
+    }
+
     const scanDirs = await getModelScanDirs();
     const defaultSet = new Set(DEFAULT_MODEL_DIRS);
     const pathLabels = new Map([
@@ -713,6 +756,7 @@ async function settingsFlow(prompt) {
 
     const customDirs = scanDirs.filter((d) => !defaultSet.has(d));
     const choices = [
+      ...(running.length > 0 ? [{ value: "stop", label: "Stop a running server" }] : []),
       { value: "add", label: "Add discovery path" },
       ...(customDirs.length > 0 ? [{ value: "remove", label: "Remove discovery path" }] : []),
       { value: "done", label: "Done" },
@@ -720,6 +764,30 @@ async function settingsFlow(prompt) {
     const action = await prompt.choice("Settings", choices, "done");
 
     if (!action || action === "done") return;
+
+    if (action === "stop") {
+      const stopChoices = running.map(({ profile, status }) => ({
+        value: profile.id,
+        label: profile.label,
+        hint: `${backendFor(profile.backend).label} · ${profile.baseUrl}`,
+      }));
+      stopChoices.push({ value: "__cancel", label: "Cancel" });
+      const toStop = await prompt.choice("Stop which server?", stopChoices, stopChoices[0].value);
+      if (!toStop || toStop === "__cancel") continue;
+      const target = running.find((r) => r.profile.id === toStop);
+      if (target) {
+        const isManaged = backendFor(target.profile.backend).type === "managed-server";
+        if (isManaged) {
+          const result = await unloadModelFromServer(target.profile);
+          if (result.unloaded) console.log(pc.green(`[unload] ${target.profile.label}: model unloaded`));
+          else if (result.error) console.log(pc.yellow(`[unload] ${target.profile.label}: ${result.error}`));
+          else console.log(pc.dim(`[unload] ${target.profile.label}: ${result.reason ?? "nothing to unload"}`));
+        } else {
+          const result = await stopProfile(target.profile);
+          console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+        }
+      }
+    }
 
     if (action === "add") {
       const dir = await prompt.text("Path to model directory", "");
