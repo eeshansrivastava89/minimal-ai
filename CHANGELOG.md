@@ -4,6 +4,12 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.26.1] - 2026-07-11
+
+### Fixed
+- **Select lists no longer cycle** — all `@inquirer/prompts` select lists (quant picker, model picker, action menus, settings) now stop at the top and bottom instead of wrapping around. Set `loop: false` on both `prompt.choice` and `modelSelect`.
+- **RAM calculation in quant picker** — replaced hardcoded `totalRAM - 4GB` with actual available memory via `vm_stat` on macOS (free + inactive + speculative + purgeable pages). The old calculation showed 44 GB available on a 48 GB machine with 60% OS usage, leading to recommendations that would swap to disk. Now shows real reclaimable memory.
+
 ## [0.26.0] - 2026-07-11
 
 ### Added

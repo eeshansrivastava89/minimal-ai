@@ -10,7 +10,7 @@
 // downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
-import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
+import { installedRamGB, availableRamBytes, getFreeDiskBytes } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
@@ -264,21 +264,20 @@ async function downloadViaOllama(prompt, modelRef) {
 // ── Quant picker with RAM fit indicators ───────────────────────────────────
 
 async function pickGgufQuant(prompt, repo, ggufFiles) {
-  const hardware = detectHardware();
-  const totalRam = hardware.totalRamBytes;
-  const availableRam = totalRam - 4 * GB; // leave 4GB for OS
+  const availableRam = availableRamBytes();
 
   // Sort by size ascending (smallest first, largest last)
   const sorted = [...ggufFiles].sort((a, b) => a.sizeBytes - b.sizeBytes);
 
   // Find recommended: largest file that fits comfortably (last one that fits)
+  // Leave 2GB headroom for KV cache + inference overhead
   const fitting = sorted.filter((f) => f.sizeBytes + 2 * GB <= availableRam);
   const recommended = fitting[fitting.length - 1];
 
   console.log("");
   console.log(renderCard("Select quantization", renderRows([
     ["Your RAM", `${installedRamGB()} GB`],
-    ["Available", `~${formatBytes(availableRam)} (after OS)`],
+    ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
     ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
   ]), { formatBorder: pc.cyan }));
   console.log("");

@@ -236,6 +236,7 @@ export function createPrompt() {
         default: defaultValue,
         choices: mapped,
         pageSize: 20,
+        loop: false,
       });
     },
   };
@@ -271,6 +272,7 @@ export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } =
     default: defaultKey,
     choices,
     pageSize,
+    loop: false,
   });
 }
 
