@@ -99,6 +99,7 @@ export async function ensureOllamaServer() {
 
 /**
  * Install Ollama via Homebrew (preferred) or the official curl installer.
+ * If Ollama is already installed, just starts the server.
  * @returns {Promise<boolean>} true if installation succeeded
  */
 export async function installOllama() {
@@ -107,15 +108,33 @@ export async function installOllama() {
   console.log(pc.dim("  Manages model downloads, loading, and unloading automatically."));
   console.log(pc.dim("  On Apple Silicon, uses MLX backend for MLX models and llama.cpp for GGUF.\n"));
 
+  // If already installed, just start the server
+  if (await hasOllama()) {
+    console.log(pc.green("Ollama is already installed."));
+    await startAndWaitForServer();
+    return true;
+  }
+
   // 1. Homebrew (preferred — handles updates, daemon management)
   try {
     const { stdout } = await execFileAsync("which", ["brew"]);
     if (stdout.trim()) {
       console.log(pc.dim("Installing Ollama via Homebrew..."));
-      await runCommand("brew", ["install", "ollama"], { label: "ollama", verbose: true });
+      try {
+        await runCommand("brew", ["install", "ollama"], { label: "ollama", verbose: true });
+      } catch (brewErr) {
+        // brew install can fail on link conflicts even when the formula built.
+        // Check if ollama is actually available before falling through.
+        if (await hasOllama()) {
+          console.log(pc.yellow("Homebrew install completed with warnings (link conflicts)."));
+          console.log(pc.dim("  Ollama is available — you may want to run: brew link --overwrite ollama"));
+        } else {
+          throw brewErr;
+        }
+      }
       if (await hasOllama()) {
         console.log(pc.green("✓ Ollama installed via Homebrew."));
-        await startOllamaServer().catch(() => {});
+        await startAndWaitForServer();
         const version = await installedOllamaVersion();
         console.log(pc.green(`\n✓ Ollama ${version ? `v${version} ` : ""}installed`));
         console.log(pc.dim("  Run offgrid-ai again to see Ollama models in the picker."));
@@ -130,7 +149,7 @@ export async function installOllama() {
     await runCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
     if (await hasOllama()) {
       console.log(pc.green("✓ Ollama installed."));
-      await startOllamaServer().catch(() => {});
+      await startAndWaitForServer();
       return true;
     }
   } catch (err) {
@@ -142,6 +161,31 @@ export async function installOllama() {
   console.log(pc.red("✗ Ollama was installed but not found on PATH."));
   console.log(pc.dim("Restart your terminal and run offgrid-ai again."));
   return false;
+}
+
+/** Start the Ollama server and wait for it to be ready (up to 30s). */
+async function startAndWaitForServer() {
+  try {
+    await startOllamaServer();
+  } catch { /* server may already be starting (macOS auto-start) */ }
+  if (await serverReady()) return;
+  process.stdout.write(pc.dim("Starting Ollama server"));
+  for (let i = 0; i < 30; i++) {
+    await sleep(1000);
+    if (await serverReady()) break;
+    process.stdout.write(".");
+  }
+  console.log("");
+  if (await serverReady()) {
+    console.log(pc.green("✓ Ollama server is running."));
+  } else {
+    console.log(pc.yellow("Ollama server is starting up — it may take a few more seconds."));
+    console.log(pc.dim("  Run offgrid-ai again in a moment to see Ollama models."));
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ── Model scanning ─────────────────────────────────────────────────────────
