@@ -213,7 +213,7 @@ function actionsForItem(item) {
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
         { value: "server", name: "Start server", desc: "API only, no Pi" },
-        { value: "benchmark", name: "Benchmark", desc: benchySupported ? "Run llama-benchy" : "Needs HF model for tokenizer", dimmed: !benchySupported, dimmedDesc: "Needs HF model for tokenizer" },
+        { value: "benchmark", name: "Benchmark", desc: benchySupported ? "Quick · Standard · Thorough" : "Needs HF model for tokenizer", dimmed: !benchySupported, dimmedDesc: "Needs HF model for tokenizer" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
     }
@@ -291,6 +291,20 @@ async function benchmarkItem(item) {
     return;
   }
 
+  // Pick a benchmark profile
+  const prompt = createPrompt();
+  let benchProfile;
+  try {
+    benchProfile = await prompt.choice("Benchmark profile", [
+      { value: "quick", label: "Quick", hint: "~30s · smoke test" },
+      { value: "standard", label: "Standard", hint: "~2 min · scaling test" },
+      { value: "thorough", label: "Thorough", hint: "~5-10 min · full profile" },
+    ], "quick");
+  } finally {
+    prompt.close();
+  }
+  if (!benchProfile) return;
+
   // Track whether we started the server (so we can clean up)
   const wasRunning = await serverReady(profile.baseUrl);
 
@@ -308,7 +322,7 @@ async function benchmarkItem(item) {
   }
 
   // Run llama-benchy
-  await runLlamaBenchy(profile, isManaged);
+  await runLlamaBenchy(profile, isManaged, benchProfile);
 
   // Clean up — stop server if we started it, unload model from managed server
   if (!wasRunning && !isManaged) {
@@ -360,14 +374,30 @@ function resolveBenchyModel(profile, isManaged) {
   return null;
 }
 
+const BENCH_PROFILES = {
+  quick: {
+    label: "Quick",
+    args: ["--pp", "2048", "--tg", "128", "--depth", "0", "--runs", "3", "--concurrency", "1"],
+  },
+  standard: {
+    label: "Standard",
+    args: ["--pp", "2048", "4096", "8192", "--tg", "128", "--depth", "0", "4096", "--runs", "3", "--concurrency", "1"],
+  },
+  thorough: {
+    label: "Thorough",
+    args: ["--pp", "2048", "4096", "8192", "16384", "--tg", "256", "--depth", "0", "4096", "8192", "--runs", "5", "--concurrency", "1", "2"],
+  },
+};
+
 /**
  * Run llama-benchy against an OpenAI-compatible endpoint.
  * Uses uvx (zero-install) to run the tool without polluting the system.
  * @param {object} profile - the model profile
  * @param {boolean} isManaged - whether the backend is a managed server
+ * @param {string} benchProfile - benchmark profile key: quick|standard|thorough
  * @returns {Promise<boolean>} true if benchmark completed successfully
  */
-async function runLlamaBenchy(profile, isManaged) {
+async function runLlamaBenchy(profile, isManaged, benchProfile = "quick") {
   if (!(await commandExists("uvx"))) {
     console.log(pc.yellow("llama-benchy requires uv (Python tool runner)."));
     console.log(pc.dim("Install uv:  curl -LsSf https://astral.sh/uv/install.sh | sh"));
@@ -377,14 +407,17 @@ async function runLlamaBenchy(profile, isManaged) {
   const resolved = resolveBenchyModel(profile, isManaged);
   if (!resolved) return false; // caller already printed the reason
 
+  const bench = BENCH_PROFILES[benchProfile] ?? BENCH_PROFILES.quick;
+
   const args = [
     "llama-benchy",
     "--base-url", profile.baseUrl,
     "--model", resolved.hfModel,
     "--served-model-name", resolved.servedName,
+    ...bench.args,
   ];
 
-  console.log(pc.cyan("\nRunning llama-benchy...\n"));
+  console.log(pc.cyan(`\nRunning llama-benchy (${bench.label})...\n`));
 
   const exitCode = await new Promise((resolve) => {
     const child = spawn("uvx", args, {

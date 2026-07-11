@@ -4,6 +4,14 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.21.0] - 2026-07-10
+
+### Added
+- **Benchmark profiles** — selecting "Benchmark" now shows a sub-menu with three presets:
+  - **Quick** (~30s) — pp=2048, tg=128, 3 runs, single concurrency. Smoke test.
+  - **Standard** (~2 min) — pp=2048/4096/8192, tg=128, depth=0/4096, 3 runs. Tests scaling with prompt size and context.
+  - **Thorough** (~5-10 min) — pp=2048/4096/8192/16384, tg=256, depth=0/4096/8192, 5 runs, concurrency=1/2. Full profile including parallel requests.
+
 ## [0.20.2] - 2026-07-10
 
 ### Fixed
