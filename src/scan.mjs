@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
-import { readGgufMetadataSafe } from "./gguf.mjs";
+import { readGgufMetadataSafe, resolveQuant } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
 
@@ -67,13 +67,15 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
 
     if (isEmbeddingArchitecture(architecture, name)) continue;
 
+    const quant = resolveQuant(meta, name);
+
     if (architecture === "gemma4-assistant" || architecture === "gemma4_assistant") {
       // This is an MTP drafter model, not a main model
       drafters.push({
         path,
         label: parsed.display,
         aliasSuggestion: parsed.id,
-        quant: parsed.quant,
+        quant,
         sizeBytes,
         architecture,
         targetHint: drafterTargetHint(name),
@@ -86,7 +88,7 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
         mmprojPath,
         label: parsed.display,
         aliasSuggestion: parsed.id,
-        quant: parsed.quant,
+        quant,
         sizeBytes,
         contextLength,
         backend: "llama-cpp",

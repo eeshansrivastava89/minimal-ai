@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.26.5] - 2026-07-11
+
+### Changed
+- **Read quant from GGUF metadata (`general.file_type`) instead of filename** — GGUF files store an integer `general.file_type` field in metadata that maps to llama.cpp's `enum llama_ftype`, covering ~40 quant types. This is the authoritative source — the file knows its own quant. Previously, offgrid-ai parsed the quant from the filename, which broke on edge cases (Q6_K, IQ4_XS, sharded files). Now `detectCapabilities` and `scanGgufModels` both read `general.file_type` first, falling back to filename parsing only for UD- (Unsloth Dynamic) and MLX-style names not in the llama_ftype enum. The `LLAMA_FTYPE_NAMES` mapping table and `resolveQuant()` helper live in `gguf.mjs` (the GGUF metadata reader) to avoid circular dependencies.
+
 ## [0.26.4] - 2026-07-11
 
 ### Changed
