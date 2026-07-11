@@ -5,6 +5,31 @@
 - **Never run `npm publish` locally.** Pushing a `v*` tag triggers `.github/workflows/ci.yml`, which runs tests and publishes to npm with provenance. Publishing manually causes CI to fail with npm 403.
 - Version bumps: commit first, then push the tag. Let CI publish.
 
+### Versioning convention
+
+The version follows `MAJOR.MINOR.PATCH` (semver). Since the project is pre-1.0
+(`0.x.y`), the MAJOR number stays at `0`. Bump rules:
+
+| Commit type | Bump | Example |
+|-------------|------|---------|
+| `feat:` | Minor (middle) | `0.18.44` → `0.19.0` |
+| `fix:` | Patch (last) | `0.19.0` → `0.19.1` |
+| `refactor:` | Patch (last) | `0.19.1` → `0.19.2` |
+| `chore:` | Patch (last) | `0.19.2` → `0.19.3` |
+| Breaking change | Major | `0.x` → `1.0.0` |
+
+**Simple rule:** `feat:` → bump middle, everything else → bump last.
+
+### Changelog
+
+- Every release must add an entry to `CHANGELOG.md` before tagging.
+- Format: `## [x.y.z] - YYYY-MM-DD` with `### Added`, `### Fixed`, `### Changed` sections.
+- `CHANGELOG.md` is included in the npm package so installed users can read it.
+- On startup, if the installed version is newer than the last-seen version
+  (tracked in `config.json`), release notes are printed to the terminal.
+- When an update is available, the changelog for the new version is fetched
+  from GitHub and displayed.
+
 ## How to Work in This Repo
 
 - **Root cause first.** Understand the problem before writing code. Read relevant source, reproduce if possible, then fix.

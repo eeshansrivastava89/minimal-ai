@@ -1,0 +1,367 @@
+# Changelog
+
+All notable changes to offgrid-ai are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/), and this project adheres to
+[Semantic Versioning](https://semver.org/) starting from v0.18.44.
+
+## [0.19.0] - 2026-07-12
+
+### Added
+- **"Start server" action** in model picker — starts model server without launching Pi. Reuses `runProfile({ with: "server" })`.
+- **"Benchmark" action** in model picker — starts server, runs `llama-benchy` (via `uvx`, zero-install), cleans up. Works with both llama-server and Ollama.
+- **Release notes display** — on startup, if the installed version is newer than the last seen version (tracked in `config.json`), prints what's new from `CHANGELOG.md`. When an update is available, fetches the changelog from GitHub and previews the coming changes.
+- **CHANGELOG.md** — historical release notes for all versions, bundled in the npm package.
+- **Versioning convention** documented in `AGENTS.md` — `feat:` bumps minor, `fix:`/`refactor:`/`chore:` bumps patch.
+
+### Changed
+- **Deprecated "Recommended for your machine"** download option — now a stub linking to README.
+- **Download flow restructured** into separate paths: HuggingFace (GGUF + MLX to HF cache), Ollama (library + HF GGUF), oMLX (stub).
+- MLX downloads go to HF cache, no longer routed to `~/.omlx/models/` or gated on `enable_omlx`.
+- Removed GGUF auto-routing to Ollama (v0.18.41 approach, superseded).
+- Removed oMLX from download flow — managed server, users download via oMLX app.
+- `saveConfig()` is now exported from `config.mjs`.
+
+## [0.18.44] - 2026-07-12
+
+### Added
+- "Start server" and "Benchmark" actions in model picker (superseded by v0.19.0 entry above).
+
+## [0.18.43] - 2026-07-12
+
+### Changed
+- **Deprecated "Recommended for your machine"** download option — now a stub that links to the README recommended models table.
+- Added "Recommended models" table to README with all 8 models from `recommendations.json` (HuggingFace links, min RAM, GGUF + MLX).
+- Removed `allFittingModels` from download flow. Recommendations maintenance is now via README, not code.
+
+## [0.18.42] - 2026-07-12
+
+### Changed
+- **Restructured download flow** into separate, independent paths:
+  - "Download a model from Hugging Face" — HF CLI to HF cache (GGUF + MLX)
+  - "Download an Ollama model" (when `enable_ollama`) — two sub-options: Ollama library (text input) and HF GGUF (quant picker → `ollama pull`)
+  - "Download an oMLX model" (when `enable_omlx`) — stub: directs to oMLX app
+- Removed GGUF auto-routing to Ollama (v0.18.41 approach, user rejected).
+- MLX downloads now go to HF cache instead of `~/.omlx/models/`.
+- MLX no longer gated on `omlxEnabled()` — available as a format regardless.
+- Removed oMLX from download flow entirely (no gating, no hints, no restart).
+
+## [0.18.41] - 2026-07-11
+
+### Added
+- Initial Ollama download flow — auto-routed GGUF through `ollama pull` when Ollama enabled.
+
+### Note
+- This approach was superseded by v0.18.42. Auto-routing took away user choice and coupled HF downloads to Ollama.
+
+## [0.18.40] - 2026-07-11
+
+### Fixed
+- Separated `updateOllama()` from `installOllama()` — update always runs `brew upgrade`, install skips when already installed.
+
+## [0.18.39] - 2026-07-11
+
+### Fixed
+- `installOllama()` now checks if already installed before attempting reinstall.
+- Brew link failures handled gracefully — if binary is available despite link conflicts, treat as success.
+- `startAndWaitForServer()` polls `GET /v1/models` for up to 30 seconds with progress dots.
+
+## [0.18.38] - 2026-07-10
+
+### Added
+- `loadConfig()` auto-creates `config.json` with `DEFAULT_CONFIG` on first run (ENOENT) so users can find and edit feature flags.
+- Status header card shows version number (`offgrid-ai v0.18.x`).
+
+## [0.18.37] - 2026-07-10
+
+### Added
+- **Ollama backend behind feature flag** (`enable_ollama: false` by default).
+- New file: `src/ollama-runtime.mjs` — discovery, install, version checking, server lifecycle, model scanning, model info, pull, delete, unload.
+- `BACKENDS.ollama` entry: managed-server type, port 11434.
+- Gated scanning, profiling, model management, CLI update check, status header.
+- To enable: `"enable_ollama": true` in `~/.offgrid-ai/config.json`.
+
+## [0.18.36] - 2026-07-10
+
+### Added
+- **oMLX feature flag** (`enable_omlx: false` by default).
+- `omlxEnabled(config)` function — checks config.json only, no env var.
+- Gated 8 entry points. Existing oMLX profiles preserved on disk but hidden when disabled.
+- To enable: `"enable_omlx": true` in `~/.offgrid-ai/config.json`.
+
+## [0.18.35] - 2026-07-10
+
+### Fixed
+- DRY cleanup: replaced `promisify(execFile)` with `execFileAsync` from `exec.mjs` in `harness-pi.mjs`.
+- `status.mjs`: replaced sync `execFileSync` with async `execFileAsync`.
+- `models.mjs`: replaced duplicate inline `fetch` with `serverReady()` from `process.mjs`.
+- `modelReasoning()` now uses `profile.capabilities?.thinking` as single source of truth.
+- Removed unused `providerId` args from `piApiKey()` and `providerCompat()` call sites.
+
+### Added
+- Hard block on Windows with clear message.
+
+## [0.18.34] - 2026-07-09
+
+### Changed
+- Dead code removal + DRY cleanup (-94 lines). Removed circular dependency.
+
+## [0.18.33] - 2026-07-09
+
+### Fixed
+- Update prompts now default to Yes ((Y/n) not (y/N)).
+
+## [0.18.32] - 2026-07-08
+
+### Added
+- Auto-update for llama.cpp runtime and oMLX. MTP verification on install.
+
+## [0.18.31] - 2026-07-08
+
+### Added
+- Context × KV cache heatmap with system RAM color coding. Single combined flow, K=V by default.
+
+## [0.18.30] - 2026-07-07
+
+### Fixed
+- Aligned model picker table for setup items.
+
+## [0.18.29] - 2026-07-07
+
+### Fixed
+- Ctrl+C during download no longer drops PATH (`trap ":" INT` on login shell).
+- Ctrl+C cancels model downloads — SIGINT → SIGKILL escalation for `hf` CLI.
+
+## [0.18.28] - 2026-07-06
+
+### Fixed
+- Reverted oMLX install to DMG app approach with user info message.
+
+## [0.18.27] - 2026-07-06
+
+### Changed
+- Replaced `@clack/prompts` with `@inquirer/prompts`. Escape key cancels prompts.
+
+## [0.18.26] - 2026-07-05
+
+### Added
+- Grouped model picker by inference backend. Improved model picker grouping.
+
+## [0.18.25] - 2026-07-05
+
+### Fixed
+- Deduplicated oMLX models by normalized full name in scan.
+
+## [0.18.24] - 2026-07-04
+
+### Changed
+- Structural simplification — removed `commandArgv` from profile schema. DRY consolidation.
+
+## [0.18.23] - 2026-07-04
+
+### Added
+- Replaced Pi subprocess with Pi SDK in benchmark runner.
+
+## [0.18.22] - 2026-07-03
+
+### Fixed
+- Set `maxTokens=16384` in Pi model config. Send `max_tokens` (not `max_completion_tokens`) to local servers.
+
+## [0.18.21] - 2026-07-03
+
+### Added
+- Consistent model names with publisher/model + quant column.
+
+## [0.18.20] - 2026-07-02
+
+### Fixed
+- Strip ANSI codes in model-presenter tests for CI.
+
+## [0.18.19] - 2026-07-02
+
+### Added
+- oMLX model sizes from disk. Consistent context window and size in model selector.
+
+## [0.18.18] - 2026-07-01
+
+### Added
+- Auto-detect MTP drafter models and wire into profiles.
+
+## [0.18.17] - 2026-07-01
+
+### Added
+- Show missing model files in red across catalog and detail views.
+
+## [0.18.16] - 2026-06-30
+
+### Fixed
+- Dim MTP memory-fitting errors. Include drafter in memory estimate.
+- Re-setup now re-detects MTP and drafter from disk.
+- Compact model cards, allow re-setup.
+
+## [0.18.15] - 2026-06-30
+
+### Added
+- Manage llama.cpp runtime — auto-detect, install, update.
+
+## [0.18.14] - 2026-06-29
+
+### Changed
+- Simplified terminal UI. Added explicit `models` and `run` commands.
+
+## [0.18.13] - 2026-06-29
+
+### Added
+- Model management — delete models from disk, remove configurations, reconfigure settings.
+
+## [0.18.12] - 2026-06-28
+
+### Added
+- Model download with quant picker + RAM fit indicators. Removed LM Studio onboarding.
+
+## [0.18.11] - 2026-06-28
+
+### Fixed
+- Disk space check at correct download target. Auto-download vision projector (mmproj) alongside GGUF model.
+
+## [0.18.10] - 2026-06-27
+
+### Fixed
+- KV cache estimation for models with missing `key_length`. Filter MTP drafters from quant picker.
+
+## [0.18.9] - 2026-06-27
+
+### Added
+- Backend-aware download completion. Show tqdm progress bars during download.
+
+## [0.18.8] - 2026-06-26
+
+### Fixed
+- Consistent missing-model behavior for oMLX and llama.cpp profiles.
+
+## [0.18.7] - 2026-06-26
+
+### Added
+- Ask user for GGUF vs MLX format when both available in recommendations.
+
+## [0.18.6] - 2026-06-25
+
+### Fixed
+- Show quant in all model labels for consistency. Disambiguate Qwen 3.6 35B recommendations.
+
+## [0.18.5] - 2026-06-25
+
+### Fixed
+- Download MLX directly to `~/.omlx/models/`. Backend-aware completion.
+
+## [0.18.4] - 2026-06-24
+
+### Fixed
+- Symlink MLX downloads into `~/.omlx/models` so oMLX discovers them.
+
+## [0.18.3] - 2026-06-24
+
+### Fixed
+- Download MLX to HF cache + restart oMLX.
+
+## [0.18.2] - 2026-06-24
+
+### Fixed
+- Remove symlink approach, point MLX downloads to oMLX app.
+
+## [0.18.1] - 2026-06-24
+
+### Fixed
+- Show progress during long installs (brew, oMLX, Homebrew, Pi).
+
+## [0.18.0] - 2026-06-23
+
+### Added
+- **Model management** — download, configure, delete, reconfigure models.
+- Download constraints (disk space, RAM fit).
+- Codebase cleanup.
+
+## [0.17.0] - 2026-06-20
+
+### Changed
+- Stripped benchmark feature. Replaced with glass-box setup flow.
+- Added status & settings UI.
+- Context × KV cache estimation.
+
+## [0.16.0] - 2026-06-18
+
+### Changed
+- Removed `mlx-vlm` backend. Enhanced oMLX managed runtime.
+- MTP as feature, not backend. oMLX MTP support via admin API.
+
+## [0.15.0] - 2026-06-15
+
+### Added
+- Replaced `@clack/prompts` with `@inquirer/prompts`.
+- Grouped model picker by inference backend.
+- Separator below prompt, box width + text wrapping for detail views.
+
+## [0.14.0] - 2026-06-12
+
+### Added
+- Replaced Pi subprocess with Pi SDK in benchmark runner.
+- Streaming display in SDK benchmark runner.
+
+## [0.13.0] - 2026-06-10
+
+### Changed
+- Refactored server command computation from profile config.
+
+## [0.12.0] - 2026-06-08
+
+### Fixed
+- Set `maxTokens=16384` in Pi model config.
+
+## [0.11.0] - 2026-06-05
+
+### Added
+- Consistent model names with publisher/model + quant column.
+
+## [0.10.0] - 2026-06-03
+
+### Fixed
+- Strip ANSI codes in model-presenter tests for CI.
+
+## [0.9.0] - 2026-06-01
+
+### Added
+- Auto-update notifier — checks npm registry once per 24h.
+
+## [0.8.0] - 2026-05-28
+
+### Added
+- Benchmark server lifecycle integration, summary table, cancellation.
+
+## [0.7.0] - 2026-05-25
+
+### Added
+- Workspace UX — model cards, dynamic column alignment.
+
+## [0.6.0] - 2026-05-20
+
+### Added
+- Model-first interactive UX — select model then action.
+- Auto-detect MTP drafter models.
+- Model detail cards before actions.
+
+## [0.3.0] - 2026-05-10
+
+### Added
+- Interactive backend install in onboarding. Uninstall command.
+- RAM-based model recommendations + auto-download.
+
+## [0.2.0] - 2026-05-05
+
+### Added
+- LM Studio as recommended backend. `lms` CLI on PATH. Model download commands.
+
+## [0.1.0] - 2026-05-01
+
+### Added
+- Initial release. npm publish infrastructure, privacy gate, CI.
+- Core modules: discovery, profiling, server lifecycle.
+- curl-based installer script.

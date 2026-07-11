@@ -50,6 +50,7 @@ const DEFAULT_CONFIG = {
   binaryOverrides: {},
   enable_omlx: false,
   enable_ollama: false,
+  lastSeenVersion: null,
 };
 
 export async function loadConfig() {
@@ -71,7 +72,7 @@ export async function loadConfig() {
   }
 }
 
-async function saveConfig(config) {
+export async function saveConfig(config) {
   await mkdir(dirname(CONFIG_PATH), { recursive: true });
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
