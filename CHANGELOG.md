@@ -4,6 +4,16 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.26.0] - 2026-07-11
+
+### Added
+- **GPU layers setting** — `--n-gpu-layers` is now passed to llama-server (defaults to 99 = all layers on GPU). Configurable in the profile setup wizard with guidance: "99: recommended for Apple Silicon (unified memory) · 0: CPU-only fallback". Previously offgrid-ai did not pass this flag at all, causing llama.cpp to default to 0 (CPU-only) — a real performance gap for large models.
+- **MTP draft tokens setting** — `--spec-draft-n-max` is now configurable in the profile setup wizard (range 1–8, default 2). Prompt appears after enabling MTP. Previously hardcoded to 4 with no UI to change it. Default changed from 4 to 2 per Unsloth's recommendation for Qwen3.6 MTP models.
+
+### Changed
+- MTP info card in profile setup no longer shows a hardcoded "Flags" line — instead the draft tokens prompt follows the enable/disable question.
+- Configuration summary now shows "GPU layers" and "MTP (enabled, N draft tokens)" when applicable.
+
 ## [0.25.1] - 2026-07-11
 
 ### Fixed

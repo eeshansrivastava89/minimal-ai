@@ -144,11 +144,20 @@ export async function configureLocalProfile(prompt, profile) {
       ["Speed", "1.5–3x faster generation"],
       ["Quality", "No loss — rejected predictions fall back to normal"],
       ["Memory", "Slightly more for draft model weights"],
-      ["Flags", "--spec-type draft-mtp --spec-draft-n-max 4"],
       ...(configured.drafterPath ? [["Drafter", configured.drafterPath]] : []),
     ])));
     const useMtp = await prompt.yesNo("Enable MTP speculative decoding?", true);
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
+    if (useMtp) {
+      console.log("");
+      console.log(renderSection("MTP draft tokens", renderRows([
+        ["What it is", "Maximum number of tokens the draft model predicts per step"],
+        ["Range", "1 – 8"],
+        ["Guidance", "2: recommended for most models · 4: more aggressive (may waste compute) · 1: minimal speedup"],
+      ])));
+      const specDraftNMax = await prompt.number("Draft tokens per step", configured.flags.specDraftNMax ?? 2, 1, 8);
+      configured = applyRuntimeFlagOverrides(configured, { specDraftNMax });
+    }
   }
 
   // ── Vision ─────────────────────────────────────────────────────────────
@@ -179,6 +188,16 @@ export async function configureLocalProfile(prompt, profile) {
     const useThinking = await prompt.yesNo("Use thinking/loop-safe defaults?", true);
     configured = useThinking ? applyThinkingDefaults(configured) : removeThinkingDefaults(configured);
   }
+
+  // ── GPU layers ─────────────────────────────────────────────────────────
+  console.log("");
+  console.log(renderSection("GPU layers", renderRows([
+    ["What it does", "Number of model layers to offload to GPU (Metal on Apple Silicon, CUDA on NVIDIA)"],
+    ["Range", "0 – 999 (0 = CPU only, 99 = all layers on GPU)"],
+    ["Guidance", "99: recommended for Apple Silicon (unified memory) · 0: CPU-only fallback"],
+  ])));
+  const nGpuLayers = await prompt.number("GPU layers", configured.flags.nGpuLayers ?? 99, 0, 999);
+  configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
   // ── Context & KV cache (heatmap) ────────────────────────────────────────
   const maxCtx = caps.metaCtx ?? 1048576;
@@ -377,6 +396,7 @@ export async function configureLocalProfile(prompt, profile) {
     ["Backend", configured.backend],
     ["Endpoint", configured.baseUrl],
     ["Context", `${configured.flags.ctxSize.toLocaleString()} tokens`],
+    ["GPU layers", String(configured.flags.nGpuLayers)],
     ["KV cache", `${configured.flags.cacheTypeK}/${configured.flags.cacheTypeV}`],
     ["Temperature", String(configured.flags.temperature)],
     ["Top-p", String(configured.flags.topP)],
@@ -388,7 +408,7 @@ export async function configureLocalProfile(prompt, profile) {
     ["Parallel", String(configured.flags.parallel)],
     ["Flash attention", configured.flags.flashAttention],
     ["Jinja", configured.flags.jinja ? "on" : "off"],
-    ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
+    ...(configured.capabilities?.mtp ? [["MTP", `enabled (${configured.flags.specDraftNMax ?? 2} draft tokens)`]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "enabled"]] : []),
     ...(configured.capabilities?.thinking ? [["Thinking", "enabled"]] : []),
   ])));

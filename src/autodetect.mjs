@@ -57,6 +57,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
   const flags = {
     ...defaultFlagsForBackend("llama-cpp"),
     ctxSize: capabilities.ctxSize,
+    nGpuLayers: 99,
     flashAttention: "on",
     cacheTypeK: isLowMem ? "f16" : "bf16",
     cacheTypeV: isLowMem ? "f16" : "bf16",
@@ -69,6 +70,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     repeatPenalty: thinking ? 1.1 : 1.0,
     parallel: 1,
     batchSize: 512,
+    specDraftNMax: 2,
     ...flagOverrides,
   };
 
@@ -89,6 +91,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     "--host", String(flags.host),
     "--port", String(flags.port),
     "--ctx-size", String(flags.ctxSize),
+    "--n-gpu-layers", String(flags.nGpuLayers),
     "--flash-attn", flags.flashAttention,
     "--cache-type-k", flags.cacheTypeK,
     "--cache-type-v", flags.cacheTypeV,
@@ -113,7 +116,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
 
   // MTP flags
   if (mtp) {
-    argv.push("--spec-type", "draft-mtp", "--spec-draft-n-max", "4");
+    argv.push("--spec-type", "draft-mtp", "--spec-draft-n-max", String(flags.specDraftNMax));
   }
 
   return { flags, argv };
