@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.23.1] - 2026-07-11
+
+### Fixed
+- **Broken module load** — `models-delete.mjs` imported `removeFromPiConfig` from `profiles.mjs` instead of `harness-pi.mjs`, causing a load-time failure that prevented the CLI from starting (and thus the auto-updater from running).
+
 ## [0.23.0] - 2026-07-11
 
 ### Added
