@@ -10,6 +10,29 @@ import { execFileSync } from "node:child_process";
 import { statfsSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 
+/** One gigabyte in bytes. Single source of truth for all GB-based math. */
+export const GB = 1024 ** 3;
+
+/** Memory fit thresholds (ratio of total estimate vs available RAM). */
+const FIT_GREEN = 0.70;  // ≤ 70% of available RAM = comfortable
+const FIT_YELLOW = 0.90; // ≤ 90% = tight, may work
+
+/**
+ * Check whether a memory estimate fits in available RAM.
+ * Returns "fits", "tight", or "won't fit" — the single canonical fit check
+ * used by the quant picker, heatmap, and memory estimate display.
+ *
+ * @param {number} totalBytes - total estimated memory (model + KV + overhead)
+ * @param {number} availableBytes - available RAM (from availableRamBytes())
+ * @returns {{ status: "fits"|"tight"|"won't fit", ratio: number }}
+ */
+export function fitCheck(totalBytes, availableBytes) {
+  const ratio = totalBytes / availableBytes;
+  if (ratio <= FIT_GREEN) return { status: "fits", ratio };
+  if (ratio <= FIT_YELLOW) return { status: "tight", ratio };
+  return { status: "won't fit", ratio };
+}
+
 /**
  * Detect system hardware via the Node.js `os` module.
  * Pure function — no side effects, trivially testable.
@@ -25,7 +48,7 @@ export function detectHardware() {
 
 /** Installed RAM in GB (integer). */
 export function installedRamGB() {
-  return Math.round(totalmem() / (1024 ** 3));
+  return Math.round(totalmem() / GB);
 }
 
 /**
@@ -60,7 +83,7 @@ export function availableRamBytes() {
   }
   // Linux: freemem() reads MemAvailable which includes reclaimable cache.
   // Fallback: use freemem() but floor at 1GB so we don't show 0 on busy systems.
-  return Math.max(freemem(), 1 * 1024 ** 3);
+  return Math.max(freemem(), 1 * GB);
 }
 
 /**

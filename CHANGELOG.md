@@ -4,6 +4,16 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.26.2] - 2026-07-11
+
+### Changed
+- **Unified memory calculations** — all RAM/fit math now uses shared helpers from `hardware.mjs`:
+  - `GB` constant exported from `hardware.mjs`, replacing inline `1024 ** 3` in `download.mjs` and `estimate.mjs`
+  - `fitCheck(totalBytes, availableBytes)` — single canonical fit check (70% green, 90% yellow, >90% red), replacing two incompatible systems: `profile-setup.mjs` used ratio vs total RAM, `download.mjs` used absolute bytes vs available RAM. Both now use the same helper.
+  - `fitColor()` moved to `ui.mjs`, delegates to `fitCheck` — used by heatmap and quant picker
+  - `renderMemoryEstimate()` moved to `ui.mjs` — replaces duplicate implementations in `profile-setup.mjs` and `run.mjs`
+- **Heatmap now uses available RAM** — the context × KV cache heatmap in profile setup previously compared estimates against total installed RAM. Now uses `availableRamBytes()` (free + reclaimable pages), consistent with the quant picker.
+
 ## [0.26.1] - 2026-07-11
 
 ### Fixed

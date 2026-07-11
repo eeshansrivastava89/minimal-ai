@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
-import { detectHardware } from "./hardware.mjs";
+import { availableRamBytes } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
-import { pc, formatBytes, renderRows, renderSection, padCol } from "./ui.mjs";
+import { pc, formatBytes, renderRows, renderSection, padCol, fitColor, renderMemoryEstimate } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
@@ -25,15 +25,6 @@ const CACHE_CHOICES = [
 
 const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
 const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
-const FIT_GREEN = 0.70;  // ≤ 70% of system RAM = comfortable
-const FIT_YELLOW = 0.90; // ≤ 90% = tight, may work
-
-function fitColor(totalBytes, systemRamBytes) {
-  const ratio = totalBytes / systemRamBytes;
-  if (ratio <= FIT_GREEN) return pc.green;
-  if (ratio <= FIT_YELLOW) return pc.yellow;
-  return pc.red;
-}
 
 function formatCtxLabel(ctx) {
   if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
@@ -201,7 +192,7 @@ export async function configureLocalProfile(prompt, profile) {
 
   // ── Context & KV cache (heatmap) ────────────────────────────────────────
   const maxCtx = caps.metaCtx ?? 1048576;
-  const systemRamBytes = detectHardware().totalRamBytes;
+  const systemRamBytes = availableRamBytes();
   const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath);
   const hasKvParams = Boolean(prepared.kvParams.layers);
 
@@ -285,7 +276,7 @@ export async function configureLocalProfile(prompt, profile) {
 
   // ── Memory estimate (with chosen context + cache) ──────────────────────
   console.log("");
-  console.log(renderMemoryEstimate(configured, prepared));
+  console.log(renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags));
 
   // ── Temperature ────────────────────────────────────────────────────────
   console.log("");
@@ -414,7 +405,7 @@ export async function configureLocalProfile(prompt, profile) {
   ])));
 
   console.log("");
-  console.log(renderMemoryEstimate(configured, prepared));
+  console.log(renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags));
   if (!(await prompt.yesNo("Save profile with these settings?", true))) return null;
   return configured;
 }
@@ -498,24 +489,6 @@ async function configureOllamaProfile(prompt, profile) {
   return configured;
 }
 
-
-function renderMemoryEstimate(profile, prepared) {
-  try {
-    const est = prepared
-      ? computeMemoryTotal(prepared, profile.flags)
-      : computeMemoryTotal(prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath), profile.flags);
-    return renderSection("Memory estimate", renderRows([
-      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-      ["Model", formatBytes(est.modelBytes)],
-      ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
-      ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
-      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${profile.flags.ctxSize.toLocaleString()} ctx, ${profile.flags.cacheTypeK}/${profile.flags.cacheTypeV})` : "unknown"],
-      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
-    ]));
-  } catch {
-    return renderSection("Memory estimate", pc.dim("Estimate unavailable for this model."));
-  }
-}
 
 function isGemma4UnifiedProjector(projectorType) {
   return /gemma4u[va]/i.test(String(projectorType ?? ""));

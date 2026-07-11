@@ -10,15 +10,13 @@
 // downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
-import { installedRamGB, availableRamBytes, getFreeDiskBytes } from "./hardware.mjs";
+import { installedRamGB, availableRamBytes, getFreeDiskBytes, GB, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
-
-const GB = 1024 ** 3;
 
 /**
  * Download a GGUF model from HuggingFace for llama.cpp.
@@ -269,9 +267,8 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
   // Sort by size ascending (smallest first, largest last)
   const sorted = [...ggufFiles].sort((a, b) => a.sizeBytes - b.sizeBytes);
 
-  // Find recommended: largest file that fits comfortably (last one that fits)
-  // Leave 2GB headroom for KV cache + inference overhead
-  const fitting = sorted.filter((f) => f.sizeBytes + 2 * GB <= availableRam);
+  // Find recommended: largest file that fits comfortably
+  const fitting = sorted.filter((f) => fitCheck(f.sizeBytes + 2 * GB, availableRam).status === "fits");
   const recommended = fitting[fitting.length - 1];
 
   console.log("");
@@ -286,12 +283,13 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
     const sizeBytes = file.sizeBytes;
     const parsed = parseModelName(file.path, "huggingface");
     const quant = parsed.quant ?? file.path.replace(/\.gguf$/i, "");
+    const { status } = fitCheck(sizeBytes + 2 * GB, availableRam);
 
     let indicator, fitLabel;
-    if (sizeBytes > availableRam) {
+    if (status === "won't fit") {
       indicator = pc.red("✗");
       fitLabel = pc.red("won't fit");
-    } else if (sizeBytes + 2 * GB > availableRam) {
+    } else if (status === "tight") {
       indicator = pc.yellow("⚠");
       fitLabel = pc.yellow("tight");
     } else {

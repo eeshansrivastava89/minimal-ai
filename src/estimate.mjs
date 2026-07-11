@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { readGgufMetadata, numberMeta } from "./gguf.mjs";
+import { GB } from "./hardware.mjs";
 
 /**
  * Read model file sizes + GGUF architecture metadata once.
@@ -30,7 +31,7 @@ export function prepareMemoryEstimate(modelPath, mmprojPath, draftModelPath) {
     modelBytes,
     mmprojBytes,
     draftBytes,
-    overheadBytes: 1024 ** 3,
+    overheadBytes: GB,
     kvParams: { layers, headKv, keyLength, valueLength, slidingWindow, slidingWindowPattern, keyLengthSwa, valueLengthSwa },
   };
 }

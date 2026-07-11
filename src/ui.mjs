@@ -1,6 +1,7 @@
 import { select as inquirerSelect, input, confirm, number, Separator } from "@inquirer/prompts";
 import pc from "picocolors";
 import { stripVTControlCharacters } from "node:util";
+import { fitCheck } from "./hardware.mjs";
 
 export { pc };
 export { Separator };
@@ -138,6 +139,36 @@ export function badge(text, variant = "info") {
   const colors = { success: pc.green, error: pc.red, warning: pc.yellow, info: pc.cyan };
   const color = colors[variant] ?? pc.cyan;
   return color(`[${text}]`);
+}
+
+/** Returns the picocolors function for a memory fit status. Uses shared fitCheck. */
+export function fitColor(totalBytes, availableBytes) {
+  const { status } = fitCheck(totalBytes, availableBytes);
+  if (status === "fits") return pc.green;
+  if (status === "tight") return pc.yellow;
+  return pc.red;
+}
+
+/**
+ * Render a memory estimate card. Single source of truth for the memory
+ * estimate display — used by both profile-setup.mjs and run.mjs.
+ * @param {object} est - from computeMemoryTotal/estimateMemory
+ * @param {object} flags - profile flags (for ctx/cache display)
+ * @returns {string} rendered section
+ */
+export function renderMemoryEstimate(est, flags) {
+  try {
+    return renderSection("Memory estimate", renderRows([
+      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
+      ["Model", formatBytes(est.modelBytes)],
+      ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
+      ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
+      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${flags.ctxSize.toLocaleString()} ctx, ${flags.cacheTypeK}/${flags.cacheTypeV})` : "unknown"],
+      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
+    ]));
+  } catch {
+    return renderSection("Memory estimate", pc.dim("Estimate unavailable for this model."));
+  }
 }
 
 // ── Status / capability helpers ─────────────────────────────────────────────

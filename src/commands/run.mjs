@@ -7,7 +7,7 @@ import { serverReady } from "../server-check.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
-import { pc, formatBytes, renderRows, renderSection, parseOptions } from "../ui.mjs";
+import { pc, renderMemoryEstimate, parseOptions } from "../ui.mjs";
 
 export async function runCommand(argv) {
   await ensureDirs();
@@ -101,14 +101,7 @@ function printMemoryEstimate(profile, isManaged) {
   if (isManaged || !profile.modelPath || !existsSync(profile.modelPath)) return;
   try {
     const est = estimateMemory(profile.modelPath, profile.mmprojPath, profile.drafterPath, profile.flags);
-    const rows = [
-      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-      ["Model file", formatBytes(est.modelBytes)],
-    ];
-    if (est.draftBytes) rows.push(["Drafter", formatBytes(est.draftBytes)]);
-    if (est.mmprojBytes) rows.push(["Vision projector", formatBytes(est.mmprojBytes)]);
-    rows.push(["Conversation memory", est.kvBytes ? `~${formatBytes(est.kvBytes)}` : "unknown"]);
-    console.log(renderSection("Memory estimate", renderRows(rows)));
+    console.log(renderMemoryEstimate(est, profile.flags));
   } catch {
     // Memory estimates are informational only.
   }
