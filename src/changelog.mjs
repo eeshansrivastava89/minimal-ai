@@ -6,7 +6,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { pc } from "./ui.mjs";
-import { compareVersions } from "./updates.mjs";
+import { compareVersions, currentPackageVersion } from "./updates.mjs";
+import { loadConfig, saveConfig } from "./config.mjs";
 
 const CHANGELOG_PATH = fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
 const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai";
@@ -128,4 +129,36 @@ export function printReleaseNotes(entries) {
     }
   }
   console.log("");
+}
+
+/**
+ * Show release notes if the installed version is newer than the last seen version.
+ * Called on startup after the screen clear, before the main flow. Updates
+ * lastSeenVersion in config.
+ */
+export async function showReleaseNotesIfUpdated() {
+  const current = currentPackageVersion();
+  const config = await loadConfig();
+  const lastSeen = config.lastSeenVersion;
+
+  // Fresh install — just record the version, don't show notes
+  if (!lastSeen) {
+    config.lastSeenVersion = current;
+    await saveConfig(config);
+    return;
+  }
+
+  // No update since last seen
+  if (compareVersions(current, lastSeen) <= 0) return;
+
+  // Show what's new since last seen
+  const entries = readLocalChangelog();
+  const notes = entriesBetween(entries, lastSeen, current);
+  if (notes.length > 0) {
+    console.log(pc.bold(pc.cyan("What's new")));
+    printReleaseNotes(notes);
+  }
+
+  config.lastSeenVersion = current;
+  await saveConfig(config);
 }

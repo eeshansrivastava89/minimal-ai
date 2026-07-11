@@ -8,11 +8,12 @@ import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, OLLAMA_URLS } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { pc, startInteractive, renderCard } from "../ui.mjs";
+import { showReleaseNotesIfUpdated } from "../changelog.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
 import { statusCommand } from "./status.mjs";
 
-export async function mainFlow() {
+export async function mainFlow({ showReleaseNotes = false } = {}) {
   await ensureDirs();
 
   const llamaBinary = await findLlamaServer();
@@ -54,6 +55,7 @@ export async function mainFlow() {
   const omlxOn = await omlxEnabled();
   const ollamaOn = await ollamaEnabled();
   startInteractive("offgrid-ai");
+  if (showReleaseNotes) await showReleaseNotesIfUpdated();
   printStatusHeader({
     llamaBinary,
     managedModels,

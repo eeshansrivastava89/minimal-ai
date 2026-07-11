@@ -1,7 +1,7 @@
 import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
-import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand, compareVersions } from "./updates.mjs";
-import { readLocalChangelog, fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
-import { loadConfig, saveConfig, omlxEnabled, ollamaEnabled } from "./config.mjs";
+import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
+import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
+import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
@@ -43,37 +43,6 @@ async function offerUpdate(argv) {
   } finally {
     prompt.close();
   }
-}
-
-/**
- * Show release notes if the installed version is newer than the last seen version.
- * Called on startup before the main flow. Updates lastSeenVersion in config.
- */
-async function showReleaseNotesIfUpdated() {
-  const current = currentPackageVersion();
-  const config = await loadConfig();
-  const lastSeen = config.lastSeenVersion;
-
-  // Fresh install — just record the version, don't show notes
-  if (!lastSeen) {
-    config.lastSeenVersion = current;
-    await saveConfig(config);
-    return;
-  }
-
-  // No update since last seen
-  if (compareVersions(current, lastSeen) <= 0) return;
-
-  // Show what's new since last seen
-  const entries = readLocalChangelog();
-  const notes = entriesBetween(entries, lastSeen, current);
-  if (notes.length > 0) {
-    console.log(pc.bold(pc.cyan("\nWhat's new")));
-    printReleaseNotes(notes);
-  }
-
-  config.lastSeenVersion = current;
-  await saveConfig(config);
 }
 
 async function offerRuntimeUpdates() {
@@ -120,9 +89,8 @@ export async function run(argv) {
   }
   if (argv.length === 0) {
     if (await offerUpdate(argv)) return;
-    await showReleaseNotesIfUpdated();
     await offerRuntimeUpdates();
-    return mainFlow();
+    return mainFlow({ showReleaseNotes: true });
   }
 
   const [command] = argv;
