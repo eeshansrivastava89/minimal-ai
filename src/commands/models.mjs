@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile, serverReady } from "../process.mjs";
+import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile, serverReady, unloadModelFromServer } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig, hasPi } from "../harness-pi.mjs";
 import { hasOmlx, offerOmlxRestart, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama, deleteOllamaModel } from "../ollama-runtime.mjs";
@@ -17,7 +17,8 @@ import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, nor
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 import { downloadFlow } from "../download.mjs";
-import { execFileAsync } from "../exec.mjs";
+import { execFileAsync, commandExists } from "../exec.mjs";
+import { spawn } from "node:child_process";
 
 export async function modelsCommand(argv) {
   await ensureDirs();
@@ -208,6 +209,8 @@ function actionsForItem(item) {
     if (!missing) {
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
+        { value: "server", name: "Start server", desc: "API only, no Pi" },
+        { value: "benchmark", name: "Benchmark", desc: "Run llama-benchy" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
     }
@@ -249,6 +252,8 @@ async function performAction(prompt, action, item) {
     return printGgufModelDetails(item.model, item.drafter);
   }
   if (action === "run") return await runItem(item);
+  if (action === "server") return await startServerItem(item);
+  if (action === "benchmark") return await benchmarkItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
   if (action === "remove_config" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
   if (action === "delete_model") return await deleteModelFromSource(prompt, item);
@@ -256,6 +261,89 @@ async function performAction(prompt, action, item) {
 
 async function runItem(item) {
   return await runProfile(await readProfile(item.profile.id));
+}
+
+async function startServerItem(item) {
+  return await runProfile(await readProfile(item.profile.id), { with: "server" });
+}
+
+async function benchmarkItem(item) {
+  const profile = await readProfile(item.profile.id);
+  const backend = backendFor(profile.backend);
+  const isManaged = backend.type === "managed-server";
+
+  // Track whether we started the server (so we can clean up)
+  const wasRunning = await serverReady(profile.baseUrl);
+
+  if (!wasRunning) {
+    if (isManaged) {
+      console.log(pc.red(`${backend.label} is not running at ${profile.baseUrl}.`));
+      console.log(pc.dim("Start it first, then try benchmarking."));
+      return;
+    }
+    // Start local server (without Pi)
+    console.log(pc.dim("Starting server for benchmark..."));
+    await runProfile(profile, { with: "server" });
+  } else {
+    console.log(pc.green(`[ready] Server at ${profile.baseUrl}`));
+  }
+
+  // Run llama-benchy
+  await runLlamaBenchy(profile.baseUrl);
+
+  // Clean up — stop server if we started it, unload model from managed server
+  if (!wasRunning && !isManaged) {
+    console.log(pc.dim("\nStopping server..."));
+    await stopProfile(profile);
+  } else if (isManaged) {
+    console.log(pc.dim("\nUnloading model from server..."));
+    await unloadModelFromServer(profile);
+  }
+}
+
+/**
+ * Run llama-benchy against an OpenAI-compatible endpoint.
+ * Uses uvx (zero-install) to run the tool without polluting the system.
+ * @param {string} baseUrl - OpenAI-compatible endpoint URL
+ * @returns {Promise<boolean>} true if benchmark completed successfully
+ */
+async function runLlamaBenchy(baseUrl) {
+  if (!(await commandExists("uvx"))) {
+    console.log(pc.yellow("llama-benchy requires uv (Python tool runner)."));
+    console.log(pc.dim("Install uv:  curl -LsSf https://astral.sh/uv/install.sh | sh"));
+    return false;
+  }
+
+  console.log(pc.cyan("\nRunning llama-benchy...\n"));
+
+  const exitCode = await new Promise((resolve) => {
+    const child = spawn("uvx", ["llama-benchy", "--base-url", baseUrl], {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("error", (err) => {
+      console.log(pc.red(`Failed to run llama-benchy: ${err.message}`));
+      resolve(1);
+    });
+    child.on("exit", resolve);
+
+    // Forward Ctrl+C to llama-benchy, escalate to SIGKILL after 2s
+    const onSigInt = () => {
+      child.kill("SIGINT");
+      const killTimer = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already exited */ }
+      }, 2000);
+      child.on("exit", () => clearTimeout(killTimer));
+    };
+    process.once("SIGINT", onSigInt);
+    child.on("exit", () => process.removeListener("SIGINT", onSigInt));
+  });
+
+  if (exitCode !== 0) {
+    console.log(pc.yellow(`\nllama-benchy exited with code ${exitCode}.`));
+    return false;
+  }
+  return true;
 }
 
 function printProfileSaved(id) {
