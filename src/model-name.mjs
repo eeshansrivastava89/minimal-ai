@@ -45,17 +45,72 @@ const FAMILY_TITLE_CASE = {
 // Sort families by length descending so longer families match first
 const SORTED_FAMILIES = Object.keys(FAMILY_TITLE_CASE).sort((a, b) => b.length - a.length);
 
-// ── Quant patterns (order matters — longer/more-specific first) ────────
+// ── Known GGUF quantization names ───────────────────────────────────────
+//
+// Exhaustive list of quant names used in the GGUF ecosystem. New quants
+// just need to be added here — no regex to maintain. Matched against the
+// tail of the filename (case-insensitive), longest first so "UD-Q4_K_XL"
+// matches before "Q4_K_XL".
+//
+// Sources: llama.cpp quants, Unsloth Dynamic quants, imatrix quants.
 
-const QUANT_PATTERNS = [
-  /[-_]UD-[A-Z0-9_]+/i,
-  /[-_]IQ[0-9_]+(?:_[A-Z]+)?/i,
-  /[-_]Q\d_K_[A-Z]+/i,
-  /[-_]Q\d_[01]/i,
-  /[-_]F(?:16|32)/i,
-  /[-_]BF16/i,
-  /[-_]\d+bit\b/i,
-];
+const KNOWN_QUANTS = [
+  // Unsloth Dynamic (UD- prefix)
+  "UD-IQ1_S", "UD-IQ1_M",
+  "UD-IQ2_XXS", "UD-IQ2_XS", "UD-IQ2_S", "UD-IQ2_M",
+  "UD-IQ3_XXS", "UD-IQ3_XS", "UD-IQ3_S",
+  "UD-Q2_K_XL", "UD-Q2_K_S", "UD-Q2_K_L",
+  "UD-Q3_K_XL", "UD-Q3_K_S", "UD-Q3_K_L",
+  "UD-Q4_K_XL", "UD-Q4_K_S",
+  "UD-Q5_K_XL", "UD-Q5_K_S",
+  "UD-Q6_K_XL", "UD-Q6_K_S",
+  "UD-Q8_K_XL",
+  // I-quants (imatrix)
+  "IQ1_S", "IQ1_M",
+  "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ2_M",
+  "IQ3_XXS", "IQ3_XS", "IQ3_S", "IQ3_M",
+  "IQ4_XS", "IQ4_NL",
+  // K-quants
+  "Q2_K", "Q2_K_S", "Q2_K_L",
+  "Q3_K_S", "Q3_K_M", "Q3_K_L",
+  "Q4_K_S", "Q4_K_M",
+  "Q5_K_S", "Q5_K_M",
+  "Q6_K",
+  "Q8_0",
+  // Legacy quants
+  "Q4_0", "Q4_1",
+  "Q5_0", "Q5_1",
+  "Q8_1",
+  // Full precision
+  "BF16", "F16", "F32",
+  // MLX-style quants
+  "4bit", "8bit", "2bit",
+].sort((a, b) => b.length - a.length); // longest first for greedy matching
+
+/**
+ * Extract the quant from a filename by matching against known quant names.
+ * Returns the matched quant (original case from the filename) or null.
+ * Also returns the name with the quant removed.
+ */
+function extractQuant(name) {
+  // Strip shard suffix (e.g. "-00001-of-00002") so the quant is at the tail
+  const shardStripped = name.replace(/-\d+-of-\d+$/i, "");
+
+  for (const q of KNOWN_QUANTS) {
+    for (const separator of ["-", "_"]) {
+      const suffix = separator + q.toLowerCase();
+      const lower = shardStripped.toLowerCase();
+      const idx = lower.lastIndexOf(suffix);
+      if (idx !== -1 && idx + suffix.length === lower.length) {
+        return {
+          quant: shardStripped.slice(idx + 1), // skip separator, preserve original case
+          name: name.slice(0, name.toLowerCase().lastIndexOf(suffix)),
+        };
+      }
+    }
+  }
+  return { quant: null, name };
+}
 
 // ── Tag tokens extracted from the name ──────────────────────────────────
 
@@ -94,16 +149,9 @@ export function parseModelName(rawId, source) {
     }
   }
 
-  // 2. Extract quant (GGUF quantization suffix)
-  let quant = null;
-  for (const pattern of QUANT_PATTERNS) {
-    const match = name.match(pattern);
-    if (match) {
-      quant = match[0].replace(/^[-_]/, "");
-      name = name.slice(0, match.index) + name.slice(match.index + match[0].length);
-      break;
-    }
-  }
+  // 2. Extract quant (match against known quant names)
+  const { quant, name: nameWithoutQuant } = extractQuant(name);
+  name = nameWithoutQuant;
 
   // 4. Extract known tags as hyphen/underscore-delimited tokens
   const tags = [];

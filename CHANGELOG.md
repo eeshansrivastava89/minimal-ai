@@ -4,6 +4,16 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.26.4] - 2026-07-11
+
+### Changed
+- **Replaced regex-based quant parsing with known-quant lookup table** — the old approach used regex patterns to *guess* the quant from a filename, which broke on edge cases (Q6_K without suffix, IQ4_XS truncating to IQ4_, sharded BF16 files). The new approach maintains an explicit list of ~60 known GGUF/MLX quant names (`KNOWN_QUANTS` in `model-name.mjs`) and matches against the filename tail. Adding a new quant is a one-line addition to the array — no regex to maintain. Shard suffixes (e.g. `-00001-of-00002`) are stripped before matching.
+
+## [0.26.3] - 2026-07-11
+
+### Fixed
+- **Quant name parsing** — `Q6_K` (no suffix) was not matched by the quant regex, causing the full model name to appear in the quant picker instead of just "Q6_K". Also fixed `IQ4_XS` and `IQ4_NL` which were truncated to `IQ4_` (the `XS`/`NL` suffix was left in the model name). Added `Q\d_K\b` pattern for bare K-quants, and fixed the IQ pattern to capture full suffixes.
+
 ## [0.26.2] - 2026-07-11
 
 ### Changed
