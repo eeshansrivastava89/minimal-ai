@@ -4,6 +4,23 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.25.0] - 2026-07-11
+
+### Added
+- **Divider and Badge UI helpers** — `divider(label)` renders a dim horizontal rule with an optional section label. `badge(text, variant)` renders a colored status indicator. Both inspired by termcn's component vocabulary, implemented as pure functions in `ui.mjs` (no new dependencies).
+
+### Changed
+- **Flattened download options** — download paths are now top-level menu items in the main picker, no sub-menus. Each option is self-describing:
+  - "↓ GGUF from HuggingFace (for llama.cpp)"
+  - "↓ from Ollama library (e.g. qwen3:8b)"
+  - "↓ GGUF from HuggingFace (via Ollama)"
+  - "↓ oMLX model (managed by oMLX app)"
+  Download functions (`downloadHfGguf`, `downloadOllamaLibrary`, `downloadOllamaHfGguf`, `downloadOmlxStub`) are exported individually from `download.mjs`. The legacy `downloadFlow` sub-menu remains for onboarding.
+- **Split Status & Settings into two screens** — "Runtime status & running models" shows installed backends, server state, and running models with a stop action. "Discovery paths" shows scan directories with add/remove actions. Previously these were one overloaded screen.
+- **Section separators in main menu** — action items are grouped under dim "Download" and "Manage" dividers for visual organization.
+- **Top/bottom spacing** — blank line before the header card and after the picker for cleaner terminal appearance.
+- Created GitHub issue #3 for termcn/Ink adoption (deferred — would require adding React as a dependency).
+
 ## [0.24.0] - 2026-07-11
 
 ### Added

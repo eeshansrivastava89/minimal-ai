@@ -11,7 +11,11 @@ import { hasOllama } from "../ollama-runtime.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { pc, renderCard, renderRows } from "../ui.mjs";
 
-export async function settingsFlow(prompt) {
+/**
+ * Runtime status screen — shows installed backends, server state, and
+ * running models. User can stop a running server from here.
+ */
+export async function runtimeStatusFlow(prompt) {
   while (true) {
     const llamaBinary = await findLlamaServer();
     const omlxOn = await omlxEnabled();
@@ -20,7 +24,6 @@ export async function settingsFlow(prompt) {
     const ollamaInstalled = ollamaOn ? await hasOllama() : false;
     const piInstalled = await hasPi();
 
-    // Collect running profiles for the running-models card
     const running = await runningProfiles();
 
     let omlxServerUp = false;
@@ -46,7 +49,6 @@ export async function settingsFlow(prompt) {
     console.log("");
     console.log(renderCard("Runtime status", renderRows(runtimeRows), { formatBorder: pc.cyan }));
 
-    // Show running models card if any servers are active
     if (running.length > 0) {
       const runningRows = running.map(({ profile, status: s }) => {
         const backend = backendFor(profile.backend);
@@ -57,32 +59,11 @@ export async function settingsFlow(prompt) {
       console.log(renderCard("Running models", renderRows(runningRows), { formatBorder: pc.green }));
     }
 
-    const scanDirs = await getModelScanDirs();
-    const defaultSet = new Set(DEFAULT_MODEL_DIRS);
-    const pathLabels = new Map([
-      [join(homedir(), ".lmstudio", "models"), "LM Studio downloads"],
-      [join(homedir(), ".omlx", "models"), "oMLX downloads"],
-      [HF_HUB_DIR, "HuggingFace CLI downloads"],
-    ]);
-    const pathRows = scanDirs.map((dir) => {
-      const exists = existsSync(dir);
-      const isBuiltin = defaultSet.has(dir);
-      const desc = pathLabels.get(dir);
-      const label = `${exists ? pc.green("✓") : pc.red("✗")}  ${dir}`;
-      const tags = [desc, isBuiltin ? "built-in" : "custom"].filter(Boolean).join(pc.dim(" · "));
-      return [label, pc.dim(tags)];
-    });
-    console.log("");
-    console.log(renderCard("Discovery paths", renderRows(pathRows), { formatBorder: pc.magenta }));
-
-    const customDirs = scanDirs.filter((d) => !defaultSet.has(d));
     const choices = [
       ...(running.length > 0 ? [{ value: "stop", label: "Stop a running server" }] : []),
-      { value: "add", label: "Add discovery path" },
-      ...(customDirs.length > 0 ? [{ value: "remove", label: "Remove discovery path" }] : []),
       { value: "done", label: "Done" },
     ];
-    const action = await prompt.choice("Settings", choices, "done");
+    const action = await prompt.choice("Runtime status", choices, "done");
 
     if (!action || action === "done") return;
 
@@ -109,6 +90,42 @@ export async function settingsFlow(prompt) {
         }
       }
     }
+  }
+}
+
+/**
+ * Discovery paths screen — shows where offgrid-ai scans for models.
+ * User can add or remove custom scan directories from here.
+ */
+export async function discoveryPathsFlow(prompt) {
+  while (true) {
+    const scanDirs = await getModelScanDirs();
+    const defaultSet = new Set(DEFAULT_MODEL_DIRS);
+    const pathLabels = new Map([
+      [join(homedir(), ".lmstudio", "models"), "LM Studio downloads"],
+      [join(homedir(), ".omlx", "models"), "oMLX downloads"],
+      [HF_HUB_DIR, "HuggingFace CLI downloads"],
+    ]);
+    const pathRows = scanDirs.map((dir) => {
+      const exists = existsSync(dir);
+      const isBuiltin = defaultSet.has(dir);
+      const desc = pathLabels.get(dir);
+      const label = `${exists ? pc.green("✓") : pc.red("✗")}  ${dir}`;
+      const tags = [desc, isBuiltin ? "built-in" : "custom"].filter(Boolean).join(pc.dim(" · "));
+      return [label, pc.dim(tags)];
+    });
+    console.log("");
+    console.log(renderCard("Discovery paths", renderRows(pathRows), { formatBorder: pc.magenta }));
+
+    const customDirs = scanDirs.filter((d) => !defaultSet.has(d));
+    const choices = [
+      { value: "add", label: "Add discovery path" },
+      ...(customDirs.length > 0 ? [{ value: "remove", label: "Remove discovery path" }] : []),
+      { value: "done", label: "Done" },
+    ];
+    const action = await prompt.choice("Discovery paths", choices, "done");
+
+    if (!action || action === "done") return;
 
     if (action === "add") {
       const dir = await prompt.text("Path to model directory", "");

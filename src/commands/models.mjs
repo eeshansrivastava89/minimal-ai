@@ -7,15 +7,15 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { pc, startInteractive, createPrompt, modelSelect } from "../ui.mjs";
+import { pc, startInteractive, createPrompt, modelSelect, divider } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
-import { downloadFlow } from "../download.mjs";
+import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf, downloadOmlxStub } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
 import { resolveBenchyModel, benchmarkItem } from "./models-benchmark.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
-import { settingsFlow } from "./models-settings.mjs";
+import { runtimeStatusFlow, discoveryPathsFlow } from "./models-settings.mjs";
 
 export async function modelsCommand(argv) {
   await ensureDirs();
@@ -45,7 +45,7 @@ async function showModelPicker(catalog) {
   const normalized = normalizeCatalog(catalog);
   const allItems = buildCatalogItems(normalized);
   if (allItems.length === 0) {
-    console.log(pc.dim("No models found yet — download one to get started.\n"));
+    console.log(pc.dim("No models found yet — pick a download option below to get started.\n"));
   }
 
   const runningProfilesNow = [];
@@ -116,43 +116,77 @@ async function showModelPicker(catalog) {
     groups.push({ separator: `    ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
   }
 
-  // Build action items — conditionally include managed backend installs
+  // Build action items — grouped by section with dividers
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  const omlxInstalled = (isAppleSilicon && (await omlxEnabled())) ? await hasOmlx() : true;
+  const omlxOn = await omlxEnabled();
   const ollamaOn = await ollamaEnabled();
+  const omlxInstalled = (isAppleSilicon && omlxOn) ? await hasOmlx() : true;
   const ollamaInstalled = ollamaOn ? await hasOllama() : true;
-  const actionItems = [
-    { value: "__download__", label: `${pc.dim("○")}  ${pc.green("↓ Download a model")}` },
+
+  // Download section — each path is one click, no sub-menus
+  const downloadItems = [
+    { value: "__download_hf_gguf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for llama.cpp)")}` },
   ];
+  if (ollamaOn) {
+    downloadItems.push({ value: "__download_ollama_library__", label: `${pc.dim("○")}  ${pc.green("↓ from Ollama library")} ${pc.dim("(e.g. qwen3:8b)")}` });
+    downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(via Ollama)")}` });
+  }
+  if (omlxOn) {
+    downloadItems.push({ value: "__download_omlx__", label: `${pc.dim("○")}  ${pc.green("↓ oMLX model")} ${pc.dim("(managed by oMLX app)")}` });
+  }
+  groups.push({ separator: `  ${divider("Download")}`, items: downloadItems });
+
+  // Manage section — runtime status, discovery paths, installs
+  const manageItems = [];
   if (isAppleSilicon && !omlxInstalled) {
-    actionItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
+    manageItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
   }
   if (ollamaOn && !ollamaInstalled) {
-    actionItems.push({ value: "__install_ollama__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install Ollama")} ${pc.dim("(managed model runner)")}` });
+    manageItems.push({ value: "__install_ollama__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install Ollama")} ${pc.dim("(managed model runner)")}` });
   }
-  actionItems.push({ value: "__settings__", label: `${pc.dim("○")}  ${pc.cyan("⚙ Status & settings")}` });
-  groups.push({ separator: " ", items: actionItems });
+  manageItems.push({ value: "__runtime_status__", label: `${pc.dim("○")}  ${pc.cyan("⚡ Runtime status & running models")}` });
+  manageItems.push({ value: "__discovery_paths__", label: `${pc.dim("○")}  ${pc.cyan("📁 Discovery paths")}` });
+  groups.push({ separator: `  ${divider("Manage")}`, items: manageItems });
 
   const prompt = createPrompt();
   const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
   if (!selected) return;
 
-  if (selected === "__settings__") {
-    await settingsFlow(prompt);
+  // Download actions — flattened, no sub-menu
+  if (selected === "__download_hf_gguf__") {
+    await downloadHfGguf(prompt);
+    console.log("");
+    return;
+  }
+  if (selected === "__download_ollama_library__") {
+    await downloadOllamaLibrary(prompt);
+    console.log("");
+    return;
+  }
+  if (selected === "__download_ollama_hf__") {
+    await downloadOllamaHfGguf(prompt);
+    console.log("");
+    return;
+  }
+  if (selected === "__download_omlx__") {
+    await downloadOmlxStub();
     console.log("");
     return;
   }
 
-  if (selected === "__download__") {
-    await downloadFlow(prompt);
+  // Manage actions
+  if (selected === "__runtime_status__") {
+    await runtimeStatusFlow(prompt);
+    console.log("");
+    return;
+  }
+  if (selected === "__discovery_paths__") {
+    await discoveryPathsFlow(prompt);
     console.log("");
     return;
   }
 
   if (selected === "__install_omlx__") {
-    // installOmlx() owns the full lifecycle: brew install → start server.
-    // → start server (not the GUI) → return. Exit afterward, consistent
-    // with download/settings/run/reconfigure — never return to picker.
     await installOmlx();
     console.log("");
     return;

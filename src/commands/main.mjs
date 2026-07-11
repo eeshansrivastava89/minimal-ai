@@ -56,6 +56,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   const ollamaOn = await ollamaEnabled();
   startInteractive("offgrid-ai");
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
+  console.log(""); // top spacing
   printStatusHeader({
     llamaBinary,
     managedModels,
@@ -67,7 +68,6 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
     showOllama: ollamaOn,
     profiles,
   });
-  console.log(pc.dim("  No models? Pick \"↓ Download a model\" below — offgrid-ai downloads from HuggingFace"));
   console.log("");
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }

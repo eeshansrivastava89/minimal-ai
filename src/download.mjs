@@ -1,5 +1,13 @@
 // Model download flow — HuggingFace + Ollama downloads with quant picker.
-// Used by onboarding (no models found) and the model picker (↓ Download a model).
+// Used by onboarding (no models found) and the model picker (download actions).
+//
+// Each download path is exported as a separate function so the main menu
+// can call them directly without a sub-menu:
+//   - downloadHfGguf(prompt)       → HuggingFace GGUF for llama.cpp
+//   - downloadOllamaLibrary(prompt) → Ollama library pull
+//   - downloadOllamaHfGguf(prompt)  → HuggingFace GGUF via Ollama
+//   - downloadOmlxStub(prompt)      → oMLX info (manages own downloads)
+// downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
@@ -13,9 +21,68 @@ import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
 const GB = 1024 ** 3;
 
 /**
- * Interactive model download flow.
- * @param {object} prompt - createPrompt() instance
- * @returns {Promise<boolean>} true if a model was downloaded
+ * Download a GGUF model from HuggingFace for llama.cpp.
+ * Shows quant picker with RAM fit indicators, downloads to HF cache.
+ */
+export async function downloadHfGguf(prompt) {
+  console.log(pc.dim("  Browse models at huggingface.co/models"));
+  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
+  if (!input || !input.trim()) return false;
+  const ref = parseHfRef(input.trim());
+  return await _downloadHfGguf(prompt, ref.repo, ref.filename);
+}
+
+/**
+ * Pull a model from the Ollama library (e.g. qwen3:8b).
+ */
+export async function downloadOllamaLibrary(prompt) {
+  console.log(pc.dim("  Browse models at ollama.com/library"));
+  const input = await prompt.text("Ollama model name (e.g. qwen3:8b, llama3.2:3b)", "");
+  if (!input || !input.trim()) return false;
+  return await downloadViaOllama(prompt, input.trim());
+}
+
+/**
+ * Pull a GGUF model from HuggingFace via Ollama (with quant picker).
+ * Downloads through Ollama's pull API using hf.co/ prefix.
+ */
+export async function downloadOllamaHfGguf(prompt) {
+  console.log(pc.dim("  Browse GGUF models at huggingface.co/models"));
+  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
+  if (!input || !input.trim()) return false;
+  const ref = parseHfRef(input.trim());
+
+  let ggufFiles;
+  try {
+    ggufFiles = await listGgufFiles(ref.repo);
+  } catch (err) {
+    console.log(pc.red(`Could not fetch repo info: ${err.message}`));
+    return false;
+  }
+  if (ggufFiles.length === 0) {
+    console.log(pc.yellow("No GGUF files found in this repo. Look for a repo ending in -GGUF."));
+    return false;
+  }
+
+  const filename = await pickGgufQuant(prompt, ref.repo, ggufFiles);
+  if (!filename) return false;
+
+  const modelRef = `hf.co/${ref.repo}:${filename}`;
+  return await downloadViaOllama(prompt, modelRef);
+}
+
+/**
+ * oMLX manages its own downloads — show info to the user.
+ */
+export async function downloadOmlxStub() {
+  console.log(pc.dim("oMLX manages its own model downloads."));
+  console.log(pc.dim("  Open the oMLX app to browse and download models, or visit huggingface.co/mlx-community"));
+  return false;
+}
+
+/**
+ * Legacy download flow with method selection sub-menu.
+ * Used by onboarding. For the main menu, call the individual functions above.
  */
 export async function downloadFlow(prompt) {
   console.log("");
@@ -34,29 +101,24 @@ export async function downloadFlow(prompt) {
   const method = await prompt.choice("Download a model", methodChoices, "hf");
 
   if (!method) return false;
-
-  // ── oMLX: stub — oMLX manages its own downloads ──────────────────────────
-  if (method === "omlx") {
-    console.log(pc.dim("oMLX manages its own model downloads."));
-    console.log(pc.dim("  Open the oMLX app to browse and download models, or visit huggingface.co/mlx-community"));
-    return false;
-  }
-
-  // ── Ollama: two sub-options ──────────────────────────────────────────────
+  if (method === "omlx") return await downloadOmlxStub();
   if (method === "ollama") {
-    return await ollamaDownloadFlow(prompt);
+    const subChoice = await prompt.choice("Download an Ollama model", [
+      { value: "library", label: "Pull from Ollama library (e.g. qwen3:8b)" },
+      { value: "hf_gguf", label: "Pull GGUF from HuggingFace (with quant picker)" },
+    ], "library");
+    if (!subChoice) return false;
+    if (subChoice === "library") return await downloadOllamaLibrary(prompt);
+    return await downloadOllamaHfGguf(prompt);
   }
 
-  // ── HuggingFace: manual repo entry ───────────────────────────────────────
-  let repo, filename;
+  // HuggingFace GGUF
+  return await downloadHfGguf(prompt);
+}
 
-  console.log(pc.dim("  Browse models at huggingface.co/models"));
-  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
-  if (!input || !input.trim()) return false;
-  const ref = parseHfRef(input.trim());
-  repo = ref.repo;
-  filename = ref.filename;
+// ── HuggingFace GGUF download (shared by direct and legacy paths) ───────────
 
+async function _downloadHfGguf(prompt, repo, filename) {
   // For GGUF repos without a specific file, show quant picker.
   if (!filename) {
     let ggufFiles;
@@ -146,53 +208,6 @@ export async function downloadFlow(prompt) {
     console.log(pc.red("\nDownload failed: " + err.message));
     return false;
   }
-}
-
-// ── Ollama download flow ─────────────────────────────────────────────────────
-
-/**
- * Ollama download flow — two paths:
- * 1. Pull from Ollama library (text input, e.g. qwen3:8b)
- * 2. Pull GGUF from HuggingFace (quant picker with RAM fit, then ollama pull)
- */
-async function ollamaDownloadFlow(prompt) {
-  const subChoice = await prompt.choice("Download an Ollama model", [
-    { value: "library", label: "Pull from Ollama library (e.g. qwen3:8b)" },
-    { value: "hf_gguf", label: "Pull GGUF from HuggingFace (with quant picker)" },
-  ], "library");
-
-  if (!subChoice) return false;
-
-  if (subChoice === "library") {
-    console.log(pc.dim("  Browse models at ollama.com/library"));
-    const input = await prompt.text("Ollama model name (e.g. qwen3:8b, llama3.2:3b)", "");
-    if (!input || !input.trim()) return false;
-    return await downloadViaOllama(prompt, input.trim());
-  }
-
-  // HF GGUF via Ollama — quant picker then ollama pull
-  console.log(pc.dim("  Browse GGUF models at huggingface.co/models"));
-  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
-  if (!input || !input.trim()) return false;
-  const ref = parseHfRef(input.trim());
-
-  let ggufFiles;
-  try {
-    ggufFiles = await listGgufFiles(ref.repo);
-  } catch (err) {
-    console.log(pc.red(`Could not fetch repo info: ${err.message}`));
-    return false;
-  }
-  if (ggufFiles.length === 0) {
-    console.log(pc.yellow("No GGUF files found in this repo. Look for a repo ending in -GGUF."));
-    return false;
-  }
-
-  const filename = await pickGgufQuant(prompt, ref.repo, ggufFiles);
-  if (!filename) return false;
-
-  const modelRef = `hf.co/${ref.repo}:${filename}`;
-  return await downloadViaOllama(prompt, modelRef);
 }
 
 /**

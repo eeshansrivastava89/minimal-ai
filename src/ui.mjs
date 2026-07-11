@@ -124,6 +124,22 @@ export function renderSection(title, body, options = {}) {
   return renderCard(title, body, { formatBorder: pc.magenta, ...options });
 }
 
+/** A dim horizontal divider with an optional label, for separating sections in menus. */
+export function divider(label = "") {
+  const cols = process.stdout.columns ?? 80;
+  if (!label) return pc.dim("─".repeat(Math.min(cols, 72)));
+  const text = ` ${label} `;
+  const remaining = Math.min(cols, 72) - stripVTControlCharacters(text).length;
+  return pc.dim(text + "─".repeat(Math.max(0, remaining)));
+}
+
+/** A colored status badge (success/error/warning/info). */
+export function badge(text, variant = "info") {
+  const colors = { success: pc.green, error: pc.red, warning: pc.yellow, info: pc.cyan };
+  const color = colors[variant] ?? pc.cyan;
+  return color(`[${text}]`);
+}
+
 // ── Status / capability helpers ─────────────────────────────────────────────
 
 export function humanCapabilitySummary(caps = {}) {
