@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.2] - 2026-07-11
+
+### Fixed
+- **Release notes bullet indent** — continuation lines from wrapping now use a flat 2-space indent matching the first line, instead of a 4-space hanging indent that created a visual gap.
+
 ## [0.27.1] - 2026-07-11
 
 ### Fixed
