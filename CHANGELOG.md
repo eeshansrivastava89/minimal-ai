@@ -4,6 +4,12 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.20.2] - 2026-07-10
+
+### Fixed
+- **Benchmark failed for local llama.cpp models** — llama-benchy auto-detected the model ID as the GGUF filename, which isn't a valid HuggingFace namespace/model. Now passes `--model` (HF repo ID from cache path) and `--served-model-name` (filename the server expects) explicitly.
+- **Benchmark now gated on HF model availability** — models without a HuggingFace repo ID (oMLX models, Ollama library models, loose GGUF files) show the Benchmark action as dimmed with "Needs HF model for tokenizer" instead of failing at runtime. Ollama models pulled from HuggingFace (`hf.co/org/repo:quant`) are supported.
+
 ## [0.20.1] - 2026-07-10
 
 ### Fixed

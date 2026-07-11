@@ -2,7 +2,7 @@ import { ensureDirs, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFA
 import { existsSync } from "node:fs";
 import { rm, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
@@ -195,7 +195,7 @@ function formatActions(rawActions) {
   const width = Math.max(17, maxName + 2);
   return rawActions.map((a) => {
     const name = a.dimmed ? pc.dim(pc.strikethrough(a.name.padEnd(width).slice(0, width))) : pc.bold(a.name.padEnd(width).slice(0, width));
-    const desc = a.dimmed ? pc.red("not available") : pc.dim(a.desc);
+    const desc = a.dimmed ? pc.red(a.dimmedDesc ?? "not available") : pc.dim(a.desc);
     return { value: a.value, label: name + sep + desc };
   });
 }
@@ -207,10 +207,13 @@ function actionsForItem(item) {
       { value: "inspect", name: "Details", desc: "Paths, ports, flags" },
     ];
     if (!missing) {
+      const profile = item.profile;
+      const isManaged = backendFor(profile.backend).type === "managed-server";
+      const benchySupported = Boolean(resolveBenchyModel(profile, isManaged));
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
         { value: "server", name: "Start server", desc: "API only, no Pi" },
-        { value: "benchmark", name: "Benchmark", desc: "Run llama-benchy" },
+        { value: "benchmark", name: "Benchmark", desc: benchySupported ? "Run llama-benchy" : "Needs HF model for tokenizer", dimmed: !benchySupported, dimmedDesc: "Needs HF model for tokenizer" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
     }
@@ -246,6 +249,15 @@ async function performAction(prompt, action, item) {
     console.log(pc.red(`This model's ${reason}. Remove the setup or restore the model.`));
     return;
   }
+  if (action === "benchmark" && item.type === "profile") {
+    const profile = item.profile;
+    const isManaged = backendFor(profile.backend).type === "managed-server";
+    if (!resolveBenchyModel(profile, isManaged)) {
+      console.log(pc.yellow("Benchmarking is not supported for this model."));
+      console.log(pc.dim("llama-benchy needs a HuggingFace model name for the tokenizer. Only models from HuggingFace can be benchmarked."));
+      return;
+    }
+  }
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
     if (item.type === "managed") return printManagedModelDetails(item.model, BACKENDS[item.backendId]);
@@ -272,6 +284,13 @@ async function benchmarkItem(item) {
   const backend = backendFor(profile.backend);
   const isManaged = backend.type === "managed-server";
 
+  // Check before starting the server
+  if (!resolveBenchyModel(profile, isManaged)) {
+    console.log(pc.yellow("Benchmarking is not supported for this model."));
+    console.log(pc.dim("llama-benchy needs a HuggingFace model name for the tokenizer. Only models from HuggingFace can be benchmarked."));
+    return;
+  }
+
   // Track whether we started the server (so we can clean up)
   const wasRunning = await serverReady(profile.baseUrl);
 
@@ -289,7 +308,7 @@ async function benchmarkItem(item) {
   }
 
   // Run llama-benchy
-  await runLlamaBenchy(profile.baseUrl);
+  await runLlamaBenchy(profile, isManaged);
 
   // Clean up — stop server if we started it, unload model from managed server
   if (!wasRunning && !isManaged) {
@@ -302,22 +321,73 @@ async function benchmarkItem(item) {
 }
 
 /**
+ * Resolve the HF model name and served model name for llama-benchy.
+ * Returns null if a valid HF model name can't be determined (benchmarking
+ * is not supported in that case).
+ *
+ * llama-benchy --model expects a HF namespace/model name (for tokenizer
+ * download). --served-model-name is what the server actually expects in
+ * API requests. When both are passed, llama-benchy uses --model for the
+ * tokenizer and --served-model-name for API calls.
+ *
+ * @returns {{ hfModel: string, servedName: string } | null}
+ */
+function resolveBenchyModel(profile, isManaged) {
+  if (isManaged) {
+    const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+
+    // oMLX: model IDs are bare names (e.g. "Qwen3.6-35B-A3B-OptiQ-4bit"),
+    // not HF namespace/model. No reliable way to get a tokenizer.
+    if (backendFor(profile.backend).id === "omlx") return null;
+
+    // Ollama HF GGUF: "hf.co/org/repo:quant" → strip prefix + tag
+    if (modelId.startsWith("hf.co/")) {
+      const stripped = modelId.slice("hf.co/".length);
+      const colonIdx = stripped.indexOf(":");
+      const hfModel = colonIdx !== -1 ? stripped.slice(0, colonIdx) : stripped;
+      if (hfModel.includes("/")) return { hfModel, servedName: modelId };
+    }
+
+    // Ollama library models (e.g. "qwen3:8b") — no HF repo, no tokenizer source
+    return null;
+  }
+
+  // Local llama.cpp: server reports the filename as the model ID.
+  const servedName = profile.modelPath ? basename(profile.modelPath) : profile.modelAlias;
+  const repoId = profile.modelPath?.startsWith(HF_HUB_DIR) ? hfRepoFromPath(profile.modelPath) : null;
+  if (repoId && repoId.includes("/")) return { hfModel: repoId, servedName };
+  // Loose GGUF file not from HF cache — no tokenizer source
+  return null;
+}
+
+/**
  * Run llama-benchy against an OpenAI-compatible endpoint.
  * Uses uvx (zero-install) to run the tool without polluting the system.
- * @param {string} baseUrl - OpenAI-compatible endpoint URL
+ * @param {object} profile - the model profile
+ * @param {boolean} isManaged - whether the backend is a managed server
  * @returns {Promise<boolean>} true if benchmark completed successfully
  */
-async function runLlamaBenchy(baseUrl) {
+async function runLlamaBenchy(profile, isManaged) {
   if (!(await commandExists("uvx"))) {
     console.log(pc.yellow("llama-benchy requires uv (Python tool runner)."));
     console.log(pc.dim("Install uv:  curl -LsSf https://astral.sh/uv/install.sh | sh"));
     return false;
   }
 
+  const resolved = resolveBenchyModel(profile, isManaged);
+  if (!resolved) return false; // caller already printed the reason
+
+  const args = [
+    "llama-benchy",
+    "--base-url", profile.baseUrl,
+    "--model", resolved.hfModel,
+    "--served-model-name", resolved.servedName,
+  ];
+
   console.log(pc.cyan("\nRunning llama-benchy...\n"));
 
   const exitCode = await new Promise((resolve) => {
-    const child = spawn("uvx", ["llama-benchy", "--base-url", baseUrl], {
+    const child = spawn("uvx", args, {
       stdio: "inherit",
       env: process.env,
     });
