@@ -2,7 +2,7 @@ import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, runUpdateCommand } from "./updates.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
-import { checkOllamaUpdate, installOllama } from "./ollama-runtime.mjs";
+import { checkOllamaUpdate, installOllama, updateOllama } from "./ollama-runtime.mjs";
 import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
@@ -63,7 +63,7 @@ async function offerRuntimeUpdates() {
       } else if (u.kind === "oMLX") {
         await installOmlx();
       } else if (u.kind === "Ollama") {
-        await installOllama();
+        await updateOllama();
       }
     }
   } finally {

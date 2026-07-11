@@ -98,6 +98,43 @@ export async function ensureOllamaServer() {
 // ── Installation ────────────────────────────────────────────────────────────
 
 /**
+ * Update Ollama to the latest version via brew upgrade or curl installer.
+ * Unlike installOllama(), this does NOT skip when already installed.
+ * @returns {Promise<boolean>} true if update succeeded
+ */
+export async function updateOllama() {
+  // 1. Homebrew upgrade
+  try {
+    const { stdout } = await execFileAsync("which", ["brew"]);
+    if (stdout.trim()) {
+      console.log(pc.dim("Updating Ollama via Homebrew..."));
+      await runCommand("brew", ["upgrade", "ollama"], { label: "ollama", verbose: true });
+      if (await hasOllama()) {
+        console.log(pc.green("✓ Ollama updated."));
+        await startAndWaitForServer();
+        return true;
+      }
+    }
+  } catch { /* fall through to curl installer */ }
+
+  // 2. Curl installer (also upgrades existing installs)
+  try {
+    console.log(pc.dim("Updating Ollama via official installer..."));
+    await runCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
+    if (await hasOllama()) {
+      console.log(pc.green("✓ Ollama updated."));
+      await startAndWaitForServer();
+      return true;
+    }
+  } catch (err) {
+    console.log(pc.red(`✗ Update failed: ${err.message}`));
+    console.log(pc.dim("Update manually: brew upgrade ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh"));
+    return false;
+  }
+  return false;
+}
+
+/**
  * Install Ollama via Homebrew (preferred) or the official curl installer.
  * If Ollama is already installed, just starts the server.
  * @returns {Promise<boolean>} true if installation succeeded
