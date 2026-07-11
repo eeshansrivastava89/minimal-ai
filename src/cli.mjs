@@ -34,15 +34,11 @@ async function offerUpdate(argv) {
   if (!process.stdin.isTTY) return false;
 
   const prompt = createPrompt();
-  try {
-    const shouldUpdate = await prompt.yesNo("Update now?", true);
-    if (!shouldUpdate) return false;
-    await runUpdateCommand(plan);
-    if (plan.mode === "install-global") console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
-    return true;
-  } finally {
-    prompt.close();
-  }
+  const shouldUpdate = await prompt.yesNo("Update now?", true);
+  if (!shouldUpdate) return false;
+  await runUpdateCommand(plan);
+  if (plan.mode === "install-global") console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+  return true;
 }
 
 async function offerRuntimeUpdates() {
@@ -63,21 +59,17 @@ async function offerRuntimeUpdates() {
     console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
   }
   const prompt = createPrompt();
-  try {
-    const shouldUpdate = await prompt.yesNo("Update now?", true);
-    if (!shouldUpdate) return;
-    for (const u of updates) {
-      if (u.kind === "llama.cpp") {
-        await installLlamaRelease(u.release);
-        console.log(pc.green("✓ llama.cpp updated."));
-      } else if (u.kind === "oMLX") {
-        await installOmlx();
-      } else if (u.kind === "Ollama") {
-        await updateOllama();
-      }
+  const shouldUpdate = await prompt.yesNo("Update now?", true);
+  if (!shouldUpdate) return;
+  for (const u of updates) {
+    if (u.kind === "llama.cpp") {
+      await installLlamaRelease(u.release);
+      console.log(pc.green("✓ llama.cpp updated."));
+    } else if (u.kind === "oMLX") {
+      await installOmlx();
+    } else if (u.kind === "Ollama") {
+      await updateOllama();
     }
-  } finally {
-    prompt.close();
   }
 }
 
@@ -94,19 +86,27 @@ export async function run(argv) {
   }
 
   const [command] = argv;
-  if (command === "help" || command === "--help" || command === "-h") return printHelp();
-  if (command === "version" || command === "--version" || command === "-v") return printVersion();
-  if (command === "models") return modelsCommand(argv.slice(1));
-  if (command === "run") {
-    const runArgs = argv.slice(1);
-    if (!runArgs[0]) return mainFlow();
-    return runCommand(runArgs);
-  }
-  if (command === "status") return statusCommand();
-  if (command === "stop") return stopCommand(argv.slice(1));
-  if (command === "uninstall" || command === "--uninstall") return uninstallCommand(argv.slice(1));
-  if (command === "--verbose") return mainFlow();
-
+  const handlers = {
+    help: () => printHelp(),
+    "--help": () => printHelp(),
+    "-h": () => printHelp(),
+    version: () => printVersion(),
+    "--version": () => printVersion(),
+    "-v": () => printVersion(),
+    models: () => modelsCommand(argv.slice(1)),
+    run: () => {
+      const runArgs = argv.slice(1);
+      if (!runArgs[0]) return mainFlow();
+      return runCommand(runArgs);
+    },
+    status: () => statusCommand(),
+    stop: () => stopCommand(argv.slice(1)),
+    uninstall: () => uninstallCommand(argv.slice(1)),
+    "--uninstall": () => uninstallCommand(argv.slice(1)),
+    "--verbose": () => mainFlow(),
+  };
+  const handler = handlers[command];
+  if (handler) return handler();
   throw new Error(`Unknown command: ${command}. Run offgrid-ai help`);
 }
 

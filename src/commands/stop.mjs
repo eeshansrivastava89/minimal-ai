@@ -24,20 +24,16 @@ export async function stopCommand(argv) {
 
   startInteractive("offgrid-ai stop");
   const prompt = createPrompt();
-  try {
-    const choices = running.map(({ profile, status }) => ({ value: profile.id, label: profile.label, hint: `pid ${status.pid} · ${profile.baseUrl}` }));
-    if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
-    choices.push({ value: "__cancel", label: "Cancel" });
+  const choices = running.map(({ profile, status }) => ({ value: profile.id, label: profile.label, hint: `pid ${status.pid} · ${profile.baseUrl}` }));
+  if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
+  choices.push({ value: "__cancel", label: "Cancel" });
 
-    const selected = await prompt.choice("Stop", choices, choices[0].value);
-    if (selected === "__cancel") return;
+  const selected = await prompt.choice("Stop", choices, choices[0].value);
+  if (selected === "__cancel") return;
 
-    const targets = selected === "__all" ? running : running.filter((item) => item.profile.id === selected);
-    for (const { profile } of targets) await printStopResult(profile);
-    console.log("");
-  } finally {
-    prompt.close();
-  }
+  const targets = selected === "__all" ? running : running.filter((item) => item.profile.id === selected);
+  for (const { profile } of targets) await printStopResult(profile);
+  console.log("");
 }
 
 async function stopOne(id) {

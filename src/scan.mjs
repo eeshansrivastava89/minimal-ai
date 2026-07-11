@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
-import { readGgufMetadata } from "./gguf.mjs";
+import { readGgufMetadataSafe } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
 
@@ -53,7 +53,7 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
     const sizeBytes = statSync(path).size;
     if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
     // Read GGUF metadata to detect drafter architecture and embeddings
-    const meta = safeReadGgufMetadata(path);
+    const meta = readGgufMetadataSafe(path);
     const architecture = typeof meta["general.architecture"] === "string" ? meta["general.architecture"] : null;
     const contextLength = architecture && typeof meta[`${architecture}.context_length`] === "number"
       ? meta[`${architecture}.context_length`]
@@ -186,14 +186,6 @@ async function findFiles(root, predicate) {
 
 // (labelFromName, aliasFromName, quantFromName removed — parseModelName in model-name.mjs is the single path)
 
-
-function safeReadGgufMetadata(path) {
-  try {
-    return readGgufMetadata(path);
-  } catch {
-    return {};
-  }
-}
 
 // ── Publisher extraction ─────────────────────────────────────────────────
 

@@ -44,6 +44,6 @@ export function getFreeDiskBytes(dir) {
     const stats = statfsSync(checkDir);
     return stats.bavail * stats.bsize;
   } catch {
-    return Number.MAX_SAFE_INTEGER;
+    return 0;
   }
 }

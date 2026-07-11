@@ -4,6 +4,23 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.21.1] - 2026-07-10
+
+### Changed
+- **Architecture audit cleanup** — comprehensive DRY/KISS/dead-code cleanup across all 51 files:
+  - **Bug fix:** `getFreeDiskBytes` returned `MAX_SAFE_INTEGER` on statfs failure, silently bypassing disk-space checks. Now returns 0.
+  - **Removed dead code:** `statusText` (unused export), `wrapVisible` (1-line wrapper), `OLLAMA_URLS` import (unused), unreachable rescan loop in `modelCommandCenter`, dead ternary in `parseModelName` (both branches returned `""`).
+  - **Removed `createPrompt().close()` no-op** — was a no-op method called in 6 `finally` blocks. Removed all call sites.
+  - **Consolidated DRY violations:** `safeReadGgufMetadata` (2 copies → 1 in `gguf.mjs`), `numberMeta` (2 copies → 1 in `gguf.mjs`), `sleep` (3 copies → 1 in `exec.mjs`), duplicate `serverReady` (2 functions → 1 in `server-check.mjs`), `which <binary>` pattern (6 sites → `commandExists`), merged `installOllama`/`updateOllama` (~80% shared → `installOrUpdateOllama`).
+  - **Added helpers:** `effectiveModelId(profile)` in `profiles.mjs` (replaces 9 inconsistent `omlxModel ?? ollamaModel ?? modelAlias ?? ...` chains), `isManaged(profile)` in `backends.mjs`.
+  - **Data-driven refactors:** `friendlyLine` 9-branch if/else → table, `readValue` 13-branch if/else → type-reader array, `cli.mjs` command dispatch 8-if ladder → map.
+  - **Simplified `fetchJson`:** removed unused `{ok, reason, data}` return shape → `Promise<data | null>`.
+  - **Surfaced 8 silent catches:** `harness-pi.mjs` (skills, packages, web-search, settings), `config.mjs` (config write), `uninstall.mjs` (npm uninstall), `status.mjs` (du), `onboard.mjs` (Pi install) — all now print the actual error message.
+  - **Removed "Recommended" download stub** — was a dead path that only printed a README link.
+  - **Extracted `server-check.mjs`** — `serverReady` moved to standalone module to break circular dependency introduced by ollama-runtime importing from process.mjs.
+  - **Removed `slugFromLabel` alias** — inlined to `sanitizeProfileId`. Un-exported `notesPath` (internal only).
+  - Net: -87 LLOC, -34 complexity, 0 circular deps, 0 lint warnings.
+
 ## [0.21.0] - 2026-07-10
 
 ### Added

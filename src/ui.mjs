@@ -95,7 +95,7 @@ export function renderCard(title, body, options = {}) {
   const lines = [];
   for (const line of rawLines) {
     if (visibleLen(line) > contentWidth) {
-      lines.push(...wrapVisible(line, contentWidth));
+      lines.push(...wrapText(line, contentWidth));
     } else {
       lines.push(line);
     }
@@ -112,9 +112,7 @@ export function renderCard(title, body, options = {}) {
   return [top, ...middle, bottom].map((l) => borderColor(l)).join("\n");
 }
 
-function wrapVisible(text, width) {
-  return wrapText(text, width);
-}
+// wrapVisible was a 1-line wrapper for wrapText — inlined directly in renderCard
 
 export function renderSectionRows(title, rows, options = {}) {
   const maxCols = options.columns ?? process.stdout.columns ?? 88;
@@ -135,17 +133,6 @@ export function humanCapabilitySummary(caps = {}) {
   if (caps.mtp) parts.push(pc.blue("MTP"));
   if (caps.qat) parts.push(pc.green("QAT"));
   return parts.length > 0 ? parts.join(" · ") : "General chat";
-}
-
-export function statusText(kind, text) {
-  const color = {
-    ready: pc.green,
-    running: pc.green,
-    warning: pc.yellow,
-    info: pc.cyan,
-    muted: pc.dim,
-  }[kind] ?? ((value) => value);
-  return color(text);
 }
 
 // ── Escape-to-cancel helper ─────────────────────────────────────────────────
@@ -235,8 +222,6 @@ export function createPrompt() {
         pageSize: 20,
       });
     },
-
-    close() {},
   };
 }
 

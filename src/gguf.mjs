@@ -1,4 +1,4 @@
-import { openSync, readSync, closeSync, statSync } from "node:fs";
+import { openSync, readSync, closeSync, statSync, existsSync } from "node:fs";
 
 export function readGgufMetadata(path) {
   const buffer = readFilePrefix(path, 64 * 1024 * 1024);
@@ -45,35 +45,56 @@ function readFilePrefix(path, maxBytes) {
   }
 }
 
-function readValue(buffer, offset, type) {
-  if (type === 0) return { value: buffer.readUInt8(offset), offset: offset + 1 };
-  if (type === 1) return { value: buffer.readInt8(offset), offset: offset + 1 };
-  if (type === 2) return { value: buffer.readUInt16LE(offset), offset: offset + 2 };
-  if (type === 3) return { value: buffer.readInt16LE(offset), offset: offset + 2 };
-  if (type === 4) return { value: buffer.readUInt32LE(offset), offset: offset + 4 };
-  if (type === 5) return { value: buffer.readInt32LE(offset), offset: offset + 4 };
-  if (type === 6) return { value: buffer.readFloatLE(offset), offset: offset + 4 };
-  if (type === 7) return { value: Boolean(buffer.readUInt8(offset)), offset: offset + 1 };
-  if (type === 8) {
-    const len = Number(buffer.readBigUInt64LE(offset));
-    offset += 8;
-    return { value: buffer.toString("utf8", offset, offset + len), offset: offset + len };
-  }
-  if (type === 9) {
-    const itemType = buffer.readUInt32LE(offset);
-    offset += 4;
-    const len = Number(buffer.readBigUInt64LE(offset));
-    offset += 8;
+const TYPE_READERS = [
+  (buf, off) => ({ value: buf.readUInt8(off), offset: off + 1 }),
+  (buf, off) => ({ value: buf.readInt8(off), offset: off + 1 }),
+  (buf, off) => ({ value: buf.readUInt16LE(off), offset: off + 2 }),
+  (buf, off) => ({ value: buf.readInt16LE(off), offset: off + 2 }),
+  (buf, off) => ({ value: buf.readUInt32LE(off), offset: off + 4 }),
+  (buf, off) => ({ value: buf.readInt32LE(off), offset: off + 4 }),
+  (buf, off) => ({ value: buf.readFloatLE(off), offset: off + 4 }),
+  (buf, off) => ({ value: Boolean(buf.readUInt8(off)), offset: off + 1 }),
+  (buf, off) => {
+    const len = Number(buf.readBigUInt64LE(off));
+    off += 8;
+    return { value: buf.toString("utf8", off, off + len), offset: off + len };
+  },
+  (buf, off) => {
+    const itemType = buf.readUInt32LE(off);
+    off += 4;
+    const len = Number(buf.readBigUInt64LE(off));
+    off += 8;
     const values = [];
     for (let i = 0; i < len; i++) {
-      const item = readValue(buffer, offset, itemType);
-      offset = item.offset;
+      const item = readValue(buf, off, itemType);
+      off = item.offset;
       if (i < 32) values.push(item.value);
     }
-    return { value: values, offset };
+    return { value: values, offset: off };
+  },
+  (buf, off) => ({ value: Number(buf.readBigUInt64LE(off)), offset: off + 8 }),
+  (buf, off) => ({ value: Number(buf.readBigInt64LE(off)), offset: off + 8 }),
+  (buf, off) => ({ value: buf.readDoubleLE(off), offset: off + 8 }),
+];
+
+function readValue(buffer, offset, type) {
+  const reader = TYPE_READERS[type];
+  if (!reader) throw new Error(`Unsupported GGUF metadata value type ${type}`);
+  return reader(buffer, offset);
+}
+
+/** Safe wrapper that returns {} on error or missing file. */
+export function readGgufMetadataSafe(path) {
+  if (!existsSync(path)) return {};
+  try {
+    return readGgufMetadata(path);
+  } catch {
+    return {};
   }
-  if (type === 10) return { value: Number(buffer.readBigUInt64LE(offset)), offset: offset + 8 };
-  if (type === 11) return { value: Number(buffer.readBigInt64LE(offset)), offset: offset + 8 };
-  if (type === 12) return { value: buffer.readDoubleLE(offset), offset: offset + 8 };
-  throw new Error(`Unsupported GGUF metadata value type ${type}`);
+}
+
+/** Extract a finite number from GGUF metadata, or undefined. */
+export function numberMeta(meta, key) {
+  const value = key ? meta[key] : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

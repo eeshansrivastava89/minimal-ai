@@ -53,8 +53,8 @@ export async function statusCommand() {
           ["Location", pc.dim(omlxCacheDir)],
           ["Disk usage", pc.bold(cacheSize)],
         ]), { formatBorder: pc.magenta }));
-      } catch {
-        // du not available — skip
+      } catch (err) {
+        console.log(pc.dim(`  (disk usage unavailable: ${err.message})`));
       }
     }
   }

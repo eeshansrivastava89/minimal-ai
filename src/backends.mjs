@@ -63,6 +63,11 @@ export function backendFor(backendId) {
   return backend;
 }
 
+/** Check if a profile uses a managed server (oMLX, Ollama) vs local llama.cpp. */
+export function isManaged(profile) {
+  return backendFor(profile.backend).type === "managed-server";
+}
+
 export async function backendBinaryFor(backendId) {
   const backend = BACKENDS[backendId ?? "llama-cpp"];
   if (backend.type === "managed-server") return null;

@@ -5,7 +5,7 @@ import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
 import { hasPi } from "../harness-pi.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
-import { hasOllama, OLLAMA_URLS } from "../ollama-runtime.mjs";
+import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
 import { pc, startInteractive, renderCard } from "../ui.mjs";
 import { showReleaseNotesIfUpdated } from "../changelog.mjs";

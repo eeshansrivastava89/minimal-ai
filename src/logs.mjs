@@ -29,22 +29,22 @@ export function tailFriendly(rawLogPath, friendlyLogPath) {
   return { stop() { stopped = true; clearInterval(timer); } };
 }
 
+const LOG_LINE_PATTERNS = [
+  { test: (l) => l.includes("ctx_other") || l.includes("failed to measure draft model memory"), tag: "[mtp]", color: pc.dim },
+  { test: (l) => l.includes("error") || l.includes("failed"), tag: "[error]", color: pc.red },
+  { test: (l) => l.includes("listening") || l.includes("http server"), tag: "[server]", color: pc.green },
+  { test: (l) => l.includes("llm_load") || l.includes("load_model") || l.includes("loading model"), tag: "[load]", color: pc.cyan },
+  { test: (l) => l.includes("mmproj"), tag: "[vision]", color: pc.cyan },
+  { test: (l) => l.includes("prompt eval") || l.includes("prompt eval time"), tag: "[timing]", color: pc.green },
+  { test: (l) => l.includes("eval time") || l.includes("generation"), tag: "[timing]", color: pc.green },
+  { test: (l) => l.includes("slot") && l.includes("launch_slot"), tag: "[request]", color: pc.cyan },
+];
+
 function friendlyLine(line) {
   const lower = line.toLowerCase();
   const trimmed = line.trim();
-  // Known-harmless errors during MTP memory estimation — llama.cpp tries to measure
-  // the draft model's memory usage before allocating the shared KV cache, which
-  // fails because the assistant architecture needs the trunk context. This is
-  // expected and the server proceeds to load the draft model correctly afterward.
-  if (lower.includes("ctx_other") || lower.includes("failed to measure draft model memory")) {
-    return pc.dim(`[mtp] ${trimmed}`);
+  for (const { test, tag, color } of LOG_LINE_PATTERNS) {
+    if (test(lower)) return color(`${tag} ${trimmed}`);
   }
-  if (lower.includes("error") || lower.includes("failed")) return pc.red(`[error] ${trimmed}`);
-  if (lower.includes("listening") || lower.includes("http server")) return pc.green(`[server] ${trimmed}`);
-  if (lower.includes("llm_load") || lower.includes("load_model") || lower.includes("loading model")) return pc.cyan(`[load] ${trimmed}`);
-  if (lower.includes("mmproj")) return pc.cyan(`[vision] ${trimmed}`);
-  if (lower.includes("prompt eval") || lower.includes("prompt eval time")) return pc.green(`[timing] ${trimmed}`);
-  if (lower.includes("eval time") || lower.includes("generation")) return pc.green(`[timing] ${trimmed}`);
-  if (lower.includes("slot") && lower.includes("launch_slot")) return pc.cyan(`[request] ${trimmed}`);
   return null;
 }

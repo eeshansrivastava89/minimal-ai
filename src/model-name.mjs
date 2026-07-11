@@ -112,10 +112,7 @@ export function parseModelName(rawId, source) {
     if (tagRegex.test(name)) {
       tags.push(tag);
       // Remove the tag token from the name
-      name = name.replace(new RegExp(`(?:^|[-_])${tag}(?=[-_]|$)`, "i"), (m) => {
-        // Preserve the leading hyphen/underscore boundary
-        return m.startsWith("-") || m.startsWith("_") ? "" : "";
-      });
+      name = name.replace(new RegExp(`(?:^|[-_])${tag}(?=[-_]|$)`, "i"), "");
     }
   }
   // Clean up leftover separators

@@ -41,15 +41,7 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   let catalog = initialCatalog.newModels ? initialCatalog : await loadModelCatalog();
-
-  while (true) {
-    const result = await showModelPicker(catalog);
-    if (result === "rescan") {
-      catalog = await loadModelCatalog();
-      continue;
-    }
-    return;
-  }
+  await showModelPicker(catalog);
 }
 
 async function showModelPicker(catalog) {
@@ -145,48 +137,44 @@ async function showModelPicker(catalog) {
   groups.push({ separator: " ", items: actionItems });
 
   const prompt = createPrompt();
-  try {
-    const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
-    if (!selected) return;
+  const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
+  if (!selected) return;
 
-    if (selected === "__settings__") {
-      await settingsFlow(prompt);
-      console.log("");
-      return;
-    }
-
-    if (selected === "__download__") {
-      await downloadFlow(prompt);
-      console.log("");
-      return;
-    }
-
-    if (selected === "__install_omlx__") {
-      // installOmlx() owns the full lifecycle: brew install → start server.
-      // → start server (not the GUI) → return. Exit afterward, consistent
-      // with download/settings/run/reconfigure — never return to picker.
-      await installOmlx();
-      console.log("");
-      return;
-    }
-
-    if (selected === "__install_ollama__") {
-      await installOllama();
-      console.log("");
-      return;
-    }
-
-    const item = allItems.find((candidate) => itemKey(candidate) === selected);
-    if (!item) return;
-
-    const actions = actionsForItem(item);
-    const action = await prompt.choice(item.label, actions, actions[0].value);
-    if (!action) return;
-    await performAction(prompt, action, item);
+  if (selected === "__settings__") {
+    await settingsFlow(prompt);
     console.log("");
-  } finally {
-    prompt.close();
+    return;
   }
+
+  if (selected === "__download__") {
+    await downloadFlow(prompt);
+    console.log("");
+    return;
+  }
+
+  if (selected === "__install_omlx__") {
+    // installOmlx() owns the full lifecycle: brew install → start server.
+    // → start server (not the GUI) → return. Exit afterward, consistent
+    // with download/settings/run/reconfigure — never return to picker.
+    await installOmlx();
+    console.log("");
+    return;
+  }
+
+  if (selected === "__install_ollama__") {
+    await installOllama();
+    console.log("");
+    return;
+  }
+
+  const item = allItems.find((candidate) => itemKey(candidate) === selected);
+  if (!item) return;
+
+  const actions = actionsForItem(item);
+  const action = await prompt.choice(item.label, actions, actions[0].value);
+  if (!action) return;
+  await performAction(prompt, action, item);
+  console.log("");
 }
 
 function formatActions(rawActions) {
@@ -293,16 +281,11 @@ async function benchmarkItem(item) {
 
   // Pick a benchmark profile
   const prompt = createPrompt();
-  let benchProfile;
-  try {
-    benchProfile = await prompt.choice("Benchmark profile", [
-      { value: "quick", label: "Quick", hint: "~30s · smoke test" },
-      { value: "standard", label: "Standard", hint: "~2 min · scaling test" },
-      { value: "thorough", label: "Thorough", hint: "~5-10 min · full profile" },
-    ], "quick");
-  } finally {
-    prompt.close();
-  }
+  const benchProfile = await prompt.choice("Benchmark profile", [
+    { value: "quick", label: "Quick", hint: "~30s · smoke test" },
+    { value: "standard", label: "Standard", hint: "~2 min · scaling test" },
+    { value: "thorough", label: "Thorough", hint: "~5-10 min · full profile" },
+  ], "quick");
   if (!benchProfile) return;
 
   // Track whether we started the server (so we can clean up)
@@ -486,14 +469,10 @@ async function removeProfileInteractive(id) {
     return;
   }
   const prompt = createPrompt();
-  try {
-    const confirmed = await prompt.yesNo(`Remove ${profile.label} (${profile.id})?`, false);
-    if (!confirmed) {
-      console.log(pc.dim("Cancelled."));
-      return;
-    }
-  } finally {
-    prompt.close();
+  const confirmed = await prompt.yesNo(`Remove ${profile.label} (${profile.id})?`, false);
+  if (!confirmed) {
+    console.log(pc.dim("Cancelled."));
+    return;
   }
   if (await isProfileRunning(profile)) {
     console.log(pc.yellow("Stopping running server..."));

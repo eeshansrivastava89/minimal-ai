@@ -1,14 +1,14 @@
 import { basename } from "node:path";
 import { existsSync } from "node:fs";
-import { readGgufMetadata } from "./gguf.mjs";
+import { readGgufMetadataSafe, numberMeta } from "./gguf.mjs";
 import { defaultFlagsForBackend } from "./backends.mjs";
 import { parseModelName } from "./model-name.mjs";
 
 // ── Detect model capabilities from GGUF metadata ──────────────────────────
 
 export function detectCapabilities(modelPath, mmprojPath) {
-  const meta = safeReadGgufMetadata(modelPath);
-  const mmprojMeta = mmprojPath ? safeReadGgufMetadata(mmprojPath) : {};
+  const meta = readGgufMetadataSafe(modelPath);
+  const mmprojMeta = mmprojPath ? readGgufMetadataSafe(mmprojPath) : {};
   const pathHints = String(modelPath).toLowerCase();
 
   // Architecture
@@ -117,22 +117,6 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
   }
 
   return { flags, argv };
-}
-
-// ── Internal helper ─────────────────────────────────────────────────────
-
-function safeReadGgufMetadata(modelPath) {
-  if (!existsSync(modelPath)) return {};
-  try {
-    return readGgufMetadata(modelPath);
-  } catch {
-    return {};
-  }
-}
-
-function numberMeta(meta, key) {
-  const value = key ? meta[key] : undefined;
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function stringMeta(meta, key) {

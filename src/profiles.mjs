@@ -17,7 +17,7 @@ export function profileJsonPath(id) {
   return join(profileDir(id), "profile.json");
 }
 
-export function notesPath(id) {
+function notesPath(id) {
   return join(profileDir(id), "notes.md");
 }
 
@@ -29,8 +29,9 @@ export function sanitizeProfileId(value) {
   return String(value).trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-|-$/gu, "") || "profile";
 }
 
-export function slugFromLabel(value) {
-  return sanitizeProfileId(value);
+/** Resolve the canonical model ID from a profile, checking backend-specific fields. */
+export function effectiveModelId(profile) {
+  return profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.id;
 }
 
 // ── CRUD ───────────────────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
   );
 
   return normalizeProfile({
-    id: slugFromLabel(model.label),
+    id: sanitizeProfileId(model.label),
     label: model.label,
     backend,
     providerId: backend,

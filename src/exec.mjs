@@ -29,3 +29,7 @@ export async function commandExists(name) {
 function lastStderrLines(stderr) {
   return String(stderr).split("\n").filter((line) => line.trim()).slice(-3).join("\n");
 }
+
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

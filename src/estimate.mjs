@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { readGgufMetadata } from "./gguf.mjs";
+import { readGgufMetadata, numberMeta } from "./gguf.mjs";
 
 /**
  * Read model file sizes + GGUF architecture metadata once.
@@ -104,11 +104,6 @@ function estimateKvBytes(input) {
 
 function valueForLayer(value, index) {
   return Array.isArray(value) ? value[index] : value;
-}
-
-function numberMeta(meta, key) {
-  const value = key ? meta[key] : undefined;
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function numberOrArrayMeta(meta, key) {

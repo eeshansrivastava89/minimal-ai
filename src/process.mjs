@@ -8,7 +8,8 @@ import { backendFor, backendBinaryFor } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { startOmlxServer } from "./omlx-runtime.mjs";
 import { startOllamaServer, unloadOllamaModel, ollamaLoadedModels } from "./ollama-runtime.mjs";
-import { execFileAsync } from "./exec.mjs";
+import { execFileAsync, sleep } from "./exec.mjs";
+import { serverReady } from "./server-check.mjs";
 import { pc } from "./ui.mjs";
 
 // ── Compute server command from profile config ─────────────────────────────
@@ -425,14 +426,8 @@ export async function profileRuntimeStatus(profile) {
   return { state, pid: state?.pid ?? null, running, ready, rssBytes, startedAt: state?.startedAt ? new Date(state.startedAt) : null };
 }
 
-export async function serverReady(baseUrl) {
-  try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { signal: AbortSignal.timeout(1000) });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
+// serverReady is imported from server-check.mjs and re-exported for backward compat
+export { serverReady };
 
 export async function serverMatchesProfile(profile) {
   const state = await readState(profile.id);
@@ -512,27 +507,27 @@ export async function preflightInference(profile) {
 // ── Internals ──────────────────────────────────────────────────────────────
 
 export async function serverModelIds(baseUrl) {
-  const result = await fetchJson(`${baseUrl.replace(/\/+$/u, "")}/models`);
-  if (!result.ok) return [];
-  return (Array.isArray(result.data?.data) ? result.data.data : [])
+  const data = await fetchJson(`${baseUrl.replace(/\/+$/u, "")}/models`);
+  if (!data) return [];
+  return (Array.isArray(data?.data) ? data.data : [])
     .map((model) => String(model?.id ?? "").trim())
     .filter(Boolean);
 }
 
 async function omlxLoadedModelIds(profile) {
-  const statusResult = await fetchJson(`${profile.baseUrl.replace(/\/+$/u, "")}/models/status`);
-  const fromStatus = statusResult.ok
-    ? (Array.isArray(statusResult.data?.models) ? statusResult.data.models : [])
+  const statusData = await fetchJson(`${profile.baseUrl.replace(/\/+$/u, "")}/models/status`);
+  const fromStatus = statusData
+    ? (Array.isArray(statusData?.models) ? statusData.models : [])
         .filter((model) => model?.loaded === true)
         .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
         .map((id) => String(id ?? "").trim())
         .filter(Boolean)
     : [];
-  if (!statusResult.ok || Number(statusResult.data?.loaded_count) === 0) return fromStatus;
+  if (!statusData || Number(statusData?.loaded_count) === 0) return fromStatus;
 
-  const summaryResult = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
-  const fromSummary = summaryResult.ok
-    ? (Array.isArray(summaryResult.data?.loaded_models) ? summaryResult.data.loaded_models : [])
+  const summaryData = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
+  const fromSummary = summaryData
+    ? (Array.isArray(summaryData?.loaded_models) ? summaryData.loaded_models : [])
         .map((id) => String(id ?? "").trim())
         .filter(Boolean)
     : [];
@@ -542,12 +537,10 @@ async function omlxLoadedModelIds(profile) {
 async function fetchJson(url) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-    if (!response.ok) return { ok: false, reason: "http", status: response.status, data: null };
-    const data = await response.json();
-    return { ok: true, data };
-  } catch (error) {
-    if (error?.name === "AbortError" || error?.name === "TimeoutError") return { ok: false, reason: "timeout", data: null };
-    return { ok: false, reason: "network", data: null };
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
   }
 }
 
@@ -612,10 +605,6 @@ async function pidRssBytes(pid) {
 
 function timestampForFile() {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function quoteShell(value) {

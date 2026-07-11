@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
+import pc from "picocolors";
 
 // ── Base directories ──────────────────────────────────────────────────────
 
@@ -61,7 +62,9 @@ export async function loadConfig() {
     if (error?.code === "ENOENT") {
       // Auto-create config.json with defaults so the user can find and edit it
       await mkdir(dirname(CONFIG_PATH), { recursive: true });
-      await writeFile(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8").catch(() => {});
+      await writeFile(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8").catch((err) => {
+        console.warn(pc.dim(`Warning: could not create config at ${CONFIG_PATH}: ${err.message}`));
+      });
       return { ...DEFAULT_CONFIG };
     }
     throw new Error(
@@ -133,7 +136,7 @@ export async function removeModelScanDir(dir) {
 
 // ── Binary discovery ──────────────────────────────────────────────────────
 
-import { execFileAsync } from "./exec.mjs";
+import { execFileAsync, commandExists } from "./exec.mjs";
 
 export async function findLlamaServer() {
   // 1. Env override
@@ -169,10 +172,5 @@ export async function findLlamaServer() {
 }
 
 export async function hasHomebrew() {
-  try {
-    await execFileAsync("which", ["brew"]);
-    return true;
-  } catch {
-    return false;
-  }
+  return await commandExists("brew");
 }

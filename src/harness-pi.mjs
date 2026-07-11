@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
-import { runCommand, execFileAsync } from "./exec.mjs";
+import { runCommand, commandExists } from "./exec.mjs";
 import pc from "picocolors";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
@@ -87,12 +87,7 @@ export async function launchPi(profile) {
 // ── Check if Pi is installed ───────────────────────────────────────────────
 
 export async function hasPi() {
-  try {
-    await execFileAsync("which", ["pi"]);
-    return true;
-  } catch {
-    return false;
-  }
+  return await commandExists("pi");
 }
 
 // ── Pi setup (skills, packages, web-search) ───────────────────────────────
@@ -119,8 +114,8 @@ export async function setupPiConfig() {
       }
       console.log(pc.green(`✓ Pi skills installed (${skills.filter(s => s.isDirectory()).length} skills)`));
       configured++;
-    } catch {
-      console.log(pc.yellow("  Could not copy Pi skills — they'll still work if you add them manually."));
+    } catch (err) {
+      console.log(pc.yellow(`  Could not copy Pi skills: ${err.message}`));
     }
   }
 
@@ -129,8 +124,8 @@ export async function setupPiConfig() {
     try {
       await runCommand("pi", ["install", pkg], { label: pkg, verbose: true });
       configured++;
-    } catch {
-      console.log(pc.dim(`  Skipped ${pkg} (install failed — install manually: pi install ${pkg})`));
+    } catch (err) {
+      console.log(pc.dim(`  Skipped ${pkg}: ${err.message}`));
     }
   }
 
@@ -144,8 +139,8 @@ export async function setupPiConfig() {
       await writeFile(PI_WEB_SEARCH, content, "utf8");
       console.log(pc.green("✓ Pi web-search config installed"));
       configured++;
-    } catch {
-      console.log(pc.yellow("  Could not copy web-search config."));
+    } catch (err) {
+      console.log(pc.yellow(`  Could not copy web-search config: ${err.message}`));
     }
   }
 
@@ -156,8 +151,8 @@ export async function setupPiConfig() {
       settings.enableSkillCommands = true;
       await writeJson(PI_SETTINGS, settings);
     }
-  } catch {
-    // Non-critical — skills still work, just not as slash commands
+  } catch (err) {
+    console.log(pc.dim(`  Could not enable skill commands: ${err.message}`));
   }
 
   if (configured > 0) {

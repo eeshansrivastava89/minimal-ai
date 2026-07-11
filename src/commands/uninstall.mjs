@@ -22,34 +22,30 @@ export async function uninstallCommand(argv) {
 
   startInteractive("offgrid-ai uninstall");
   const prompt = createPrompt();
-  try {
-    console.log(pc.bold("offgrid-ai uninstall\n"));
-    const running = await runningProfiles();
-    if (running.length > 0) {
-      console.log(pc.yellow(`${running.length} server(s) still running. Stopping...`));
-      for (const { profile } of running) await stopProfile(profile);
-      console.log(pc.green("All servers stopped."));
-    }
-
-    const mode = await prompt.choice("Choose uninstall type", [
-      { value: "keep-data", label: "Uninstall app only", hint: `keep profiles and settings in ${DATA_DIR}` },
-      { value: "delete-data", label: "Full uninstall", hint: "delete profiles/settings, then uninstall app" },
-      { value: "cancel", label: "Cancel" },
-    ], "keep-data");
-
-    if (mode === "cancel") {
-      console.log(pc.dim("Cancelled."));
-      return;
-    }
-
-    if (mode === "delete-data") await removeDataDir();
-    else console.log(pc.dim(`Keeping ${DATA_DIR} for when you reinstall.`));
-
-    await removeShellPath();
-    await removeSelf();
-  } finally {
-    prompt.close();
+  console.log(pc.bold("offgrid-ai uninstall\n"));
+  const running = await runningProfiles();
+  if (running.length > 0) {
+    console.log(pc.yellow(`${running.length} server(s) still running. Stopping...`));
+    for (const { profile } of running) await stopProfile(profile);
+    console.log(pc.green("All servers stopped."));
   }
+
+  const mode = await prompt.choice("Choose uninstall type", [
+    { value: "keep-data", label: "Uninstall app only", hint: `keep profiles and settings in ${DATA_DIR}` },
+    { value: "delete-data", label: "Full uninstall", hint: "delete profiles/settings, then uninstall app" },
+    { value: "cancel", label: "Cancel" },
+  ], "keep-data");
+
+  if (mode === "cancel") {
+    console.log(pc.dim("Cancelled."));
+    return;
+  }
+
+  if (mode === "delete-data") await removeDataDir();
+  else console.log(pc.dim(`Keeping ${DATA_DIR} for when you reinstall.`));
+
+  await removeShellPath();
+  await removeSelf();
 }
 
 async function stopTrackedServers() {
@@ -89,8 +85,8 @@ async function removeSelf() {
     await runCommand("npm", ["uninstall", "-g", "offgrid-ai"], { label: "npm uninstall", verbose: process.argv.includes("--verbose") });
     console.log(pc.green("\n✓ offgrid-ai has been uninstalled."));
     console.log(pc.dim("Reinstall anytime with: npm install -g offgrid-ai@latest --prefer-online"));
-  } catch {
-    console.log(pc.red("\n✗ Could not auto-uninstall. Run this manually:"));
+  } catch (err) {
+    console.log(pc.red(`\n✗ Could not auto-uninstall: ${err.message}`));
     console.log(pc.bold("  npm uninstall -g offgrid-ai"));
   }
 }

@@ -5,8 +5,9 @@ import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, 
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, hasHomebrew, omlxEnabled, ollamaEnabled } from "./config.mjs";
-import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, serverReady as ollamaServerReady } from "./ollama-runtime.mjs";
-import { runCommand, commandExists } from "./exec.mjs";
+import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
+import { serverReady } from "./server-check.mjs";
+import { runCommand, commandExists, sleep } from "./exec.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -33,17 +34,9 @@ export async function downloadFlow(prompt) {
   if (omlxOn) {
     methodChoices.push({ value: "omlx", label: "Download an oMLX model" });
   }
-  methodChoices.push({ value: "recommended", label: "Recommended for your machine" });
   const method = await prompt.choice("Download a model", methodChoices, "hf");
 
   if (!method) return false;
-
-  // ── Recommended: stub — links to README ─────────────────────────────────
-  if (method === "recommended") {
-    console.log(pc.dim("See recommended models for your hardware at:"));
-    console.log(pc.dim("  https://github.com/eeshansrivastava89/offgrid-ai#recommended-models"));
-    return false;
-  }
 
   // ── oMLX: stub — oMLX manages its own downloads ──────────────────────────
   if (method === "omlx") {
@@ -227,15 +220,16 @@ async function downloadViaOllama(prompt, modelRef) {
 
   // Ensure server is running
   await ensureOllamaServer();
-  if (!(await ollamaServerReady())) {
+  const OLLAMA_V1 = "http://127.0.0.1:11434/v1";
+  if (!(await serverReady(OLLAMA_V1))) {
     process.stdout.write(pc.dim("Waiting for Ollama server"));
     for (let i = 0; i < 30; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      if (await ollamaServerReady()) break;
+      await sleep(1000);
+      if (await serverReady(OLLAMA_V1)) break;
       process.stdout.write(".");
     }
     console.log("");
-    if (!(await ollamaServerReady())) {
+    if (!(await serverReady(OLLAMA_V1))) {
       console.log(pc.yellow("Ollama server is starting up — try again in a moment."));
       console.log(pc.dim("  Run: ollama serve"));
       return false;
