@@ -80,6 +80,23 @@ offgrid-ai stop         # stop the running model
 offgrid-ai uninstall    # remove offgrid-ai
 ```
 
+## Recommended models
+
+These are good starting points sorted by minimum RAM. All are available on HuggingFace — paste the repo ID into offgrid-ai's "Download a model from Hugging Face" option.
+
+| Model | Min RAM | GGUF (llama.cpp) | MLX |
+|-------|---------|------------------|-----|
+| Qwen 3.5 4B (Q4_K_M) | 8 GB | [`unsloth/Qwen3.5-4B-GGUF`](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | [`mlx-community/Qwen3.5-4B-4bit`](https://huggingface.co/mlx-community/Qwen3.5-4B-4bit) |
+| Qwen 3.5 9B (Q4_K_S) | 16 GB | [`unsloth/Qwen3.5-9B-GGUF`](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | [`lmstudio-community/Qwen3.5-9B-MLX-4bit`](https://huggingface.co/lmstudio-community/Qwen3.5-9B-MLX-4bit) |
+| Gemma 4 12B (Q4_K_XL) | 24 GB | [`unsloth/gemma-4-12B-it-qat-GGUF`](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | [`mlx-community/gemma-4-12B-it-qat-4bit`](https://huggingface.co/mlx-community/gemma-4-12B-it-qat-4bit) |
+| Gemma 4 26B (Q4_K_XL) | 32 GB | [`unsloth/gemma-4-26B-A4B-it-qat-GGUF`](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | [`mlx-community/gemma-4-26b-a4b-4bit`](https://huggingface.co/mlx-community/gemma-4-26b-a4b-4bit) |
+| Qwen 3.6 35B (Q4_K_S) | 32 GB | [`unsloth/Qwen3.6-35B-A3B-GGUF`](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) | [`mlx-community/Qwen3.6-35B-A3B-4bit`](https://huggingface.co/mlx-community/Qwen3.6-35B-A3B-4bit) |
+| Qwen 3.6 35B (Q4_K_M) | 48 GB | [`unsloth/Qwen3.6-35B-A3B-GGUF`](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) | — |
+| Gemma 4 31B (Q4_K_XL) | 64 GB | [`unsloth/gemma-4-31B-it-qat-GGUF`](https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF) | [`mlx-community/gemma-4-31b-4bit`](https://huggingface.co/mlx-community/gemma-4-31b-4bit) |
+| Qwen 3.6 27B (Q4_K_M) | 64 GB | [`unsloth/Qwen3.6-27B-MTP-GGUF`](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF) | [`mlx-community/Qwen3.6-27B-4bit`](https://huggingface.co/mlx-community/Qwen3.6-27B-4bit) |
+
+> **Tip:** When downloading GGUF, offgrid-ai shows a quant picker with RAM fit indicators so you can choose the right quantization for your machine.
+
 ## Platform support
 
 - **macOS (Apple Silicon)** — full support: llama.cpp (GGUF) + oMLX (MLX)

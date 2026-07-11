@@ -3,7 +3,6 @@
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
-import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, hasHomebrew, omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, serverReady as ollamaServerReady } from "./ollama-runtime.mjs";
@@ -27,7 +26,6 @@ export async function downloadFlow(prompt) {
 
   const methodChoices = [
     { value: "hf", label: "Download a model from Hugging Face" },
-    { value: "recommended", label: "Recommended for your machine" },
   ];
   if (ollamaOn) {
     methodChoices.push({ value: "ollama", label: "Download an Ollama model" });
@@ -35,9 +33,17 @@ export async function downloadFlow(prompt) {
   if (omlxOn) {
     methodChoices.push({ value: "omlx", label: "Download an oMLX model" });
   }
+  methodChoices.push({ value: "recommended", label: "Recommended for your machine" });
   const method = await prompt.choice("Download a model", methodChoices, "hf");
 
   if (!method) return false;
+
+  // ── Recommended: stub — links to README ─────────────────────────────────
+  if (method === "recommended") {
+    console.log(pc.dim("See recommended models for your hardware at:"));
+    console.log(pc.dim("  https://github.com/eeshansrivastava89/offgrid-ai#recommended-models"));
+    return false;
+  }
 
   // ── oMLX: stub — oMLX manages its own downloads ──────────────────────────
   if (method === "omlx") {
@@ -51,66 +57,18 @@ export async function downloadFlow(prompt) {
     return await ollamaDownloadFlow(prompt);
   }
 
-  // ── HuggingFace: manual repo entry or recommended ────────────────────────
-  let repo, filename, format = null;
+  // ── HuggingFace: manual repo entry ───────────────────────────────────────
+  let repo, filename;
 
-  if (method === "recommended") {
-    const hardware = detectHardware();
-    const models = allFittingModels(hardware);
-    if (models.length === 0) {
-      console.log(pc.yellow("No recommended models fit your hardware."));
-      console.log(pc.dim("You can still enter a repo ID manually."));
-      return false;
-    }
-    const choices = models.map((m) => ({
-      value: m,
-      label: `${pc.bold(m.label)}  ${pc.dim(`(${m.minRamGb} GB RAM min)`)}`,
-    }));
-    const selected = await prompt.choice("Select a model", choices, choices[0].value);
-    if (!selected) return false;
-
-    // Determine available formats (ignore empty strings)
-    const hasGguf = Boolean(selected.gguf);
-    const hasMlx = Boolean(selected.mlx && selected.mlx.trim());
-
-    if (hasGguf && hasMlx) {
-      const formatChoices = [
-        { value: "gguf", label: `GGUF (llama.cpp) — ${selected.gguf.split("/").pop()}` },
-        { value: "mlx", label: `MLX — ${selected.mlx}` },
-      ];
-      format = await prompt.choice("Download format", formatChoices, "gguf");
-      if (!format) return false;
-    } else if (hasGguf) {
-      format = "gguf";
-    } else if (hasMlx) {
-      format = "mlx";
-    } else {
-      console.log(pc.yellow("No download path available for this model."));
-      return false;
-    }
-
-    if (format === "gguf") {
-      const ref = parseHfRef(selected.gguf);
-      repo = ref.repo;
-      filename = ref.filename;
-    } else {
-      repo = selected.mlx;
-      filename = undefined;
-    }
-  } else {
-    // Manual HuggingFace repo entry
-    console.log(pc.dim("  Browse models at huggingface.co/models"));
-    const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
-    if (!input || !input.trim()) return false;
-    const ref = parseHfRef(input.trim());
-    repo = ref.repo;
-    filename = ref.filename;
-  }
+  console.log(pc.dim("  Browse models at huggingface.co/models"));
+  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
+  if (!input || !input.trim()) return false;
+  const ref = parseHfRef(input.trim());
+  repo = ref.repo;
+  filename = ref.filename;
 
   // For GGUF repos without a specific file, show quant picker.
-  // Skip when the user already chose MLX from the recommended list —
-  // format is known, no detection needed.
-  if (!filename && format !== "mlx") {
+  if (!filename) {
     let ggufFiles;
     try {
       ggufFiles = await listGgufFiles(repo);
@@ -155,10 +113,10 @@ export async function downloadFlow(prompt) {
   }
 
   // Resolve download plan
-  const ref = filename ? `${repo}/${filename}` : repo;
+  const downloadRef = filename ? `${repo}/${filename}` : repo;
   let plan;
   try {
-    plan = await resolveHfDownload(ref);
+    plan = await resolveHfDownload(downloadRef);
   } catch (err) {
     console.log(pc.red(`Could not resolve download: ${err.message}`));
     return false;
