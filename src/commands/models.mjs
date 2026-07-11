@@ -2,7 +2,7 @@ import { ensureDirs, omlxEnabled, ollamaEnabled, benchmarkingEnabled } from "../
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, isProfileServerUp, modelAvailableOnServer, stopProfile, unloadModelFromServer } from "../process.mjs";
+import { isProfileRunning, modelAvailableOnServer, stopProfile, unloadModelFromServer } from "../process.mjs";
 import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
@@ -12,6 +12,7 @@ import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, nor
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
 import { downloadFlow } from "../download.mjs";
+import { serverReady } from "../server-check.mjs";
 import { resolveBenchyModel, benchmarkItem } from "./models-benchmark.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { settingsFlow } from "./models-settings.mjs";
@@ -54,7 +55,7 @@ async function showModelPicker(catalog) {
       runningProfilesNow.push(profile);
       continue;
     }
-    if (backendFor(profile.backend).type === "managed-server" && await isProfileServerUp(profile)) {
+    if (backendFor(profile.backend).type === "managed-server" && await serverReady(profile.baseUrl)) {
       if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
   }

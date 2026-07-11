@@ -6,7 +6,7 @@ import { HF_HUB_DIR } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { isProfileRunning, stopProfile } from "../process.mjs";
 import { removeFromPiConfig } from "../harness-pi.mjs";
-import { deleteProfile } from "../profiles.mjs";
+import { deleteProfile, effectiveModelId } from "../profiles.mjs";
 import { deleteOllamaModel } from "../ollama-runtime.mjs";
 import { offerOmlxRestart } from "../omlx-runtime.mjs";
 import { findOmlxModelDir } from "../mlx-discovery.mjs";
@@ -19,7 +19,7 @@ export async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     if (backend.type === "managed-server") {
-      const modelId = item.profile.omlxModel || item.profile.ollamaModel || item.profile.modelAlias || item.profile.id;
+      const modelId = effectiveModelId(item.profile);
       if (backend.id === "ollama") {
         return { kind: "ollama", modelId };
       }

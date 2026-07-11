@@ -10,7 +10,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { unlink, mkdir, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCommand, execFileAsync } from "./exec.mjs";
+import { execCommand, execFileAsync } from "./exec.mjs";
 import { pc, formatBytes } from "./ui.mjs";
 
 // Legacy shim path from the old DMG-based install. Kept for backward
@@ -196,7 +196,7 @@ export async function installOmlx() {
   console.log(pc.cyan(`Downloading oMLX ${release.tag_name} (${formatBytes(dmg.size)})...`));
   console.log(pc.dim("  This is a large download — it may take a few minutes.\n"));
   try {
-    await runCommand("curl", ["-L", "--progress-bar", "-o", tmpDmg, dmg.url], { label: "oMLX DMG", verbose: true });
+    await execCommand("curl", ["-L", "--progress-bar", "-o", tmpDmg, dmg.url], { label: "oMLX DMG", verbose: true });
   } catch (err) {
     console.log(pc.red(`Download failed: ${err.message}`));
     return false;

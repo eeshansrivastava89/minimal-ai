@@ -1,5 +1,5 @@
 import { scanGgufModels, matchDrafter } from "./scan.mjs";
-import { loadProfiles, normalizeProfile, sanitizeProfileId } from "./profiles.mjs";
+import { loadProfiles, normalizeProfile, sanitizeProfileId, managedModelId } from "./profiles.mjs";
 import { scanManagedModels } from "./managed.mjs";
 import { isProfileFileMissing } from "./model-summary.mjs";
 import { backendFor } from "./backends.mjs";
@@ -24,7 +24,7 @@ export function normalizeCatalog(catalog) {
     const profiledAliases = new Set(
       profiles
         .filter((profile) => profile.backend === backendId)
-        .map((profile) => `${backendId}:${profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias}`),
+        .map((profile) => `${backendId}:${managedModelId(profile) ?? profile.modelAlias}`),
     );
     for (const model of models) {
       if (!profiledAliases.has(`${backendId}:${model.id}`)) managedItems.push({ model, backendId });
@@ -78,11 +78,14 @@ export function buildCatalogItems(normalized) {
     }
     if (!quant) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
-        if (managedModel) {
-          item.label = managedModel.label;
-          if (managedModel.quant) quant = managedModel.quant;
+      if (backend.type === "managed-server") {
+        const mid = managedModelId(profile);
+        if (mid) {
+          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
+          if (managedModel) {
+            item.label = managedModel.label;
+            if (managedModel.quant) quant = managedModel.quant;
+          }
         }
       }
     }
@@ -96,9 +99,12 @@ export function buildCatalogItems(normalized) {
     }
     if (!sizeBytes) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
-        if (managedModel?.sizeBytes) sizeBytes = managedModel.sizeBytes;
+      if (backend.type === "managed-server") {
+        const mid = managedModelId(profile);
+        if (mid) {
+          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
+          if (managedModel?.sizeBytes) sizeBytes = managedModel.sizeBytes;
+        }
       }
     }
     item.sizeBytes = sizeBytes || null;
@@ -112,9 +118,12 @@ export function buildCatalogItems(normalized) {
     }
     if (!contextLength) {
       const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server" && (profile.omlxModel || profile.ollamaModel)) {
-        const managedModel = managedByKey.get(`${profile.backend}:${profile.omlxModel ?? profile.ollamaModel}`);
-        if (managedModel?.contextLength) contextLength = managedModel.contextLength;
+      if (backend.type === "managed-server") {
+        const mid = managedModelId(profile);
+        if (mid) {
+          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
+          if (managedModel?.contextLength) contextLength = managedModel.contextLength;
+        }
       }
     }
     item.contextLength = contextLength;
@@ -146,6 +155,8 @@ export function buildCatalogItems(normalized) {
 }
 
 export function createManagedProfile(model, backendId) {
+  const backend = backendFor(backendId);
+  const primaryField = backend.modelIdFields?.[0];
   return normalizeProfile({
     id: `${backendId}-${sanitizeProfileId(model.id)}`,
     label: model.label,
@@ -153,7 +164,6 @@ export function createManagedProfile(model, backendId) {
     source: backendId,
     modelAlias: model.aliasSuggestion,
     modelSizeBytes: model.sizeBytes || 0,
-    ...(backendId === "omlx" ? { omlxModel: model.id } : {}),
-    ...(backendId === "ollama" ? { ollamaModel: model.id } : {}),
+    ...(primaryField ? { [primaryField]: model.id } : {}),
   });
 }

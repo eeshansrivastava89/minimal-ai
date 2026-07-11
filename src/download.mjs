@@ -1,16 +1,13 @@
 // Model download flow — HuggingFace + Ollama downloads with quant picker.
 // Used by onboarding (no models found) and the model picker (↓ Download a model).
 
-import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo } from "./huggingface.mjs";
+import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { HF_HUB_DIR, hasHomebrew, omlxEnabled, ollamaEnabled } from "./config.mjs";
+import { HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
-import { runCommand, commandExists, sleep } from "./exec.mjs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { sleep } from "./exec.mjs";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
 
 const GB = 1024 ** 3;
@@ -297,69 +294,4 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
 
   const defaultValue = recommended?.path;
   return await prompt.choice("Quantization", choices, defaultValue);
-}
-
-// ── HuggingFace CLI installation ─────────────────────────────────────────────
-
-/**
- * Install the HuggingFace CLI. Tries, in order:
- *   1. Standalone installer (`curl -LsSf https://hf.co/cli/install.sh | bash`)
- *      HF's recommended method, no Python or Homebrew needed
- *   2. Homebrew (`brew install hf`) — handles Python dependency automatically
- *   3. pip3 / python3 -m pip — traditional fallback if Python is available
- * @returns {Promise<boolean>} true if hf CLI is available after install
- */
-export async function installHfCli() {
-  console.log(pc.cyan("Installing HuggingFace CLI..."));
-
-  // 1. Standalone installer (HF recommended — zero dependencies)
-  try {
-    await runCommand("/bin/bash", ["-c", "curl -LsSf https://hf.co/cli/install.sh | bash"], { label: "hf standalone", verbose: true });
-    // The installer puts hf in ~/.local/bin — add to PATH for this process
-    const localBin = join(homedir(), ".local", "bin");
-    if (existsSync(localBin) && !process.env.PATH.includes(localBin)) {
-      process.env.PATH = `${localBin}:${process.env.PATH}`;
-    }
-    if (await hasHfCli()) {
-      console.log(pc.green("HuggingFace CLI installed via standalone installer."));
-      return true;
-    }
-  } catch { /* fall through to Homebrew */ }
-
-  // 2. Homebrew (macOS / Linuxbrew)
-  if (await hasHomebrew()) {
-    try {
-      await runCommand("brew", ["install", "hf"], { label: "hf", verbose: true });
-      if (await hasHfCli()) {
-        console.log(pc.green("HuggingFace CLI installed via Homebrew."));
-        return true;
-      }
-    } catch { /* fall through to pip */ }
-  }
-
-  // 3. pip3 / python3 -m pip (requires Python)
-  try {
-    if (await commandExists("pip3")) {
-      await runCommand("pip3", ["install", "huggingface_hub"], { label: "huggingface_hub", verbose: true });
-    } else if (await commandExists("python3")) {
-      await runCommand("python3", ["-m", "pip", "install", "huggingface_hub"], { label: "huggingface_hub", verbose: true });
-    } else {
-      console.log(pc.red("Could not install HuggingFace CLI — no Homebrew, standalone installer, or Python found."));
-      console.log(pc.dim("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
-      return false;
-    }
-  } catch (err) {
-    console.log(pc.red(`Installation failed: ${err.message}`));
-    console.log(pc.dim("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
-    return false;
-  }
-
-  // Verify it's now available
-  if (!(await hasHfCli())) {
-    console.log(pc.yellow("HuggingFace CLI was installed but not found on PATH."));
-    console.log(pc.dim("Restart your terminal and run offgrid-ai again."));
-    return false;
-  }
-  console.log(pc.green("HuggingFace CLI installed."));
-  return true;
 }

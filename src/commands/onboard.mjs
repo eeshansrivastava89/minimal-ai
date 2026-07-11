@@ -1,9 +1,8 @@
 import { ensureDirs, findLlamaServer } from "../config.mjs";
 import { hasPi, setupPiConfig } from "../harness-pi.mjs";
 import { latestLlamaRelease, installLlamaRelease } from "../runtime.mjs";
-import { installHfCli } from "../download.mjs";
-import { hasHfCli } from "../huggingface.mjs";
-import { runCommand } from "../exec.mjs";
+import { hasHfCli, installHfCli } from "../huggingface.mjs";
+import { execCommand } from "../exec.mjs";
 import { pc, startInteractive, createPrompt } from "../ui.mjs";
 
 /**
@@ -76,7 +75,7 @@ export async function onboardFlow() {
     console.log();
     console.log(pc.cyan("Installing Pi..."));
     try {
-      await runCommand("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], { label: "Pi", verbose: true });
+      await execCommand("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], { label: "Pi", verbose: true });
       if (await hasPi()) {
         console.log(pc.green("✓ Pi installed"));
         await setupPiConfig();

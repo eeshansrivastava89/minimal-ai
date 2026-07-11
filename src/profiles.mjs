@@ -29,9 +29,31 @@ export function sanitizeProfileId(value) {
   return String(value).trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-|-$/gu, "") || "profile";
 }
 
-/** Resolve the canonical model ID from a profile, checking backend-specific fields. */
+/**
+ * Resolve the canonical model ID from a profile.
+ * Checks backend-specific fields (defined in BACKENDS[backend].modelIdFields)
+ * in order, then falls back to modelAlias and profile.id.
+ * New backends just add their modelIdFields to BACKENDS — no changes here.
+ */
 export function effectiveModelId(profile) {
-  return profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+  const backend = BACKENDS[profile.backend];
+  for (const field of backend?.modelIdFields ?? []) {
+    if (profile[field] != null) return profile[field];
+  }
+  return profile.modelAlias ?? profile.id;
+}
+
+/**
+ * Resolve the backend-specific model ID (without generic fallbacks).
+ * Only checks modelIdFields — returns null if none are set.
+ * Used to match profiles against managed-server model listings.
+ */
+export function managedModelId(profile) {
+  const backend = BACKENDS[profile.backend];
+  for (const field of backend?.modelIdFields ?? []) {
+    if (profile[field] != null) return profile[field];
+  }
+  return null;
 }
 
 // ── CRUD ───────────────────────────────────────────────────────────────────

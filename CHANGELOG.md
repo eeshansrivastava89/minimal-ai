@@ -4,6 +4,22 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.24.0] - 2026-07-11
+
+### Added
+- **Load-all-modules test** — every `.mjs` file in `src/` and `src/commands/` is now dynamically imported at test time. If any module has a broken import (imports symbol X from module A when X lives in module B), the test fails at load time. This catches the #1 recurring bug class that ESLint's `no-undef` cannot detect.
+- **Named-import validation script** (`scripts/verify-imports.mjs`) — parses every `.mjs` file, extracts named imports, and verifies the source module actually exports those names. Runs as part of `npm test` before the test suite. Catches the "imported from wrong module" bug class that caused the v0.23.1 regression.
+
+### Changed
+- **Data-driven model ID resolution** — `effectiveModelId` and new `managedModelId` now read `modelIdFields` from the backend definition in `BACKENDS`, replacing 13+ hardcoded `omlxModel ?? ollamaModel ?? modelAlias` chains across 7 files. New backends just add `modelIdFields` to their `BACKENDS` entry — no changes to any other file.
+- **`createManagedProfile` data-driven** — no longer hardcodes `omlx`/`ollama` backend IDs; uses `modelIdFields[0]` from the backend definition.
+- **`runCommand` renamed to `execCommand`** in `exec.mjs` — was colliding with the CLI handler `runCommand` in `commands/run.mjs`. Same name, completely different semantics; grep couldn't distinguish them. All 6 importers updated.
+- **`installHfCli` moved to `huggingface.mjs`** — was in `download.mjs` but all other HuggingFace CLI functions live in `huggingface.mjs`. This was the exact kind of misplaced export that caused the v0.23.1 wrong-source import bug.
+- **`isProfileServerUp` removed** — was a 1-line wrapper around `serverReady(profile.baseUrl)` adding no value. Sole caller updated to use `serverReady` directly.
+- **`serverReady` import path standardized** — all 7 importers now import directly from `server-check.mjs`. Removed from `process.mjs` barrel.
+- **Removed orphaned `recommendations.mjs`** — no production code imported it; only a test did. `resources/recommendations.json` removed from npm package.
+- Health: 6,881 LLOC, complexity 1,297, 0 circular deps, 0 lint warnings, 110/110 tests.
+
 ## [0.23.1] - 2026-07-11
 
 ### Fixed

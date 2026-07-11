@@ -7,10 +7,10 @@
 // models auto-load on request and auto-unload after idle timeout.
 
 import { spawn } from "node:child_process";
-import { runCommand, execFileAsync, commandExists, sleep } from "./exec.mjs";
+import { execCommand, execFileAsync, commandExists, sleep } from "./exec.mjs";
 import { pc } from "./ui.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { serverReady } from "./server-check.mjs";;
+import { serverReady } from "./server-check.mjs";
 
 const OLLAMA_PORT = 11434;
 const OLLAMA_HOST = "127.0.0.1";
@@ -118,7 +118,7 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
     try {
       console.log(pc.dim(`${verb} Ollama via Homebrew...`));
       try {
-        await runCommand("brew", [brewCmd, "ollama"], { label: "ollama", verbose: true });
+        await execCommand("brew", [brewCmd, "ollama"], { label: "ollama", verbose: true });
       } catch (brewErr) {
         if (await hasOllama()) {
           console.log(pc.yellow("Homebrew completed with warnings (link conflicts)."));
@@ -141,7 +141,7 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
   // 2. Official curl installer
   try {
     console.log(pc.dim(`${verb} Ollama via official installer...`));
-    await runCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
+    await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
     if (await hasOllama()) {
       console.log(pc.green(`✓ Ollama ${upgrade ? "updated" : "installed"}.`));
       await startAndWaitForServer();
@@ -284,7 +284,7 @@ export async function pullOllamaModel(modelRef) {
   if (!bin) throw new Error("Ollama is not installed");
   console.log(pc.dim(`\nPulling ${modelRef}...`));
   try {
-    await runCommand(bin, ["pull", modelRef], { label: "ollama pull", verbose: true });
+    await execCommand(bin, ["pull", modelRef], { label: "ollama pull", verbose: true });
     console.log(pc.green(`\n✓ ${modelRef} pulled.`));
     return true;
   } catch (err) {

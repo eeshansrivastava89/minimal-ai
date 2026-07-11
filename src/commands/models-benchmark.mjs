@@ -3,7 +3,9 @@ import { spawn } from "node:child_process";
 import { HF_HUB_DIR } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { readProfile } from "../profiles.mjs";
-import { stopProfile, serverReady, unloadModelFromServer } from "../process.mjs";
+import { effectiveModelId } from "../profiles.mjs";
+import { stopProfile, unloadModelFromServer } from "../process.mjs";
+import { serverReady } from "../server-check.mjs";
 import { runProfile } from "./run.mjs";
 import { createPrompt, pc } from "../ui.mjs";
 import { commandExists } from "../exec.mjs";
@@ -23,7 +25,7 @@ import { hfRepoFromPath } from "../huggingface.mjs";
  */
 export function resolveBenchyModel(profile, isManaged) {
   if (isManaged) {
-    const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+    const modelId = effectiveModelId(profile);
 
     // oMLX: model IDs are bare names (e.g. "Qwen3.6-35B-A3B-OptiQ-4bit"),
     // not HF namespace/model. No reliable way to get a tokenizer.

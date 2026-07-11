@@ -9,6 +9,7 @@ import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
+import { effectiveModelId } from "./profiles.mjs";
 import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
 import { ollamaModelInfo } from "./ollama-runtime.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults, applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults } from "./profile-flags.mjs";
@@ -408,7 +409,7 @@ export async function configureManagedProfile(prompt, profile) {
 
 async function configureOmlxProfile(prompt, profile) {
   let configured = profile;
-  const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
+  const modelId = effectiveModelId(profile);
 
   // Detect MTP capability from the model's config.json
   const modelDir = await findOmlxModelDir(modelId);
@@ -450,7 +451,7 @@ async function configureOmlxProfile(prompt, profile) {
 
 async function configureOllamaProfile(prompt, profile) {
   let configured = profile;
-  const modelId = profile.ollamaModel ?? profile.modelAlias ?? profile.id;
+  const modelId = effectiveModelId(profile);
 
   // Query Ollama for model details (capabilities, parameters)
   let capabilities = [];

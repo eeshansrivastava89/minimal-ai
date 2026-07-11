@@ -1,6 +1,6 @@
 import { ensureDirs, omlxEnabled } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
-import { loadProfiles } from "../profiles.mjs";
+import { loadProfiles, effectiveModelId } from "../profiles.mjs";
 import { profileRuntimeStatus } from "../process.mjs";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -63,7 +63,7 @@ export async function statusCommand() {
     const detailRows = [];
     for (const { profile, status } of [...managedUpMissing, ...managedUpNotLoaded]) {
       const backend = backendFor(profile.backend);
-      const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
+      const modelId = effectiveModelId(profile);
       const state = status.modelAvailable
         ? pc.yellow("server up · model not loaded")
         : pc.red("server up · model missing");

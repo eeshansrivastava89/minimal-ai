@@ -17,10 +17,6 @@ export async function isProfileRunning(profile) {
   return Boolean(state?.pid && pidAlive(state.pid));
 }
 
-export async function isProfileServerUp(profile) {
-  return await serverReady(profile.baseUrl);
-}
-
 export async function modelLoadedOnServer(profile) {
   const backend = backendFor(profile.backend);
   if (backend.id === "omlx") return modelIdsMatch(await omlxLoadedModelIds(profile), expectedModelIds(profile));

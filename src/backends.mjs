@@ -30,6 +30,7 @@ export const BACKENDS = {
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_PORT }),
     needsCommandFile: true,
     scanModels: async () => (await scanGgufModels()).models,
+    modelIdFields: ["modelAlias"],
   },
   "omlx": {
     id: "omlx",
@@ -42,6 +43,7 @@ export const BACKENDS = {
     apiBaseUrl: baseUrlFor({ port: OMLX_PORT, path: "" }),
     needsCommandFile: false,
     scanModels: () => scanOmlxModels(),
+    modelIdFields: ["omlxModel", "modelAlias"],
   },
   "ollama": {
     id: "ollama",
@@ -54,6 +56,7 @@ export const BACKENDS = {
     apiBaseUrl: baseUrlFor({ port: OLLAMA_PORT, path: "" }),
     needsCommandFile: false,
     scanModels: () => scanOllamaModels(),
+    modelIdFields: ["ollamaModel", "modelAlias"],
   },
 };
 

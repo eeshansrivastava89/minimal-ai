@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 export const execFileAsync = promisify(execFile);
 
-export function runCommand(cmd, args, { label = cmd, verbose = false } = {}) {
+export function execCommand(cmd, args, { label = cmd, verbose = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: verbose ? "inherit" : ["ignore", "pipe", "pipe"] });
     let stderr = "";

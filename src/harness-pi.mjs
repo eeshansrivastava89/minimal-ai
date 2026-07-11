@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
-import { runCommand, commandExists } from "./exec.mjs";
+import { execCommand, commandExists } from "./exec.mjs";
 import pc from "picocolors";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
@@ -122,7 +122,7 @@ export async function setupPiConfig() {
   // 2. Install Pi packages (web access, powerline footer, smart fetch)
   for (const pkg of PI_PACKAGES) {
     try {
-      await runCommand("pi", ["install", pkg], { label: pkg, verbose: true });
+      await execCommand("pi", ["install", pkg], { label: pkg, verbose: true });
       configured++;
     } catch (err) {
       console.log(pc.dim(`  Skipped ${pkg}: ${err.message}`));

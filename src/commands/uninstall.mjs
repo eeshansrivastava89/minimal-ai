@@ -2,7 +2,7 @@ import { existsSync, rmSync } from "node:fs";
 import { DATA_DIR } from "../config.mjs";
 import { removeInstallerPathEntries } from "../shell-path.mjs";
 import { stopProfile } from "../process.mjs";
-import { runCommand } from "../exec.mjs";
+import { execCommand } from "../exec.mjs";
 import { pc, startInteractive, createPrompt, parseOptions } from "../ui.mjs";
 import { runningProfiles } from "./stop.mjs";
 
@@ -82,7 +82,7 @@ async function removeShellPath() {
 async function removeSelf() {
   console.log(pc.cyan("\nUninstalling offgrid-ai..."));
   try {
-    await runCommand("npm", ["uninstall", "-g", "offgrid-ai"], { label: "npm uninstall", verbose: process.argv.includes("--verbose") });
+    await execCommand("npm", ["uninstall", "-g", "offgrid-ai"], { label: "npm uninstall", verbose: process.argv.includes("--verbose") });
     console.log(pc.green("\n✓ offgrid-ai has been uninstalled."));
     console.log(pc.dim("Reinstall anytime with: npm install -g offgrid-ai@latest --prefer-online"));
   } catch (err) {

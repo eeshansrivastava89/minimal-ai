@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
-import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
-import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
+import { normalizeProfile, readProfile, saveProfile, effectiveModelId } from "../profiles.mjs";
+import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
+import { serverReady } from "../server-check.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
@@ -32,7 +33,7 @@ export async function runProfile(profile, options = {}) {
     }
     const available = await modelAvailableOnServer(profile);
     if (!available) {
-      const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+      const modelId = effectiveModelId(profile);
       throw new Error(`${modelId} is not available on ${backend.label} at ${profile.baseUrl}.`);
     }
     console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
@@ -51,7 +52,7 @@ export async function runProfile(profile, options = {}) {
     } else {
       try { await unloadModelFromServer(profile); } catch { /* best effort */ }
     }
-    const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+    const modelId = effectiveModelId(profile);
     throw new Error(`Model "${modelId}" failed to generate a test token: ${preflight.error}. The server was ready but the model could not load or infer. Check the model format and backend compatibility.`);
   }
   console.log(pc.green("[preflight] Model loaded and generated a test token."));

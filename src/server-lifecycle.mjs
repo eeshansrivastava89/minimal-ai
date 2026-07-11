@@ -3,7 +3,7 @@ import { closeSync, openSync } from "node:fs";
 import { writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
-import { writeState, readState, profileDir } from "./profiles.mjs";
+import { writeState, readState, profileDir, effectiveModelId } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
 import { startOmlxServer } from "./omlx-runtime.mjs";
 import { startOllamaServer, unloadOllamaModel } from "./ollama-runtime.mjs";
@@ -119,7 +119,7 @@ async function startManagedServer(profile, backend) {
  */
 async function ensureOmlxMtpSetting(profile) {
   const baseUrl = apiRootUrl(profile.baseUrl);
-  const modelId = profile.omlxModel ?? profile.modelAlias ?? profile.id;
+  const modelId = effectiveModelId(profile);
   const settingsUrl = `${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`;
   try {
     const response = await fetch(settingsUrl, {
@@ -251,7 +251,7 @@ export async function unloadModelFromServer(profile) {
 }
 
 async function unloadOllamaModelFromServer(profile) {
-  const modelId = profile.ollamaModel || profile.modelAlias || profile.id;
+  const modelId = effectiveModelId(profile);
   try {
     const ok = await unloadOllamaModel(modelId);
     if (ok) return { unloaded: true, backend: "ollama", modelId };
@@ -263,7 +263,7 @@ async function unloadOllamaModelFromServer(profile) {
 
 async function unloadOmlxModel(profile) {
   const adminUrl = `${apiRootUrl(profile.baseUrl)}/admin/api/models`;
-  const modelId = profile.modelAlias || profile.omlxModel || profile.id;
+  const modelId = effectiveModelId(profile);
 
   try {
     const ids = await serverModelIds(profile.baseUrl);

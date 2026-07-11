@@ -1,6 +1,6 @@
 {
   "name": "offgrid-ai",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, and chat",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
@@ -11,7 +11,6 @@
     "bin/*.mjs",
     "src/*.mjs",
     "src/commands/*.mjs",
-    "resources/recommendations.json",
     "resources/web-search.json",
     "resources/skills/",
     "CHANGELOG.md",
@@ -33,7 +32,7 @@
   },
   "scripts": {
     "start": "node bin/offgrid-ai.mjs",
-    "test": "node --test test/*.mjs",
+    "test": "node scripts/verify-imports.mjs && node --test test/*.mjs",
     "test:integration": "OFFGRID_INTEGRATION=1 node --test test/integration/*.mjs",
     "lint": "eslint src/*.mjs src/commands/*.mjs scripts/*.mjs bin/*.mjs",
     "check:privacy": "node scripts/privacy-gate.mjs",

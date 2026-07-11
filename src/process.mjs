@@ -11,7 +11,6 @@ export {
 
 export {
   isProfileRunning,
-  isProfileServerUp,
   modelLoadedOnServer,
   modelAvailableOnServer,
   profileRuntimeStatus,
@@ -21,5 +20,3 @@ export {
   serverModelIds,
   apiRootUrl,
 } from "./server-status.mjs";
-
-export { serverReady } from "./server-check.mjs";
