@@ -5,8 +5,9 @@ import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, 
 import { detectHardware, installedRamGB, getFreeDiskBytes } from "./hardware.mjs";
 import { allFittingModels } from "./recommendations.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { HF_HUB_DIR, hasHomebrew, omlxEnabled } from "./config.mjs";
+import { HF_HUB_DIR, hasHomebrew, omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { offerOmlxRestart, hasOmlx } from "./omlx-runtime.mjs";
+import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, serverReady as ollamaServerReady } from "./ollama-runtime.mjs";
 import { runCommand, commandExists } from "./exec.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -22,10 +23,15 @@ const GB = 1024 ** 3;
  */
 export async function downloadFlow(prompt) {
   console.log("");
-  const method = await prompt.choice("Download a model", [
+  const ollamaOn = await ollamaEnabled();
+  const methodChoices = [
     { value: "manual", label: "Enter a HuggingFace repo ID" },
     { value: "recommended", label: "Recommended for your machine" },
-  ], "manual");
+  ];
+  if (ollamaOn) {
+    methodChoices.push({ value: "ollama_library", label: "Pull from Ollama library (e.g. qwen3:8b)" });
+  }
+  const method = await prompt.choice("Download a model", methodChoices, "manual");
 
   if (!method) return false;
 
@@ -54,8 +60,9 @@ export async function downloadFlow(prompt) {
     if (hasGguf && hasMlx) {
       // Both available — let the user choose
       const mlxHint = !omlxInstalled ? " (install oMLX first)" : "";
+      const ggufBackend = ollamaOn ? "Ollama" : "llama.cpp";
       const formatChoices = [
-        { value: "gguf", label: `GGUF (llama.cpp) — ${selected.gguf.split("/").pop()}` },
+        { value: "gguf", label: `GGUF (${ggufBackend}) — ${selected.gguf.split("/").pop()}` },
         { value: "mlx", label: `MLX (oMLX) — ${selected.mlx}${mlxHint}` },
       ];
       // Default to GGUF if oMLX isn't installed (even on Apple Silicon)
@@ -92,6 +99,14 @@ export async function downloadFlow(prompt) {
     filename = ref.filename;
   }
 
+  // Ollama library: pull directly by model name (e.g. qwen3:8b)
+  if (method === "ollama_library") {
+    console.log(pc.dim("  Browse models at ollama.com/library"));
+    const input = await prompt.text("Ollama model name (e.g. qwen3:8b, llama3.2:3b)", "");
+    if (!input || !input.trim()) return false;
+    return await downloadViaOllama(prompt, input.trim());
+  }
+
   // For GGUF repos without a specific file, show quant picker.
   // Skip when the user already chose MLX from the recommended list —
   // format is known, no detection needed.
@@ -120,11 +135,20 @@ export async function downloadFlow(prompt) {
         // It's MLX — download everything
       } else {
         console.log(pc.yellow(`This repo is not a GGUF model${omlxOn ? " or MLX model" : ""} (library: ${modelInfo.library_name ?? "unknown"}).`));
-        console.log(pc.dim("For llama.cpp: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
+        console.log(pc.dim("For GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
         if (omlxOn) console.log(pc.dim("For oMLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
+        if (ollamaOn) console.log(pc.dim('For Ollama: same GGUF repos — or use "Pull from Ollama library" above'));
         return false;
       }
     }
+  }
+
+  // When Ollama is enabled, route GGUF downloads through `ollama pull`
+  // instead of the HuggingFace CLI. Ollama manages model storage, loading,
+  // and unloading automatically — no HF CLI or disk space checks needed.
+  if (ollamaOn && filename && filename.endsWith(".gguf")) {
+    const modelRef = `hf.co/${repo}:${filename}`;
+    return await downloadViaOllama(prompt, modelRef);
   }
 
   // Ensure HuggingFace CLI is available — offer to install if missing
@@ -203,6 +227,55 @@ export async function downloadFlow(prompt) {
     console.log(pc.red("\nDownload failed: " + err.message));
     return false;
   }
+}
+
+/**
+ * Download a model through Ollama's pull API.
+ * Used when Ollama is enabled — routes through `ollama pull` instead of
+ * the HuggingFace CLI. Ollama manages model storage, loading, and unloading
+ * automatically.
+ * @param {object} prompt - createPrompt() instance
+ * @param {string} modelRef - Ollama model reference (e.g. "hf.co/org/repo:file.gguf" or "qwen3:8b")
+ * @returns {Promise<boolean>} true if pull succeeded
+ */
+async function downloadViaOllama(prompt, modelRef) {
+  // Ensure Ollama is installed
+  if (!(await hasOllama())) {
+    console.log(pc.yellow("Ollama is enabled but not installed."));
+    const shouldInstall = await prompt.yesNo("Install Ollama now?", true);
+    if (!shouldInstall) {
+      console.log(pc.dim("Install manually: brew install ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh"));
+      return false;
+    }
+    const installed = await installOllama();
+    if (!installed) return false;
+  }
+
+  // Ensure server is running
+  await ensureOllamaServer();
+  if (!(await ollamaServerReady())) {
+    process.stdout.write(pc.dim("Waiting for Ollama server"));
+    for (let i = 0; i < 30; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (await ollamaServerReady()) break;
+      process.stdout.write(".");
+    }
+    console.log("");
+    if (!(await ollamaServerReady())) {
+      console.log(pc.yellow("Ollama server is starting up — try again in a moment."));
+      console.log(pc.dim("  Run: ollama serve"));
+      return false;
+    }
+  }
+
+  console.log(pc.dim(`\nOllama will pull ${modelRef}`));
+  console.log(pc.dim("Ollama manages model storage and loading automatically.\n"));
+
+  const ok = await pullOllamaModel(modelRef);
+  if (ok) {
+    console.log(pc.green("\n✓ Run offgrid-ai again to see the model in the picker."));
+  }
+  return ok;
 }
 
 // ── Quant picker with RAM fit indicators ───────────────────────────────────
