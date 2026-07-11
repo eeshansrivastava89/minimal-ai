@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
+import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { readState } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
 import { ollamaLoadedModels } from "./ollama-runtime.mjs";
 import { execFileAsync, sleep } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
+import { GB } from "./hardware.mjs";
 
 // ── Status checks ──────────────────────────────────────────────────────────
 
@@ -84,7 +86,12 @@ export async function serverMatchesProfile(profile) {
 export async function waitForReady(profile, pid, rawLogPath) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") return;
-  for (let i = 0; i < 180; i++) {
+  // Scale timeout by model size: large models take longer to load from disk.
+  // Base 180s + 10s per GB, capped at 600s (10min).
+  let modelBytes = 0;
+  try { modelBytes = statSync(profile.modelPath).size; } catch { /* file not found */ }
+  const timeoutSec = Math.min(600, 180 + Math.floor(modelBytes / GB) * 10);
+  for (let i = 0; i < timeoutSec; i++) {
     if (await serverReady(profile.baseUrl)) return;
     if (pid && !pidAlive(pid)) {
       const tail = await readFile(rawLogPath, "utf8").catch(() => "");
@@ -92,7 +99,7 @@ export async function waitForReady(profile, pid, rawLogPath) {
     }
     await sleep(1000);
   }
-  throw new Error(`Timed out waiting for ${profile.baseUrl}/models`);
+  throw new Error(`Timed out waiting for ${profile.baseUrl}/models after ${timeoutSec}s`);
 }
 
 // ── Pre-flight inference test ──────────────────────────────────────────────
@@ -109,6 +116,12 @@ export async function waitForReady(profile, pid, rawLogPath) {
 export async function preflightInference(profile) {
   const baseUrl = profile.baseUrl.replace(/\/+$/, "");
   const modelId = profile.modelAlias ?? profile.id;
+  // Scale timeout by model size: lazy-loaded managed models may need to
+  // load from disk. Base 120s + 10s per GB, capped at 300s (5min).
+  let modelBytes = 0;
+  try { modelBytes = statSync(profile.modelPath).size; } catch { /* file not found */ }
+  const timeoutMs = Math.min(300000, 120000 + Math.floor(modelBytes / GB) * 10000);
+  const timeoutSec = Math.round(timeoutMs / 1000);
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -120,7 +133,7 @@ export async function preflightInference(profile) {
         max_tokens: 1,
         stream: false,
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (response.ok) return { ok: true };
@@ -129,7 +142,7 @@ export async function preflightInference(profile) {
     return { ok: false, status: response.status, error: detail || `HTTP ${response.status}` };
   } catch (err) {
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      return { ok: false, error: "model did not respond within 120s (it may still be loading)" };
+      return { ok: false, error: `model did not respond within ${timeoutSec}s (it may still be loading)` };
     }
     return { ok: false, error: err.message };
   }
@@ -203,7 +216,7 @@ async function omlxLoadedModelIds(profile) {
 
 async function fetchJson(url) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
     if (!response.ok) return null;
     return await response.json();
   } catch {

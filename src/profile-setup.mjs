@@ -1,10 +1,10 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { availableRamBytes } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
-import { pc, formatBytes, renderRows, renderSection, padCol, fitColor, renderMemoryEstimate } from "./ui.mjs";
+import { pc, formatBytes, formatCtxLabel, renderRows, renderSection, padCol, fitColor, renderMemoryEstimate } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
@@ -25,12 +25,6 @@ const CACHE_CHOICES = [
 
 const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
 const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
-
-function formatCtxLabel(ctx) {
-  if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
-  if (ctx >= 1024) return `${(ctx / 1024).toFixed(0)}k`;
-  return String(ctx);
-}
 
 function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) {
   const presets = [...CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx)];
@@ -102,6 +96,11 @@ export async function configureLocalProfile(prompt, profile) {
   // Re-detect capabilities from the model file and check for drafters
   // so that re-setup can pick up MTP availability, vision changes, etc.
   const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
+  if (freshCaps.missingContextLength) {
+    console.log(pc.red("\nCannot configure this model: GGUF metadata is missing context_length."));
+    console.log(pc.dim("Without context_length, we cannot safely determine KV cache size —\nthis can cause out-of-memory errors or silent context truncation.\nUse a GGUF with complete metadata, or fix the file with a GGUF editor."));
+    return null;
+  }
   let drafterPath = profile.drafterPath ?? null;
   if (drafterPath && !existsSync(drafterPath)) {
     drafterPath = null;
@@ -156,11 +155,13 @@ export async function configureLocalProfile(prompt, profile) {
     console.log("");
     const gemma4Unified = isGemma4UnifiedProjector(caps.mmprojProjectorType);
     const supported = !gemma4Unified || await runtimeSupportsGemma4Unified();
+    let mmprojSize = "unknown";
+    try { mmprojSize = formatBytes(statSync(profile.mmprojPath).size); } catch { /* file not found */ }
     console.log(renderSection("Vision projector", renderRows([
       ["What it does", "Enables image understanding — model can see and reason about images"],
       ["Projector type", caps.mmprojProjectorType ?? "unknown"],
       ["Flag", `--mmproj ${profile.mmprojPath}`],
-      ["Memory", "~200 MB for projector weights (varies by model)"],
+      ["Memory", `${mmprojSize} for projector weights`],
       ...(gemma4Unified && !supported ? [["Note", pc.yellow("Gemma 4 unified projectors need llama.cpp b9549+.")]] : []),
     ])));
     const useVision = await prompt.yesNo("Enable vision?", supported);
@@ -191,7 +192,7 @@ export async function configureLocalProfile(prompt, profile) {
   configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
   // ── Context & KV cache (heatmap) ────────────────────────────────────────
-  const maxCtx = caps.metaCtx ?? 1048576;
+  const maxCtx = caps.metaCtx ?? caps.ctxSize;
   const systemRamBytes = availableRamBytes();
   const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath);
   const hasKvParams = Boolean(prepared.kvParams.layers);

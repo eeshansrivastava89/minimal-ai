@@ -4,6 +4,25 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.0] - 2026-07-11
+
+### Added
+- **Dynamic page size for model picker** — the select prompt now shows all choices that fit the terminal height instead of a hardcoded cap of 20. Users with many models will no longer have the Download/Manage sections hidden below the fold.
+- **OLLAMA_HOST env var support** — offgrid-ai now respects the `OLLAMA_HOST` environment variable (same as Ollama itself) for non-default bind addresses. Previously hardcoded to `127.0.0.1:11434`.
+
+### Changed
+- **Server startup timeout scales by model size** — the 180s fixed timeout for llama-server startup now scales: 180s base + 10s per GB of model size, capped at 600s (10min). Large models on slow disks will no longer get a false "Timed out" error. Preflight inference timeout scales similarly (120s base, capped at 300s).
+- **Block models with missing `context_length` in GGUF metadata** — instead of guessing 32k/80k (which could OOM on low-RAM machines or silently truncate context), models without `context_length` in their GGUF metadata are now blocked with a clear error message explaining the issue.
+- **maxTokens derived from context size** — Pi harness config now uses `profile.flags.ctxSize` (the model's configured context window) instead of a hardcoded 16384. Models that support longer output will get their full capability.
+- **Memory estimate overhead scales with model size** — the fixed 1GB overhead in memory estimates is now `max(256MB, 5% of model size)`, more accurate for both small and large models. The quant picker's `2GB` rough estimate is now 10% of model size.
+- **Context label handles sub-1000 correctly** — context windows below 1000 tokens now show the raw number (e.g. "512") instead of misleadingly rounding to "1k". Shared `formatCtxLabel()` helper in `ui.mjs` replaces three duplicate implementations.
+- **Projector weights show actual file size** — the vision projector memory display now shows the real `formatBytes()` of the mmproj file instead of a hardcoded "~200 MB".
+- **Timeout bumps for reliability** — server readiness check 1s→2s, fetchJson 1s→2s, oMLX/Ollama model scan 3s→5s, oMLX start command 30s→60s.
+
+### Fixed
+- **Lower presence penalty for non-thinking models** — default `presencePenalty` reduced from 1.5 to 1.0 for general (non-thinking) models. The previous value was aggressive and could cause incoherent output with some models.
+- **DRY: Ollama URL duplication** — `download.mjs` now imports `OLLAMA_URLS` from `ollama-runtime.mjs` instead of redefining the hardcoded URL.
+
 ## [0.26.5] - 2026-07-11
 
 ### Changed

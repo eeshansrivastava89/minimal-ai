@@ -2,7 +2,7 @@ import { baseUrlForFlags } from "./backends.mjs";
 
 const GENERAL_DEFAULTS = {
   topK: 20,
-  presencePenalty: 1.5,
+  presencePenalty: 1.0,
   repeatPenalty: 1.0,
 };
 

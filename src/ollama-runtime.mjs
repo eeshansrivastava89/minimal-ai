@@ -12,8 +12,20 @@ import { pc } from "./ui.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { serverReady } from "./server-check.mjs";
 
-const OLLAMA_PORT = 11434;
-const OLLAMA_HOST = "127.0.0.1";
+// Respect OLLAMA_HOST env var (same as Ollama itself). Format: "host:port"
+// or just "host" (defaults to port 11434). Falls back to 127.0.0.1:11434.
+function parseOllamaHost() {
+  const raw = process.env.OLLAMA_HOST;
+  if (!raw) return { host: "127.0.0.1", port: 11434 };
+  // Handle "host:port" or just "host"
+  const colonIdx = raw.lastIndexOf(":");
+  if (colonIdx > 0 && /^\d+$/.test(raw.slice(colonIdx + 1))) {
+    return { host: raw.slice(0, colonIdx), port: Number(raw.slice(colonIdx + 1)) };
+  }
+  return { host: raw, port: 11434 };
+}
+
+const { host: OLLAMA_HOST, port: OLLAMA_PORT } = parseOllamaHost();
 const OLLAMA_V1_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}/v1`;
 const OLLAMA_API_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}/api`;
 const RELEASE_API = "https://api.github.com/repos/ollama/ollama/releases/latest";
@@ -211,7 +223,7 @@ export const OLLAMA_URLS = {
  * Returns models in the same format as other backend scanners.
  */
 export async function scanOllamaModels() {
-  const response = await fetch(`${OLLAMA_API_BASE}/tags`, { signal: AbortSignal.timeout(3000) });
+  const response = await fetch(`${OLLAMA_API_BASE}/tags`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`Ollama /api/tags returned ${response.status}`);
   const body = await response.json();
   if (!Array.isArray(body?.models)) return [];

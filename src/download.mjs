@@ -10,10 +10,10 @@
 // downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
-import { installedRamGB, availableRamBytes, getFreeDiskBytes, GB, fitCheck } from "./hardware.mjs";
+import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "./config.mjs";
-import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
+import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, OLLAMA_URLS } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
 import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
@@ -233,7 +233,7 @@ async function downloadViaOllama(prompt, modelRef) {
 
   // Ensure server is running
   await ensureOllamaServer();
-  const OLLAMA_V1 = "http://127.0.0.1:11434/v1";
+  const OLLAMA_V1 = OLLAMA_URLS.v1;
   if (!(await serverReady(OLLAMA_V1))) {
     process.stdout.write(pc.dim("Waiting for Ollama server"));
     for (let i = 0; i < 30; i++) {
@@ -268,7 +268,8 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
   const sorted = [...ggufFiles].sort((a, b) => a.sizeBytes - b.sizeBytes);
 
   // Find recommended: largest file that fits comfortably
-  const fitting = sorted.filter((f) => fitCheck(f.sizeBytes + 2 * GB, availableRam).status === "fits");
+  // Add ~10% for KV cache + runtime overhead (rough estimate; heatmap is precise)
+  const fitting = sorted.filter((f) => fitCheck(f.sizeBytes + Math.round(f.sizeBytes * 0.1), availableRam).status === "fits");
   const recommended = fitting[fitting.length - 1];
 
   console.log("");
@@ -283,7 +284,7 @@ async function pickGgufQuant(prompt, repo, ggufFiles) {
     const sizeBytes = file.sizeBytes;
     const parsed = parseModelName(file.path, "huggingface");
     const quant = parsed.quant ?? file.path.replace(/\.gguf$/i, "");
-    const { status } = fitCheck(sizeBytes + 2 * GB, availableRam);
+    const { status } = fitCheck(sizeBytes + Math.round(sizeBytes * 0.1), availableRam);
 
     let indicator, fitLabel;
     if (status === "won't fit") {

@@ -78,7 +78,7 @@ export async function checkOmlxUpdate() {
 export async function startOmlxServer() {
   const bin = await findOmlx();
   if (!bin) throw new Error("oMLX is not installed");
-  await execFileAsync(bin, ["start"], { timeout: 30000 });
+  await execFileAsync(bin, ["start"], { timeout: 60000 });
 }
 
 /** Offer to restart oMLX so it picks up new or deleted models. */

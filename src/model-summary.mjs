@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { backendFor } from "./backends.mjs";
 import { matchDrafter } from "./scan.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
-import { pc, humanCapabilitySummary } from "./ui.mjs";
+import { pc, humanCapabilitySummary, formatCtxLabel } from "./ui.mjs";
 
 export function isProfileFileMissing(profile) {
   const backend = backendFor(profile.backend);
@@ -45,7 +45,7 @@ export function profileDetailParts(profile, { fileMissing = false, drafters = nu
   const parts = [fileMissing ? pc.red("File not found") : humanCapabilitySummary(profile.capabilities ?? {})];
   const mtpLabel = profileMtpLabel(profile, drafters, { detailed: true });
   if (mtpLabel) parts.push(mtpLabel);
-  const ctxLabel = profile.flags?.ctxSize ? `${(profile.flags.ctxSize / 1000).toFixed(0)}k ctx` : null;
+  const ctxLabel = profile.flags?.ctxSize ? `${formatCtxLabel(profile.flags.ctxSize)} ctx` : null;
   if (ctxLabel) parts.push(ctxLabel);
   return parts;
 }
@@ -55,7 +55,7 @@ export function ggufDetailParts(model, drafter) {
   const parts = [humanCapabilitySummary(caps)];
   const mtpLabel = ggufMtpLabel(model, drafter);
   if (mtpLabel) parts.push(mtpLabel);
-  const ctxLabel = caps.ctxSize ? `${(caps.ctxSize / 1000).toFixed(0)}k ctx` : null;
+  const ctxLabel = caps.ctxSize ? `${formatCtxLabel(caps.ctxSize)} ctx` : null;
   if (ctxLabel) parts.push(ctxLabel);
   return { caps, parts };
 }

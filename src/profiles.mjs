@@ -196,6 +196,7 @@ function summarizeCapabilities(caps) {
     metaCtx: caps.metaCtx,
     mmprojProjectorType: caps.mmprojProjectorType,
     ctxSize: caps.ctxSize,
+    missingContextLength: caps.missingContextLength || undefined,
   };
 }
 

@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { pc, formatBytes, renderSectionRows, padCol } from "./ui.mjs";
+import { pc, formatBytes, formatCtxLabel, renderSectionRows, padCol } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 
@@ -98,7 +98,7 @@ function optionCtxLabel(item) {
   // have one. SETUP items (new/managed) show "—".
   if (item.type !== "profile") return padCol("—", OPTION_CTX_WIDTH);
   if (item.contextLength) {
-    return padCol(`${(item.contextLength / 1000).toFixed(0)}k`, OPTION_CTX_WIDTH);
+    return padCol(formatCtxLabel(item.contextLength), OPTION_CTX_WIDTH);
   }
   return padCol("—", OPTION_CTX_WIDTH);
 }

@@ -1,6 +1,5 @@
 import { existsSync, statSync } from "node:fs";
 import { readGgufMetadata, numberMeta } from "./gguf.mjs";
-import { GB } from "./hardware.mjs";
 
 /**
  * Read model file sizes + GGUF architecture metadata once.
@@ -27,11 +26,15 @@ export function prepareMemoryEstimate(modelPath, mmprojPath, draftModelPath) {
   const slidingWindowPattern = booleanArrayMeta(metadata, prefix && `${prefix}.attention.sliding_window_pattern`);
   const keyLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.key_length_swa`);
   const valueLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.value_length_swa`);
+  // Scale overhead with model size: llama.cpp's compute buffers, graph,
+  // and runtime overhead grow with model dimensions. 5% of model size,
+  // with a floor of 256MB (small models still have fixed runtime costs).
+  const overheadBytes = Math.max(256 * 1024 ** 2, Math.round(modelBytes * 0.05));
   return {
     modelBytes,
     mmprojBytes,
     draftBytes,
-    overheadBytes: GB,
+    overheadBytes,
     kvParams: { layers, headKv, keyLength, valueLength, slidingWindow, slidingWindowPattern, keyLengthSwa, valueLengthSwa },
   };
 }

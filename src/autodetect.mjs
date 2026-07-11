@@ -35,11 +35,17 @@ export function detectCapabilities(modelPath, mmprojPath) {
   // Quantization — prefer GGUF metadata (general.file_type), fall back to filename
   const quant = resolveQuant(meta, basename(modelPath));
 
-  // Context size from metadata, fallback to name hints
+  // Context size from metadata — required for safe configuration.
+  // Missing context_length means we cannot determine KV cache size, which
+  // can cause OOM or silent context truncation. Block the model instead of
+  // guessing.
   const metaCtx = architecture
     ? numberMeta(meta, `${architecture}.context_length`)
     : undefined;
-  const ctxSize = metaCtx ?? (thinking ? 80000 : 32768);
+  if (!metaCtx) {
+    return { architecture, thinking, vision, mtp, qat, imatrix, quant, metaCtx: undefined, ctxSize: null, meta, mmprojProjectorType, missingContextLength: true };
+  }
+  const ctxSize = metaCtx;
 
   return { architecture, thinking, vision, mtp, qat, imatrix, quant, metaCtx, ctxSize, meta, mmprojProjectorType };
 }
@@ -62,7 +68,7 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     topP: 0.95,
     topK: thinking ? 64 : 20,
     minP: 0,
-    presencePenalty: thinking ? 0 : 1.5,
+    presencePenalty: thinking ? 0 : 1.0,
     repeatPenalty: thinking ? 1.1 : 1.0,
     parallel: 1,
     batchSize: 512,

@@ -85,7 +85,7 @@ export function defaultFlagsForBackend(backendId) {
 // ── oMLX model discovery ───────────────────────────────────────────────
 
 async function scanOmlxModels() {
-  const response = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(3000) });
+  const response = await fetch(`${BACKENDS.omlx.defaultBaseUrl}/models`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) {
     throw new Error(`oMLX /models returned ${response.status} ${response.statusText}`);
   }

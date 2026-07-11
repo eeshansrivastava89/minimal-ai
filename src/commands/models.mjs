@@ -149,7 +149,7 @@ async function showModelPicker(catalog) {
   groups.push({ separator: `  ${divider("Manage")}`, items: manageItems });
 
   const prompt = createPrompt();
-  const selected = await modelSelect("Select a model", groups, { pageSize: 20 });
+  const selected = await modelSelect("Select a model", groups);
   if (!selected) return;
 
   // Download actions — flattened, no sub-menu
@@ -357,6 +357,11 @@ async function setupItem(prompt, item) {
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
+  if (profile.capabilities?.missingContextLength) {
+    console.log(pc.red("\nCannot configure this model: GGUF metadata is missing context_length."));
+    console.log(pc.dim("Without context_length, we cannot safely determine KV cache size —\nthis can cause out-of-memory errors or silent context truncation.\nUse a GGUF with complete metadata, or fix the file with a GGUF editor."));
+    return;
+  }
   const configured = await configureLocalProfile(prompt, profile);
   if (!configured) return;
   await saveProfile(configured);

@@ -24,6 +24,14 @@ export function formatBytes(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 }
 
+/** Format a context length in tokens as a human-readable label (e.g. "32k", "512"). */
+export function formatCtxLabel(ctx) {
+  if (ctx == null) return "—";
+  if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
+  if (ctx >= 1024) return `${(ctx / 1024).toFixed(0)}k`;
+  return String(ctx);
+}
+
 export function renderRows(rows, { wrapWidth } = {}) {
   if (rows.length === 0) return "";
   const width = Math.max(...rows.map(([key]) => stripVTControlCharacters(String(key)).length));
@@ -219,6 +227,13 @@ async function runPrompt(fn, config) {
   }
 }
 
+// 4 lines reserved for: prompt message, blank spacer, description line, help line.
+// Falls back to 24 (common default) when stdout is piped/non-TTY.
+function dynamicPageSize(choiceCount) {
+  const rows = process.stdout.rows ?? 24;
+  return Math.min(choiceCount, Math.max(rows - 4, 7));
+}
+
 // ── Interactive prompt factory ──────────────────────────────────────────────
 
 export function startInteractive() {
@@ -266,7 +281,7 @@ export function createPrompt() {
         message: label,
         default: defaultValue,
         choices: mapped,
-        pageSize: 20,
+        pageSize: dynamicPageSize(mapped.length),
         loop: false,
       });
     },
@@ -275,7 +290,7 @@ export function createPrompt() {
 
 // ── Model picker with grouped select ────────────────────────────────────────
 
-export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } = {}) {
+export async function modelSelect(label, groups, { defaultKey } = {}) {
   const choices = [];
   // Blank line after the prompt message for visual separation
   choices.push(new Separator(" "));
@@ -302,7 +317,7 @@ export async function modelSelect(label, groups, { defaultKey, pageSize = 20 } =
     message: label,
     default: defaultKey,
     choices,
-    pageSize,
+    pageSize: dynamicPageSize(choices.length),
     loop: false,
   });
 }
