@@ -5,7 +5,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { pc } from "./ui.mjs";
+import { pc, renderCard, wrapText } from "./ui.mjs";
 import { compareVersions, currentPackageVersion } from "./updates.mjs";
 import { loadConfig, saveConfig } from "./config.mjs";
 
@@ -109,24 +109,52 @@ export async function fetchRemoteChangelog(tag, { fetchImpl = globalThis.fetch }
 }
 
 /**
- * Print release notes to the terminal.
+ * Render a single changelog bullet line as formatted terminal text.
+ * Strips markdown bold markers (**text**) and converts to picocolors bold.
+ * Wraps to the given width with hanging indent.
+ * @returns {string[]} array of terminal lines
+ */
+function renderBulletLine(line, width) {
+  // Strip the leading "- " and any leading whitespace
+  const text = line.replace(/^-\s+/, "");
+  // Convert **bold** markers to pc.bold, leave rest as-is
+  const segments = text.split(/(\*\*[^*]+\*\*)/);
+  const formatted = segments.map((seg) => {
+    if (seg.startsWith("**") && seg.endsWith("**")) {
+      return pc.bold(seg.slice(2, -2));
+    }
+    return seg;
+  }).join("");
+  // Wrap the formatted text, then apply hanging indent (4 spaces for continuation)
+  const wrapped = wrapText(formatted, width - 4);
+  return wrapped.map((l, i) => i === 0 ? `  ${l}` : `    ${l}`);
+}
+
+/**
+ * Print release notes to the terminal as a styled card.
  * @param {Array} entries - from parseChangelog/entriesBetween
  */
 export function printReleaseNotes(entries) {
   if (!entries || entries.length === 0) return;
+  const maxCols = process.stdout.columns ?? 88;
+  const contentWidth = maxCols - 4; // card border + padding
+
   for (const entry of entries) {
-    console.log(pc.bold(pc.cyan(`\nv${entry.version}`)));
-    // Print content, stripping the leading ### headers for compactness
+    const bodyLines = [];
     const lines = entry.content.split("\n").filter((l) => l.trim());
     for (const line of lines) {
       if (line.startsWith("### ")) {
-        console.log(pc.yellow(`  ${line.replace(/^###\s+/u, "")}`));
+        const label = line.replace(/^###\s+/u, "");
+        if (bodyLines.length > 0) bodyLines.push(""); // blank line before section
+        bodyLines.push(pc.bold(pc.yellow(label)));
       } else if (line.startsWith("- ")) {
-        console.log(`  ${line}`);
+        bodyLines.push(...renderBulletLine(line, contentWidth));
       } else if (line.trim()) {
-        console.log(`  ${line}`);
+        bodyLines.push(...wrapText(line, contentWidth).map((l) => `  ${l}`));
       }
     }
+    const title = `v${entry.version}`;
+    console.log(renderCard(title, bodyLines.join("\n"), { formatBorder: pc.cyan, columns: maxCols }));
   }
   console.log("");
 }
@@ -155,7 +183,7 @@ export async function showReleaseNotesIfUpdated() {
   const entries = readLocalChangelog();
   const notes = entriesBetween(entries, lastSeen, current);
   if (notes.length > 0) {
-    console.log(pc.bold(pc.cyan("What's new")));
+    console.log(pc.bold(pc.cyan("\nWhat's new")));
     printReleaseNotes(notes);
   }
 

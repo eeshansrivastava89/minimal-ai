@@ -53,7 +53,7 @@ export function renderRows(rows, { wrapWidth } = {}) {
   }).join("\n");
 }
 
-function wrapText(text, width) {
+export function wrapText(text, width) {
   const words = String(text).split(/(\s+)/u);
   const lines = [];
   let current = "";

@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.27.1] - 2026-07-11
+
+### Fixed
+- **Release notes display redesigned** — changelog entries shown on update now render in a cyan-bordered card matching the status header style, with text wrapped to terminal width, `**bold**` markdown converted to terminal bold, hanging-indent bullets, and blank-line section separators. Previously, long entries overflowed past the terminal edge with no wrapping, and markdown asterisks showed as literal text.
+
 ## [0.27.0] - 2026-07-11
 
 ### Added
