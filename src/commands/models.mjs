@@ -128,8 +128,8 @@ async function showModelPicker(catalog) {
     { value: "__download_hf_gguf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for llama.cpp)")}` },
   ];
   if (ollamaOn) {
-    downloadItems.push({ value: "__download_ollama_library__", label: `${pc.dim("○")}  ${pc.green("↓ from Ollama library")} ${pc.dim("(e.g. qwen3:8b)")}` });
-    downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(via Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_library__", label: `${pc.dim("○")}  ${pc.green("↓ Model from Ollama library")} ${pc.dim("(for Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for Ollama)")}` });
   }
   if (omlxOn) {
     downloadItems.push({ value: "__download_omlx__", label: `${pc.dim("○")}  ${pc.green("↓ oMLX model")} ${pc.dim("(managed by oMLX app)")}` });

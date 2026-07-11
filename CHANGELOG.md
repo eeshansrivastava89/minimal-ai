@@ -4,6 +4,12 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.25.1] - 2026-07-11
+
+### Fixed
+- **Block MLX repos in llama.cpp download path** — downloading an MLX repo through "GGUF from HuggingFace (for llama.cpp)" was silently allowed but llama.cpp cannot run MLX. Now shows an actionable error directing the user to the oMLX backend.
+- **Clarified download labels** — "Model from Ollama library (for Ollama)" and "GGUF from HuggingFace (for Ollama)" replace the vaguer "from Ollama library" and "via Ollama" labels.
+
 ## [0.25.0] - 2026-07-11
 
 ### Added

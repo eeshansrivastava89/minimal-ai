@@ -141,7 +141,10 @@ async function _downloadHfGguf(prompt, repo, filename) {
         return false;
       }
       if (isMlxRepo(modelInfo)) {
-        // It's MLX — download everything to HF cache
+        console.log(pc.yellow("This is an MLX repo, not GGUF. llama.cpp cannot run MLX models."));
+        console.log(pc.dim("  To use MLX: enable the oMLX backend and download via the oMLX app."));
+        console.log(pc.dim("  To find GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
+        return false;
       } else {
         console.log(pc.yellow(`This repo is not a GGUF or MLX model (library: ${modelInfo.library_name ?? "unknown"}).`));
         console.log(pc.dim("For GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
