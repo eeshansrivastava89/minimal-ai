@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [0.20.0] - 2026-07-10
+
+### Added
+- **Pre-flight inference test** — before launching Pi, sends a 1-token chat completion request to verify the model can actually generate, not just that the server is listening. Catches model-load failures (Metal kernel errors, unsupported architectures, corrupted weights) and surfaces an actionable error instead of letting Pi hit a broken model. On failure, stops the server (local) or unloads the model (managed).
+
 ## [0.19.0] - 2026-07-12
 
 ### Added

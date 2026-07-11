@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile } from "../profiles.mjs";
-import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer } from "../process.mjs";
+import { startServer, stopProfile, waitForReady, serverReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
@@ -42,6 +42,20 @@ export async function runProfile(profile, options = {}) {
   }
 
   printMemoryEstimate(profile, isManaged);
+
+  console.log(pc.dim("Verifying model loads (pre-flight inference test)..."));
+  const preflight = await preflightInference(profile);
+  if (!preflight.ok) {
+    if (!isManaged) {
+      try { await stopProfile(profile); } catch { /* best effort */ }
+    } else {
+      try { await unloadModelFromServer(profile); } catch { /* best effort */ }
+    }
+    const modelId = profile.omlxModel ?? profile.ollamaModel ?? profile.modelAlias ?? profile.label;
+    throw new Error(`Model "${modelId}" failed to generate a test token: ${preflight.error}. The server was ready but the model could not load or infer. Check the model format and backend compatibility.`);
+  }
+  console.log(pc.green("[preflight] Model loaded and generated a test token."));
+
   await launchHarness(profile, options, isManaged, withHarness, backend);
   console.log("");
 }

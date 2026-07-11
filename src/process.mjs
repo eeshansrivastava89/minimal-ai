@@ -469,6 +469,46 @@ export async function waitForReady(profile, pid, rawLogPath) {
   throw new Error(`Timed out waiting for ${profile.baseUrl}/models`);
 }
 
+// ── Pre-flight inference test ──────────────────────────────────────────────
+
+/**
+ * Send a minimal 1-token chat completion request to verify the model can
+ * actually generate — not just that the server is listening.  Catches
+ * model-load failures (Metal kernel errors, unsupported architectures,
+ * corrupted weights) before handing off to Pi.
+ *
+ * For managed servers (oMLX, Ollama), this request may trigger lazy model
+ * loading, so the timeout is generous (120s).
+ */
+export async function preflightInference(profile) {
+  const baseUrl = profile.baseUrl.replace(/\/+$/, "");
+  const modelId = profile.modelAlias ?? profile.id;
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (response.ok) return { ok: true };
+
+    const detail = await responseErrorDetail(response);
+    return { ok: false, status: response.status, error: detail || `HTTP ${response.status}` };
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") {
+      return { ok: false, error: "model did not respond within 120s (it may still be loading)" };
+    }
+    return { ok: false, error: err.message };
+  }
+}
+
 // ── Internals ──────────────────────────────────────────────────────────────
 
 export async function serverModelIds(baseUrl) {
