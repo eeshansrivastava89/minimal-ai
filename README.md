@@ -12,7 +12,11 @@
 
 ## What is offgrid-ai?
 
-offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server, oMLX, or Ollama has a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity while still providing a powerful and flexible way to run local models.
+offgrid-ai is a simple utility that stitches together local LLM inference backends, with an agentic harness, and simplifies the complexity of configuring models to run on your personal hardware. 
+
+I built this as a utility for myself since I like exploring local models on my personal laptop (M4 Pro Mac 48 GB). I haven't tested this on Linux or Windows, or for NVIDIA GPUs. Open for contributions. 
+
+
 
 The recommended workflow:
 
@@ -102,7 +106,7 @@ These are good starting points sorted by minimum RAM. All are available on Huggi
 
 ## Platform support
 
-- **macOS (Apple Silicon)** — full support: llama.cpp (GGUF), oMLX (MLX), Ollama (GGUF + MLX)
+- **macOS (Apple Silicon)** — full support: llama.cpp (GGUF), oMLX (MLX), Ollama (GGUF + MLX). Requires Metal GPU (all Apple Silicon Macs have this). Virtual machines without GPU passthrough will fail on model load.
 - **Linux** — llama.cpp (GGUF) and Ollama. oMLX is Apple Silicon exclusive.
 - **Windows** — not supported
 
