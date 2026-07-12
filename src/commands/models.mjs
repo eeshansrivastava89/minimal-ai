@@ -11,7 +11,7 @@ import { pc, startInteractive, createPrompt, modelSelect, divider } from "../ui.
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
-import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf, downloadOmlxStub } from "../download.mjs";
+import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
 import { resolveBenchyModel, benchmarkItem } from "./models-benchmark.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
@@ -132,7 +132,7 @@ async function showModelPicker(catalog) {
     downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for Ollama)")}` });
   }
   if (omlxOn) {
-    downloadItems.push({ value: "__download_omlx__", label: `${pc.dim("○")}  ${pc.green("↓ oMLX model")} ${pc.dim("(managed by oMLX app)")}` });
+    downloadItems.push({ value: "__download_omlx__", label: `${pc.dim("○")}  ${pc.green("↓ oMLX model")} ${pc.dim("(open and download from oMLX app)")}`, disabled: true });
   }
   groups.push({ separator: `  ${divider("Download")}`, items: downloadItems });
 
@@ -165,11 +165,6 @@ async function showModelPicker(catalog) {
   }
   if (selected === "__download_ollama_hf__") {
     await downloadOllamaHfGguf(prompt);
-    console.log("");
-    return;
-  }
-  if (selected === "__download_omlx__") {
-    await downloadOmlxStub();
     console.log("");
     return;
   }

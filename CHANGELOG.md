@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.3] - 2026-07-12
+
+### Changed
+- oMLX download option in the model picker is now a disabled (non-clickable) info line that says "open and download from oMLX app" instead of a clickable item that opens a separate message.
+
 ## [1.0.2] - 2026-07-12
 
 ### Fixed

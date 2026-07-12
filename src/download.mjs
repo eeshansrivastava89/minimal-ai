@@ -6,7 +6,6 @@
 //   - downloadHfGguf(prompt)       → HuggingFace GGUF for llama.cpp
 //   - downloadOllamaLibrary(prompt) → Ollama library pull
 //   - downloadOllamaHfGguf(prompt)  → HuggingFace GGUF via Ollama
-//   - downloadOmlxStub(prompt)      → oMLX info (manages own downloads)
 // downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
@@ -67,15 +66,6 @@ export async function downloadOllamaHfGguf(prompt) {
 
   const modelRef = `hf.co/${ref.repo}:${filename}`;
   return await downloadViaOllama(prompt, modelRef);
-}
-
-/**
- * oMLX manages its own downloads — show info to the user.
- */
-export async function downloadOmlxStub() {
-  console.log(pc.dim("oMLX manages its own model downloads."));
-  console.log(pc.dim("  Open the oMLX app to browse and download models, or visit huggingface.co/mlx-community"));
-  return false;
 }
 
 // ── HuggingFace GGUF download (shared by direct and legacy paths) ───────────
