@@ -132,7 +132,7 @@ async function showModelPicker(catalog) {
     downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for Ollama)")}` });
   }
   if (omlxOn) {
-    downloadItems.push({ value: "__download_omlx__", label: `${pc.dim("○")}  ${pc.green("↓ oMLX model")} ${pc.dim("(open and download from oMLX app)")}`, disabled: true });
+    downloadItems.push({ value: "__download_omlx__", label: `${pc.green("↓ oMLX model")} ${pc.dim("(open and download from oMLX app)")}`, disabled: true });
   }
   groups.push({ separator: `  ${divider("Download")}`, items: downloadItems });
 

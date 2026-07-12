@@ -4,6 +4,12 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.6] - 2026-07-12
+
+### Fixed
+- MTP drafter exclusion now reads `model_type` from the on-disk `config.json` instead of relying on the oMLX API (which doesn't return `model_type`). The 227MB drafter model will no longer appear in the picker.
+- Disabled oMLX download line no longer shows a redundant `○` circle prefix.
+
 ## [1.0.5] - 2026-07-12
 
 ### Fixed

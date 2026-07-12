@@ -34,9 +34,19 @@ async function getMlxDirSizeBytes(dir) {
   }
 }
 
+async function getMlxModelType(dir) {
+  try {
+    const raw = await readFile(join(dir, "config.json"), "utf8");
+    const config = JSON.parse(raw);
+    return typeof config.model_type === "string" ? config.model_type : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Scan ~/.omlx/models/ for MLX model directories and return a Map of
- * basename → { sizeBytes, publisher }.
+ * basename → { sizeBytes, publisher, modelType }.
  */
 export async function scanOmlxModelSizes() {
   if (!existsSync(OMLX_MODELS_DIR)) return new Map();
@@ -54,7 +64,8 @@ export async function scanOmlxModelSizes() {
       const fullPath = join(dir, entry.name);
       if (await isMlxModelDir(fullPath)) {
         const sizeBytes = await getMlxDirSizeBytes(fullPath);
-        if (sizeBytes > 0) infoByBasename.set(entry.name, { sizeBytes, publisher });
+        const modelType = await getMlxModelType(fullPath);
+        if (sizeBytes > 0) infoByBasename.set(entry.name, { sizeBytes, publisher, modelType });
       } else {
         await walk(fullPath, publisher ?? entry.name);
       }
