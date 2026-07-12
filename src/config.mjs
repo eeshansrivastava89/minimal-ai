@@ -58,7 +58,19 @@ const DEFAULT_CONFIG = {
 export async function loadConfig() {
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const config = { ...DEFAULT_CONFIG, ...parsed };
+    // Validate types — wrong types in config.json should not crash at runtime
+    if (config.modelScanDirs != null && !Array.isArray(config.modelScanDirs)) {
+      config.modelScanDirs = [];
+    }
+    if (config.binaryOverrides != null && typeof config.binaryOverrides !== "object") {
+      config.binaryOverrides = {};
+    }
+    if (typeof config.enable_omlx !== "boolean") config.enable_omlx = false;
+    if (typeof config.enable_ollama !== "boolean") config.enable_ollama = false;
+    if (typeof config.enable_benchmarking !== "boolean") config.enable_benchmarking = false;
+    return config;
   } catch (error) {
     if (error?.code === "ENOENT") {
       // Auto-create config.json with defaults so the user can find and edit it

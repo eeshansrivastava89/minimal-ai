@@ -12,7 +12,7 @@
 
 ## What is offgrid-ai?
 
-offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server or oMLX has a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity while still providing a powerful and flexible way to run local models.
+offgrid-ai is a command-line tool that lets you run AI models locally. Running local models with llama-server, oMLX, or Ollama has a steep learning curve compared to cloud-based models, so offgrid-ai is designed to abstract away the complexity while still providing a powerful and flexible way to run local models.
 
 The recommended workflow:
 
@@ -23,12 +23,14 @@ The recommended workflow:
 ## Core Features
 
 - **Download models** from HuggingFace with a quant picker and RAM fit indicators
-- **Auto-detects** models from LM Studio, oMLX, and HuggingFace cache
+- **Auto-detects** models from LM Studio, oMLX, Ollama, and HuggingFace cache
 - **Glass-box setup** — every configuration flag gets an explanation card with tradeoffs and memory impact
 - **Model management** — delete models from disk, remove configurations, reconfigure settings
 - **Auto-detects MTP** (multi-token prediction) and **QAT** (quantization-aware training) models, applies the correct flags
-- **Start / stop servers** automatically for chat sessions (llama-server and oMLX)
+- **Three backends**: llama.cpp (GGUF), oMLX (MLX on Apple Silicon), Ollama (GGUF + MLX)
+- **Start / stop servers** automatically for chat sessions
 - **oMLX integration** — auto-start, MTP enable via admin API, restart after download/deletion
+- **Ollama integration** — respects `OLLAMA_HOST` env var, auto-start server, model scanning
 
 ## Quick start
 
@@ -45,7 +47,7 @@ This installs offgrid-ai and its prerequisite (Node.js via nvm if needed), then 
 If you already have Node.js installed, you can also install with npm:
 
 ```bash
-npm install -g offgrid-ai@latest --prefer-online
+npm install -g offgrid-ai@latest
 ```
 
 The curl installer is recommended for first-time setup because it also verifies the global npm bin directory is on your PATH. The npm package itself does not run install scripts or mutate shell config during `npm install`.
@@ -99,8 +101,8 @@ These are good starting points sorted by minimum RAM. All are available on Huggi
 
 ## Platform support
 
-- **macOS (Apple Silicon)** — full support: llama.cpp (GGUF) + oMLX (MLX)
-- **Linux** — llama.cpp (GGUF) only. oMLX is Apple Silicon exclusive.
+- **macOS (Apple Silicon)** — full support: llama.cpp (GGUF), oMLX (MLX), Ollama (GGUF + MLX)
+- **Linux** — llama.cpp (GGUF) and Ollama. oMLX is Apple Silicon exclusive.
 - **Windows** — not supported
 
 ## Need help?

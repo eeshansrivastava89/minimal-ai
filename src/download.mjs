@@ -12,7 +12,7 @@
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "./config.mjs";
+import { HF_HUB_DIR } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, OLLAMA_URLS } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
@@ -76,42 +76,6 @@ export async function downloadOmlxStub() {
   console.log(pc.dim("oMLX manages its own model downloads."));
   console.log(pc.dim("  Open the oMLX app to browse and download models, or visit huggingface.co/mlx-community"));
   return false;
-}
-
-/**
- * Legacy download flow with method selection sub-menu.
- * Used by onboarding. For the main menu, call the individual functions above.
- */
-export async function downloadFlow(prompt) {
-  console.log("");
-  const ollamaOn = await ollamaEnabled();
-  const omlxOn = await omlxEnabled();
-
-  const methodChoices = [
-    { value: "hf", label: "Download a model from Hugging Face" },
-  ];
-  if (ollamaOn) {
-    methodChoices.push({ value: "ollama", label: "Download an Ollama model" });
-  }
-  if (omlxOn) {
-    methodChoices.push({ value: "omlx", label: "Download an oMLX model" });
-  }
-  const method = await prompt.choice("Download a model", methodChoices, "hf");
-
-  if (!method) return false;
-  if (method === "omlx") return await downloadOmlxStub();
-  if (method === "ollama") {
-    const subChoice = await prompt.choice("Download an Ollama model", [
-      { value: "library", label: "Pull from Ollama library (e.g. qwen3:8b)" },
-      { value: "hf_gguf", label: "Pull GGUF from HuggingFace (with quant picker)" },
-    ], "library");
-    if (!subChoice) return false;
-    if (subChoice === "library") return await downloadOllamaLibrary(prompt);
-    return await downloadOllamaHfGguf(prompt);
-  }
-
-  // HuggingFace GGUF
-  return await downloadHfGguf(prompt);
 }
 
 // ── HuggingFace GGUF download (shared by direct and legacy paths) ───────────

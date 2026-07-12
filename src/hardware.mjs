@@ -37,15 +37,6 @@ export function fitCheck(totalBytes, availableBytes) {
  * Detect system hardware via the Node.js `os` module.
  * Pure function — no side effects, trivially testable.
  */
-export function detectHardware() {
-  return {
-    totalRamBytes: totalmem(),
-    availableRamBytes: availableRamBytes(),
-    platform: process.platform,
-    arch: process.arch,
-  };
-}
-
 /** Installed RAM in GB (integer). */
 export function installedRamGB() {
   return Math.round(totalmem() / GB);

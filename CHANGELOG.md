@@ -4,6 +4,35 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.0] - 2026-07-11
+
+### v1.0 stable release
+
+offgrid-ai is production-ready. This release consolidates the v0.27.x improvements and adds final hardening for stable release.
+
+### Added
+- Config validation — `loadConfig` now validates types of all known fields after merge. Wrong types in `config.json` (e.g. `modelScanDirs` as a string) reset to defaults instead of crashing at runtime.
+- Ollama backend now respects the `OLLAMA_HOST` environment variable, matching Ollama's own behavior for non-default bind addresses.
+
+### Changed
+- Three backends: llama.cpp (GGUF), oMLX (MLX on Apple Silicon), Ollama (GGUF + MLX). Platform support updated in README.
+- Server startup timeout scales by model size: 180s base + 10s per GB, capped at 600s. Preflight inference timeout scales similarly.
+- `maxTokens` in Pi harness config now uses the model's configured context window instead of a hardcoded 16384.
+- Memory estimate overhead scales with model size (5% of model bytes, min 256MB) instead of a fixed 1GB.
+- Release notes display in a card with text wrapping, markdown bold rendering, and terminal-width awareness.
+- Update flow simplified to notification-only: shows release notes and the command to run, no inline npm install.
+- Dynamic page size for model picker — shows all choices that fit terminal height instead of a hardcoded cap.
+
+### Fixed
+- Models with missing `context_length` in GGUF metadata are now blocked with a clear error instead of guessing 32k/80k, which could cause OOM or silent context truncation.
+- Context labels below 1000 tokens now show the raw number (e.g. "512") instead of misleadingly rounding to "1k".
+- Vision projector memory display shows actual file size instead of hardcoded "~200 MB".
+- Default `presencePenalty` for non-thinking models reduced from 1.5 to 1.0 to avoid incoherent output with some models.
+- Timeout bumps for reliability: server readiness 1s to 2s, model scan 3s to 5s, oMLX start 30s to 60s.
+
+### Removed
+- Dead code: `downloadFlow` (legacy), `detectHardware`, `badge`, `isManaged` (all never imported by any consumer).
+
 ## [0.27.5] - 2026-07-11
 
 ### Changed

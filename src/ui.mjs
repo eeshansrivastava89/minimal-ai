@@ -142,13 +142,6 @@ export function divider(label = "") {
   return pc.dim(text + "─".repeat(Math.max(0, remaining)));
 }
 
-/** A colored status badge (success/error/warning/info). */
-export function badge(text, variant = "info") {
-  const colors = { success: pc.green, error: pc.red, warning: pc.yellow, info: pc.cyan };
-  const color = colors[variant] ?? pc.cyan;
-  return color(`[${text}]`);
-}
-
 /** Returns the picocolors function for a memory fit status. Uses shared fitCheck. */
 export function fitColor(totalBytes, availableBytes) {
   const { status } = fitCheck(totalBytes, availableBytes);
