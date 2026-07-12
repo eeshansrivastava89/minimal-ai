@@ -5,6 +5,7 @@ import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
+import { spawn } from "node:child_process";
 
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
@@ -28,7 +29,7 @@ async function offerUpdate(argv) {
     printReleaseNotes(notes);
   }
 
-  console.log(pc.dim(`Run: ${plan.display}`));
+  console.log(pc.dim(`Run: offgrid-ai update`));
   console.log();
   return true;
 }
@@ -85,6 +86,7 @@ export async function run(argv) {
     version: () => printVersion(),
     "--version": () => printVersion(),
     "-v": () => printVersion(),
+    update: () => runUpdate(),
     models: () => modelsCommand(argv.slice(1)),
     run: () => {
       const runArgs = argv.slice(1);
@@ -102,14 +104,25 @@ export async function run(argv) {
   throw new Error(`Unknown command: ${command}. Run offgrid-ai help`);
 }
 
+async function runUpdate() {
+  const invocation = detectInvocation();
+  const plan = updateCommand(invocation, ["update"]);
+  console.log(pc.dim(`Running: ${plan.display}`));
+  await new Promise((resolve, reject) => {
+    const child = spawn(plan.cmd, plan.args, { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code}`)));
+  });
+  console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+}
+
 async function printVersion() {
   const version = currentPackageVersion();
   console.log(`offgrid-ai v${version}`);
   const invocation = detectInvocation();
   const update = await checkForUpdate();
   if (update) {
-    const plan = updateCommand(invocation, ["version"]);
-    console.log(pc.yellow(`Update available: v${update.latest}. Run: ${plan.display}`));
+    console.log(pc.yellow(`Update available: v${update.latest}. Run: offgrid-ai update`));
   }
 }
 
@@ -117,6 +130,7 @@ function printHelp() {
   console.log(renderCard("offgrid-ai", renderRows([
     ["What it is", "A privacy-first local AI runner"],
     ["Start", pc.bold("offgrid-ai")],
+    ["Update", "offgrid-ai update"],
     ["Status", "offgrid-ai status"],
     ["Stop", "offgrid-ai stop"],
     ["Uninstall", "offgrid-ai uninstall"],

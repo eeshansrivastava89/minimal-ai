@@ -77,6 +77,7 @@ Pick a model from the list and press Enter. offgrid-ai configures the rest and o
 
 ```bash
 offgrid-ai              # model picker — pick, configure, download, or manage models
+offgrid-ai update       # update offgrid-ai to the latest version
 offgrid-ai status       # see if any model is running
 offgrid-ai stop         # stop the running model
 offgrid-ai uninstall    # remove offgrid-ai

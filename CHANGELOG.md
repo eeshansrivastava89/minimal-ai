@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.1] - 2026-07-11
+
+### Added
+- `offgrid-ai update` command — runs `npm install -g offgrid-ai@latest` directly, same as `pi update`. The update notification now says "Run: offgrid-ai update" instead of showing the raw npm command.
+
 ## [1.0.0] - 2026-07-11
 
 ### v1.0 stable release
