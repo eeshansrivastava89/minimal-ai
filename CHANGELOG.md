@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.8] - 2026-07-12
+
+### Fixed
+- Ollama install now uses the official curl installer first, Homebrew as fallback. The Homebrew package can be missing the `llama-server` binary, which causes model load failures. The official installer always includes a complete binary bundle.
+
 ## [1.0.7] - 2026-07-12
 
 ### Changed

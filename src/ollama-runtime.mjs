@@ -125,7 +125,19 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
   const verb = upgrade ? "Updating" : "Installing";
   const brewCmd = upgrade ? "upgrade" : "install";
 
-  // 1. Homebrew (preferred — handles updates, daemon management)
+  // 1. Official curl installer (more reliable — includes all binaries)
+  try {
+    console.log(pc.dim(`${verb} Ollama via official installer...`));
+    await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
+    if (await hasOllama()) {
+      console.log(pc.green(`✓ Ollama ${upgrade ? "updated" : "installed"}.`));
+      await startAndWaitForServer();
+      if (!upgrade) console.log(pc.dim("  Run offgrid-ai again to see Ollama models in the picker."));
+      return true;
+    }
+  } catch { /* fall through to Homebrew */ }
+
+  // 2. Homebrew (fallback)
   if (await commandExists("brew")) {
     try {
       console.log(pc.dim(`${verb} Ollama via Homebrew...`));
@@ -147,23 +159,11 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
         if (!upgrade) console.log(pc.dim("  Run offgrid-ai again to see Ollama models in the picker."));
         return true;
       }
-    } catch { /* fall through to curl installer */ }
-  }
-
-  // 2. Official curl installer
-  try {
-    console.log(pc.dim(`${verb} Ollama via official installer...`));
-    await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
-    if (await hasOllama()) {
-      console.log(pc.green(`✓ Ollama ${upgrade ? "updated" : "installed"}.`));
-      await startAndWaitForServer();
-      if (!upgrade) console.log(pc.dim("  Run offgrid-ai again to see Ollama models in the picker."));
-      return true;
+    } catch (err) {
+      console.log(pc.red(`✗ ${verb} failed: ${err.message}`));
+      console.log(pc.dim(`Do manually: curl -fsSL https://ollama.com/install.sh | sh  —  or  brew ${brewCmd} ollama`));
+      return false;
     }
-  } catch (err) {
-    console.log(pc.red(`✗ ${verb} failed: ${err.message}`));
-    console.log(pc.dim(`Do manually: brew ${brewCmd} ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh`));
-    return false;
   }
 
   console.log(pc.red(`✗ Ollama was ${upgrade ? "updated" : "installed"} but not found on PATH.`));
