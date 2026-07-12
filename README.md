@@ -16,13 +16,10 @@ offgrid-ai is a simple utility that stitches together local LLM inference backen
 
 I built this as a utility for myself since I like exploring local models on my personal laptop (M4 Pro Mac 48 GB). I haven't tested this on Linux or Windows, or for NVIDIA GPUs. Open for contributions. 
 
-
-
-The recommended workflow:
-
+Recommended workflow:
 1. Download models from **HuggingFace** (or use models you already have from LM Studio, oMLX, etc.)
-2. Configure using the `offgrid-ai` interactive setup
-3. Start chatting in **Pi** — offgrid-ai handles the server lifecycle
+2. Configure using the `offgrid-ai` interactive setup (explains all the settings & flags)
+3. Start chatting and coding in **Pi** — offgrid-ai handles the server lifecycle
 
 ## Core Features
 
@@ -46,7 +43,7 @@ Open your terminal and run:
 curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
 ```
 
-This installs offgrid-ai and its prerequisite (Node.js via nvm if needed), then launches `offgrid-ai` automatically. The first launch walks you through installing the rest — the llama.cpp runtime, the Pi chat agent, and the HuggingFace CLI — then drops you into the model picker to download a model and start chatting. All in one flow.
+This installs offgrid-ai and its prerequisite (Node.js via nvm if needed), then launches `offgrid-ai` automatically. The first launch walks you through installing all core dependencies — llama.cpp runtime, Pi chat agent, and HuggingFace CLI, then drops you into the model picker to download a model and start chatting. 
 
 If you already have Node.js installed, you can also install with npm:
 
