@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.5] - 2026-07-12
+
+### Fixed
+- Blank line added after the "Update available" message for readability.
+
 ## [1.0.4] - 2026-07-12
 
 ### Fixed

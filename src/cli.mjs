@@ -20,7 +20,7 @@ async function offerUpdate(argv) {
   if (!update) return false;
 
   const plan = updateCommand(invocation, argv);
-  console.log(pc.yellow(`\nUpdate available: v${update.latest}. You have v${update.current}.`));
+  console.log(pc.yellow(`\nUpdate available: v${update.latest}. You have v${update.current}.\n`));
 
   // Show release notes for the new version (fetched from GitHub)
   const remoteEntries = await fetchRemoteChangelog(`v${update.latest}`);
