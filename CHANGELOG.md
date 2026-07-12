@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.2] - 2026-07-12
+
+### Fixed
+- Release notes now show bullet points (`-`) with hanging indent, matching the changelog format.
+
 ## [1.0.1] - 2026-07-11
 
 ### Added

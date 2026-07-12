@@ -126,8 +126,8 @@ function renderBulletLine(line, width) {
     return seg;
   }).join("");
   // Wrap the formatted text with 2-space indent on all lines
-  const wrapped = wrapText(formatted, width - 2);
-  return wrapped.map((l) => `  ${l}`);
+  const wrapped = wrapText(formatted, width - 4);
+  return wrapped.map((l, i) => i === 0 ? `  - ${l}` : `    ${l}`);
 }
 
 /**
