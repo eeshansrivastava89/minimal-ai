@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.4] - 2026-07-12
+
+### Fixed
+- Standalone MTP drafter models (e.g. `mlx-community/Qwen3.6-27B-MTP-4bit`) are now excluded from the oMLX model picker. These are companion weights for speculative decoding, not independently runnable chat models. Detected by `model_type` ending in `_mtp` (e.g. `qwen3_5_mtp`), not by model name — so real MTP-capable chat models with "mtp" in their name are still shown.
+
 ## [1.0.3] - 2026-07-12
 
 ### Changed

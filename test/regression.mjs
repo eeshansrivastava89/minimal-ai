@@ -242,6 +242,8 @@ describe("regressions", () => {
             { id: "gemma-4-e2b-it-4bit", max_model_len: 131072 },
             { id: "MarkItDown", max_model_len: null, model_type: "markitdown" },
             { id: "all-MiniLM-L6-v2", model_type: "embeddings" },
+            { id: "mlx-community/Qwen3.6-27B-MTP-4bit", model_type: "qwen3_5_mtp", max_model_len: 262144 },
+            { id: "Jundot/Qwen3.6-27B-oQ4e-mtp", model_type: "qwen3_5", max_model_len: 262144 },
           ],
         });
       }
@@ -252,6 +254,8 @@ describe("regressions", () => {
       assert.ok(ids.includes("gemma-4-e2b-it-4bit"), "expected chat model to be included");
       assert.ok(!ids.includes("MarkItDown"), "expected MarkItDown to be excluded");
       assert.ok(!ids.includes("all-MiniLM-L6-v2"), "expected embedding model to be excluded");
+      assert.ok(!ids.includes("mlx-community/Qwen3.6-27B-MTP-4bit"), "expected MTP drafter to be excluded");
+      assert.ok(ids.includes("Jundot/Qwen3.6-27B-oQ4e-mtp"), "expected MTP-capable chat model to be included");
     });
   });
 

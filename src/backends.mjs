@@ -126,6 +126,7 @@ function isChatOmlxModel(model) {
   if (typeof model?.id !== "string" || !model.id.trim()) return false;
   const type = String(model.type ?? model.model_type ?? "").toLowerCase();
   if (["embedding", "embeddings", "reranker", "tool", "converter", "markitdown"].includes(type)) return false;
+  if (type.endsWith("_mtp")) return false; // standalone MTP drafter, not a chat model
   if (Object.hasOwn(model, "max_model_len") && model.max_model_len === null) return false;
   return true;
 }
