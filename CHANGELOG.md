@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.11] - 2026-07-14
+
+### Fixed
+- `offgrid-ai update` now verifies the npm install actually changed the version. If npm reports success but the version is unchanged (stale cache), it automatically clears the npm cache and retries. Previously it would print "Updated" even when nothing changed.
+
 ## [1.0.10] - 2026-07-14
 
 ### Fixed

@@ -1,3 +1,4 @@
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -96,4 +97,46 @@ function shellCommand(cmd, args) {
 function shellQuote(value) {
   const text = String(value);
   return /^[A-Za-z0-9_./:@=-]+$/u.test(text) ? text : JSON.stringify(text);
+}
+
+/**
+ * Read the version of the globally installed package.
+ * Returns undefined if the package is not installed or the version
+ * cannot be determined.
+ */
+export function installedGlobalVersion() {
+  try {
+    const globalRoot = globalPackageRoot();
+    if (!globalRoot) return undefined;
+    const pkgPath = fileURLToPath(new URL(`file://${globalRoot}/${PACKAGE_NAME}/package.json`));
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version;
+  } catch {
+    return undefined;
+  }
+}
+
+function globalPackageRoot() {
+  try {
+    return execFileSync("npm", ["root", "-g"], { encoding: "utf8", timeout: 5000 }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Force a clean reinstall by clearing npm's cache first, then installing.
+ * Used when a normal install reported success but didn't actually update.
+ */
+export function forceReinstall(plan) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npm", ["cache", "clean", "--force"], { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code !== 0) return reject(new Error(`npm cache clean exited with code ${code}`));
+      const child2 = spawn(plan.cmd, plan.args, { stdio: "inherit" });
+      child2.on("error", reject);
+      child2.on("exit", (code2) => code2 === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code2}`)));
+    });
+  });
 }
