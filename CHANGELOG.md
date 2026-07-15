@@ -4,6 +4,22 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.9] - 2026-07-14
+
+### Fixed
+- llama.cpp update check now falls back to `llama-server --version` when VERSION.json doesn't exist (Homebrew/PATH installs), matching the oMLX pattern. Previously the check silently returned null for non-managed installations, so users with Homebrew llama.cpp never saw update prompts.
+
+### Security & Hardening (issue #5, 37/37 items closed)
+- P0: data-dir safety, deletion gating, oMLX root protection, PID identity, symlink cycle detection, GGUF bounds checking
+- Deletion confirmation gates, atomic JSON writes, start.sh injection prevention, disk probe fail-open
+- oMLX DMG integrity verification, runtime digest verification, parallel readiness checks
+- Ollama endpoint centralization via parseOllamaHost(), Pi provider endpoint-specific IDs
+- install.sh Node >=20 check, CI version/changelog validation, lint scope includes tests
+- Removed dead recommendations.json, stale downloadFlow comment, unused variables
+
+### Tests
+- Added 13 regression tests (test/p0-regressions.mjs)
+
 ## [1.0.8] - 2026-07-12
 
 ### Fixed

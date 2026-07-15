@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MANAGED_LLAMA_SERVER, RUNTIME_DIR } from "./config.mjs";
+import { MANAGED_LLAMA_SERVER, RUNTIME_DIR, findLlamaServer } from "./config.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { pc } from "./ui.mjs";
 const RELEASE_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
@@ -93,7 +93,7 @@ function assetSuffix(platform, arch) {
 }
 
 function verifyDigest(bytes, digest) {
-  if (!digest?.startsWith("sha256:")) return;
+  if (!digest?.startsWith("sha256:")) throw new Error("llama.cpp: release asset has no valid SHA-256 digest — refusing to install unverified binary");
   const expected = digest.slice("sha256:".length);
   const actual = createHash("sha256").update(bytes).digest("hex");
   if (actual !== expected) throw new Error("llama.cpp: checksum mismatch");
@@ -110,12 +110,39 @@ async function readInstalledLlamaTag() {
   }
 }
 
+/**
+ * Get the installed llama.cpp build number from the binary itself.
+ * Falls back to this when VERSION.json doesn't exist (e.g. Homebrew install).
+ */
+async function installedLlamaBuildNumber() {
+  const bin = await findLlamaServer();
+  if (!bin) return null;
+  try {
+    const { stdout, stderr } = await execFileAsync(bin, ["--version"], { timeout: 5000 });
+    const output = `${stdout}\n${stderr}`;
+    const match = output.match(/version:\s*(\d+)/i);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Check if a newer llama.cpp release is available. Returns { installed, latest, release } or null. */
 export async function checkLlamaUpdate() {
-  const installedTag = await readInstalledLlamaTag();
-  if (!installedTag) return null;
   const latest = await latestLlamaRelease();
   if (!latest) return null;
-  if (installedTag === latest.tag) return null;
-  return { installed: installedTag, latest: latest.tag, release: latest };
+
+  // 1. Managed runtime — compare tags directly from VERSION.json
+  const installedTag = await readInstalledLlamaTag();
+  if (installedTag) {
+    if (installedTag === latest.tag) return null;
+    return { installed: installedTag, latest: latest.tag, release: latest };
+  }
+
+  // 2. External install (Homebrew, PATH) — compare build numbers from the binary
+  const buildNumber = await installedLlamaBuildNumber();
+  if (!buildNumber) return null;
+  const latestBuildNumber = latest.tag.replace(/^b/u, "");
+  if (Number.parseInt(buildNumber, 10) >= Number.parseInt(latestBuildNumber, 10)) return null;
+  return { installed: `b${buildNumber}`, latest: latest.tag, release: latest };
 }

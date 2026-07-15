@@ -247,7 +247,7 @@ export async function printProfileDetails(profile) {
 
 export function printGgufModelDetails(model, drafter) {
   const { caps, parts } = ggufDetailParts(model, drafter);
-  parts.push(formatBytes(model.model.sizeBytes));
+  parts.push(formatBytes(model.sizeBytes));
   console.log("\n" + renderSectionRows("Downloaded model", [
     ["Name", pc.bold(model.label)],
     ["Status", pc.yellow("Needs one-time setup")],

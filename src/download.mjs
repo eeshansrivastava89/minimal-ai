@@ -6,7 +6,6 @@
 //   - downloadHfGguf(prompt)       → HuggingFace GGUF for llama.cpp
 //   - downloadOllamaLibrary(prompt) → Ollama library pull
 //   - downloadOllamaHfGguf(prompt)  → HuggingFace GGUF via Ollama
-// downloadFlow(prompt) remains for backward compat (onboarding).
 
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";

@@ -7,7 +7,7 @@
 // launching the GUI separately.
 
 import { existsSync, readdirSync } from "node:fs";
-import { unlink, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { execCommand, execFileAsync } from "./exec.mjs";
@@ -191,8 +191,9 @@ export async function installOmlx() {
     return false;
   }
 
-  // 3. Download the DMG
-  const tmpDmg = join(tmpdir(), dmg.name);
+  // 3. Download the DMG to a private temp directory (not a predictable path)
+  const tmpDir = await mkdtemp(join(tmpdir(), "offgrid-omlx-"));
+  const tmpDmg = join(tmpDir, dmg.name);
   console.log(pc.cyan(`Downloading oMLX ${release.tag_name} (${formatBytes(dmg.size)})...`));
   console.log(pc.dim("  This is a large download — it may take a few minutes.\n"));
   try {
@@ -200,9 +201,23 @@ export async function installOmlx() {
   } catch (err) {
     console.log(pc.red(`Download failed: ${err.message}`));
     return false;
+  } finally {
+    // Clean up partial downloads — the DMG is mounted from the temp path,
+    // so defer removal until after the mount is detached below.
   }
 
-  // 4. Mount the DMG
+  // 4. Verify DMG integrity before mounting
+  try {
+    console.log(pc.dim("Verifying DMG integrity..."));
+    await execFileAsync("hdiutil", ["verify", tmpDmg], { timeout: 60000 });
+  } catch (err) {
+    console.log(pc.red(`DMG integrity verification failed: ${err.message}`));
+    console.log(pc.dim("The download may be corrupted or tampered with. Try again."));
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    return false;
+  }
+
+  // 5. Mount the DMG
   let mountPoint;
   try {
     console.log(pc.dim("\nMounting DMG..."));
@@ -211,26 +226,37 @@ export async function installOmlx() {
     if (!mountPoint) throw new Error("could not find mount point");
   } catch (err) {
     console.log(pc.red(`Mount failed: ${err.message}`));
-    await unlink(tmpDmg).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     return false;
   }
 
-  // 5. Find and copy the .app to /Applications
+  // 6. Find and verify the .app, then copy to /Applications
   try {
     const appPath = findAppInVolume(mountPoint);
     if (!appPath) throw new Error("could not find .app in DMG");
+    // Verify code signature before installing
+    try {
+      await execFileAsync("codesign", ["--verify", "--deep", "--strict", appPath], { timeout: 30000 });
+    } catch (err) {
+      console.log(pc.red(`Code signature verification failed: ${err.message}`));
+      console.log(pc.dim("The app may be tampered with. Refusing to install."));
+      await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      return false;
+    }
     console.log(pc.dim("Installing oMLX.app to /Applications..."));
     await execFileAsync("cp", ["-R", appPath, "/Applications/"]);
   } catch (err) {
     console.log(pc.red(`Install failed: ${err.message}`));
     await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
-    await unlink(tmpDmg).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     return false;
   }
 
-  // 6. Unmount and clean up
+  // 7. Unmount and clean up
   await execFileAsync("hdiutil", ["detach", mountPoint]).catch(() => {});
-  await unlink(tmpDmg).catch(() => {});
+  await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+
 
   // 7. Create a CLI shim at ~/.omlx/bin/omlx that execs the app's bundled
   //    omlx-cli in place. omlx-cli is a shell script that resolves its own

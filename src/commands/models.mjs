@@ -50,15 +50,15 @@ async function showModelPicker(catalog) {
 
   const runningProfilesNow = [];
   const modelMissingIds = new Set();
-  for (const profile of normalized.profiles) {
+  await Promise.all(normalized.profiles.map(async (profile) => {
     if (await isProfileRunning(profile)) {
       runningProfilesNow.push(profile);
-      continue;
+      return;
     }
     if (backendFor(profile.backend).type === "managed-server" && await serverReady(profile.baseUrl)) {
       if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
-  }
+  }));
   // Flag all missing profiles (file missing for llama.cpp, model missing
   // for oMLX managed-server) so actionsForItem/performAction can handle both
   // cases uniformly.
@@ -335,7 +335,11 @@ function printProfileSaved(id) {
 
 async function setupItem(prompt, item) {
   if (item.type === "profile") {
-    const configured = await configureLocalProfile(prompt, await readProfile(item.profile.id));
+    const profile = await readProfile(item.profile.id);
+    const backend = backendFor(profile.backend);
+    const configured = backend.type === "managed-server"
+      ? await configureManagedProfile(prompt, profile)
+      : await configureLocalProfile(prompt, profile);
     if (!configured) return;
     await saveProfile(configured);
     await syncPiConfig(configured);

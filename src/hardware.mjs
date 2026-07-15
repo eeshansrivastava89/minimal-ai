@@ -2,8 +2,7 @@
 // Ported from deprecated-offgrid-desktop/src/main/hardware.ts.
 //
 // This is the canonical source for hardware facts the model-serving logic
-// needs: recommendations, onboarding, MLX context sizing, disk-space guards,
-// and memory estimation.
+// needs: onboarding, MLX context sizing, disk-space guards, and memory estimation.
 
 import { totalmem, freemem, platform } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -95,6 +94,6 @@ export function getFreeDiskBytes(dir) {
     const stats = statfsSync(checkDir);
     return stats.bavail * stats.bsize;
   } catch {
-    return 0;
+    return Number.POSITIVE_INFINITY;
   }
 }

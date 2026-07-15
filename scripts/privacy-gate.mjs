@@ -125,11 +125,11 @@ const FORBIDDEN_IN_TARBALL = [
   /\.env$/,
   /\.env\.local$/,
   /\.env\.production$/,
-  /^package\/PLAN\.md$/,
-  /^package\/Dockerfile$/,
-  /^package\/\.dockerignore$/,
-  /^package\/test-clean\.sh$/,
-  /^package\/\.pi\//,
+  /^PLAN\.md$/,
+  /^Dockerfile$/,
+  /^\.dockerignore$/,
+  /^test-clean\.sh$/,
+  /^\.pi\//,
 ];
 
 const MAX_TARBALL_FILES = 80;

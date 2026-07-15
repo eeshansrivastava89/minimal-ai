@@ -94,8 +94,8 @@ export async function hasPi() {
 
 /**
  * Set up Pi with bundled skills, npm packages, and web-search config.
- * Called after Pi is installed during onboarding. Idempotent — safe to run
- * even if Pi was already configured (overwrites skills, skips existing packages).
+ * Called after Pi is installed during onboarding. Idempotent — skips skills
+ * and web-search config that already exist (preserving user edits), installs missing packages.
  */
 export async function setupPiConfig() {
   let configured = 0;
@@ -110,7 +110,7 @@ export async function setupPiConfig() {
         if (!entry.isDirectory()) continue;
         const src = join(bundledSkillsDir, entry.name);
         const dest = join(PI_SKILLS_DIR, entry.name);
-        await cp(src, dest, { recursive: true, force: true });
+        if (!existsSync(dest)) await cp(src, dest, { recursive: true });
       }
       console.log(pc.green(`✓ Pi skills installed (${skills.filter(s => s.isDirectory()).length} skills)`));
       configured++;
@@ -135,8 +135,7 @@ export async function setupPiConfig() {
     try {
       const { readFile, writeFile } = await import("node:fs/promises");
       const content = await readFile(bundledWebSearch, "utf8");
-      await mkdir(PI_DIR, { recursive: true });
-      await writeFile(PI_WEB_SEARCH, content, "utf8");
+      if (!existsSync(PI_WEB_SEARCH)) await writeFile(PI_WEB_SEARCH, content, "utf8");
       console.log(pc.green("✓ Pi web-search config installed"));
       configured++;
     } catch (err) {

@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { rm, unlink } from "node:fs/promises";
+import { lstat, realpath, rm, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { resolvedPathAllowMissing } from "../paths.mjs";
 import { HF_HUB_DIR } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { isProfileRunning, stopProfile } from "../process.mjs";
@@ -14,88 +15,114 @@ import { pc } from "../ui.mjs";
 import { execFileAsync } from "../exec.mjs";
 import { hfRepoFromPath } from "../huggingface.mjs";
 
+const OMLX_MODELS_ROOT = join(homedir(), ".omlx", "models");
+
+function fallbackOmlxModelDir(modelId) {
+  const raw = String(modelId ?? "");
+  if (!raw || isAbsolute(raw) || raw.startsWith("/") || raw.startsWith("\\")) return null;
+  const parts = raw.replace(/--/g, "/").split("/").filter(Boolean);
+  if (parts.length === 0 || parts.some((part) => part === "." || part === "..")) return null;
+  return join(OMLX_MODELS_ROOT, ...parts);
+}
+
+
 /** Determine where a model's files live on disk. */
 export async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     if (backend.type === "managed-server") {
       const modelId = effectiveModelId(item.profile);
-      if (backend.id === "ollama") {
-        return { kind: "ollama", modelId };
-      }
-      // oMLX model IDs may not include the org prefix, so search recursively
+      if (backend.id === "ollama") return { kind: "ollama", modelId };
       const dir = await findOmlxModelDir(modelId);
-      return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
+      const fallback = fallbackOmlxModelDir(modelId);
+      return dir ? { kind: "mlx", dir, modelId } : fallback ? { kind: "mlx", dir: fallback, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
     }
     const modelPath = item.profile.modelPath;
     if (!modelPath) return { kind: "unknown" };
-    if (modelPath.startsWith(HF_HUB_DIR)) {
-      return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
-    }
+    if (modelPath.startsWith(HF_HUB_DIR)) return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
     return { kind: "file", path: modelPath };
   }
   if (item.type === "new") {
     const modelPath = item.model?.path;
     if (!modelPath) return { kind: "unknown" };
-    if (modelPath.startsWith(HF_HUB_DIR)) {
-      return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
-    }
+    if (modelPath.startsWith(HF_HUB_DIR)) return { kind: "hf-cache", path: modelPath, repoId: hfRepoFromPath(modelPath) };
     return { kind: "file", path: modelPath };
   }
   if (item.type === "managed") {
     const modelId = item.model?.id;
     if (!modelId) return { kind: "unknown" };
-    if (item.backendId === "ollama") {
-      return { kind: "ollama", modelId };
-    }
-    // oMLX model IDs may not include the org prefix, so search recursively
+    if (item.backendId === "ollama") return { kind: "ollama", modelId };
     const dir = await findOmlxModelDir(modelId);
-    return { kind: "mlx", dir: dir ?? join(homedir(), ".omlx", "models", ...modelId.replace(/--/g, "/").split("/").filter(Boolean)), modelId };
+    const fallback = fallbackOmlxModelDir(modelId);
+    return dir ? { kind: "mlx", dir, modelId } : fallback ? { kind: "mlx", dir: fallback, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
   }
   return { kind: "unknown" };
 }
 
+/** Pure lexical guard: target must be a strict descendant, never the root. */
+export function isStrictDescendantPath(target, root) {
+  if (typeof target !== "string" || typeof root !== "string" || !isAbsolute(target) || !isAbsolute(root)) return false;
+  const rel = relative(resolve(root), resolve(target)).replace(/\\/gu, "/");
+  return Boolean(rel && rel !== "." && rel !== ".." && !rel.startsWith("../"));
+}
+
+export function isSafeOmlxModelPath(target, root = OMLX_MODELS_ROOT) {
+  return isStrictDescendantPath(target, root);
+}
+
+export async function isSafeOmlxDeletionTarget(target, root = OMLX_MODELS_ROOT) {
+  if (!isSafeOmlxModelPath(target, root)) return false;
+  try {
+    const targetStat = await lstat(target);
+    if (!targetStat.isDirectory() || targetStat.isSymbolicLink()) return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") return false;
+  }
+  const [canonicalRoot, canonicalTarget] = await Promise.all([
+    realpath(root).catch(() => null),
+    resolvedPathAllowMissing(target),
+  ]);
+  return Boolean(canonicalRoot && canonicalTarget && isSafeOmlxModelPath(canonicalTarget, canonicalRoot));
+}
+
 export async function deleteModelFromSource(prompt, item) {
   const loc = await modelLocationForItem(item);
-
   if (loc.kind === "unknown") {
     console.log(pc.yellow("Could not determine where this model's files are located."));
-    return;
+    return { confirmed: false, reason: loc.reason ?? "unknown location" };
   }
 
-  // Show what will be deleted
-  let locationLabel;
-  if (loc.kind === "hf-cache") {
-    locationLabel = loc.path ?? loc.repoId;
-  } else if (loc.kind === "mlx") {
-    locationLabel = loc.dir;
-  } else if (loc.kind === "ollama") {
-    locationLabel = loc.modelId;
-  } else if (loc.kind === "file") {
-    locationLabel = loc.path;
-  }
-
+  const locationLabel = loc.kind === "hf-cache" ? (loc.path ?? loc.repoId)
+    : loc.kind === "mlx" ? loc.dir : loc.kind === "ollama" ? loc.modelId : loc.path;
   console.log(pc.yellow("\nThis will permanently delete " + (item.type === "profile" ? "the configuration and the model from:" : "the model from:")));
   console.log(pc.dim(`  ${locationLabel}`));
-
-  const confirmed = await prompt.yesNo("Delete this model?", false);
-  if (!confirmed) {
+  if (loc.kind === "hf-cache" && loc.repoId) {
+    console.log(pc.yellow(`\nWarning: HuggingFace cache deletion is repository-wide. All files in ${loc.repoId} (including other quants, projectors, and drafters) will be removed.`));
+    console.log(pc.dim("To delete only this file, remove it manually from the cache directory."));
+    if (!await prompt.yesNo("Delete the entire repository?", false)) {
+      console.log(pc.dim("Cancelled."));
+      return { confirmed: false, cancelled: true };
+    }
+  } else if (!await prompt.yesNo("Delete this model?", false)) {
     console.log(pc.dim("Cancelled."));
-    return;
+    return { confirmed: false, cancelled: true };
   }
 
-  // Stop running server if needed
-  if (item.type === "profile" && await isProfileRunning(item.profile)) {
+  if (item.type === "profile" && backendFor(item.profile.backend).type === "local-server" && await isProfileRunning(item.profile)) {
     console.log(pc.dim("Stopping running server..."));
-    await stopProfile(item.profile);
+    const stopResult = await stopProfile(item.profile);
+    if (!stopResult.stopped && await isProfileRunning(item.profile)) {
+      console.log(pc.yellow(`Keeping configuration because the server could not be stopped: ${stopResult.message}`));
+      return { confirmed: false, reason: "server is still running" };
+    }
   }
 
-  // Delete files
+  let sourceDeletion = { confirmed: false };
   if (loc.kind === "ollama") {
     try {
-      const ok = await deleteOllamaModel(loc.modelId);
-      if (ok) {
+      if (await deleteOllamaModel(loc.modelId)) {
         console.log(pc.green(`✓ Deleted ${loc.modelId} from Ollama`));
+        sourceDeletion = { confirmed: true };
       } else {
         console.log(pc.red(`✗ Ollama did not confirm deletion of ${loc.modelId}`));
         console.log(pc.dim(`Delete manually: ollama rm ${loc.modelId}`));
@@ -109,12 +136,12 @@ export async function deleteModelFromSource(prompt, item) {
     try {
       const { stdout } = await execFileAsync("hf", ["cache", "rm", `model/${loc.repoId}`, "--yes"], { timeout: 30000 });
       if (stdout.trim()) console.log(pc.dim(stdout.trim()));
-      // Verify the directory is actually gone
       if (existsSync(cacheDir)) {
         console.log(pc.red(`✗ Model still exists at ${cacheDir}`));
         console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
       } else {
         console.log(pc.green(`✓ Deleted ${loc.repoId} from HuggingFace cache`));
+        sourceDeletion = { confirmed: true };
       }
     } catch (err) {
       const detail = err.stderr?.trim() || err.message;
@@ -122,60 +149,62 @@ export async function deleteModelFromSource(prompt, item) {
       console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
     }
   } else if (loc.kind === "mlx") {
-    const omlxModelsRoot = join(homedir(), ".omlx", "models");
-    // Safety guard: never delete outside ~/.omlx/models/
-    if (!loc.dir.startsWith(omlxModelsRoot + "/") && loc.dir !== omlxModelsRoot) {
-      console.log(pc.red(`✗ Refusing to delete: path is outside ~/.omlx/models/`));
+    const root = join(homedir(), ".omlx", "models");
+    if (!await isSafeOmlxDeletionTarget(loc.dir, root)) {
+      console.log(pc.red(`✗ Refusing to delete: path is outside ~/.omlx/models/ or is the models root.`));
       console.log(pc.dim(`  Target: ${loc.dir}`));
-      console.log(pc.dim(`Delete manually if needed: rm -rf ${loc.dir}`));
-      return;
+      return { confirmed: false, reason: "unsafe oMLX path" };
     }
     if (!existsSync(loc.dir)) {
       console.log(pc.yellow(`Directory not found: ${loc.dir}`));
-      console.log(pc.dim("Model files may have already been removed, or oMLX loaded them from a different location."));
+      sourceDeletion = { confirmed: true, alreadyAbsent: true };
     } else {
       try {
         await rm(loc.dir, { recursive: true, force: true });
       } catch (err) {
         console.log(pc.red(`✗ Failed: ${err.message}`));
         console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
-        return;
+        return { confirmed: false, reason: err.message };
       }
-      // Verify deletion
       if (existsSync(loc.dir)) {
         console.log(pc.red(`✗ Directory still exists: ${loc.dir}`));
         console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
       } else {
         console.log(pc.green(`✓ Deleted ${loc.dir}`));
+        sourceDeletion = { confirmed: true };
         await offerOmlxRestart(prompt, "to update its model list");
       }
     }
   } else if (loc.kind === "file") {
     if (!existsSync(loc.path)) {
       console.log(pc.yellow(`File not found: ${loc.path}`));
-      console.log(pc.dim("Model file may have already been removed."));
+      sourceDeletion = { confirmed: true, alreadyAbsent: true };
     } else {
       try {
         await unlink(loc.path);
       } catch (err) {
         console.log(pc.red(`✗ Failed: ${err.message}`));
         console.log(pc.dim(`Delete manually: rm ${loc.path}`));
-        return;
+        return { confirmed: false, reason: err.message };
       }
-      // Verify deletion
       if (existsSync(loc.path)) {
         console.log(pc.red(`✗ File still exists: ${loc.path}`));
         console.log(pc.dim(`Delete manually: rm ${loc.path}`));
       } else {
         console.log(pc.green(`✓ Deleted ${loc.path}`));
+        sourceDeletion = { confirmed: true };
       }
     }
   }
 
-  // Remove profile configuration if one exists
+  if (!sourceDeletion.confirmed) {
+    console.log(pc.yellow("Keeping configuration because source deletion was not confirmed."));
+    return sourceDeletion;
+  }
   if (item.type === "profile") {
     await removeFromPiConfig(item.profile);
     await deleteProfile(item.profile.id);
     console.log(pc.dim(`Removed configuration: ${item.profile.id}`));
   }
+  return sourceDeletion;
 }

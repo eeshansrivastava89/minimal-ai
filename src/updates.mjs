@@ -52,7 +52,11 @@ export function detectInvocation(env = process.env) {
 }
 
 export function updateCommand(invocation = detectInvocation(), argv = []) {
-  if (invocation === "npx") {
+  // `npx offgrid-ai update` would re-invoke `offgrid-ai update` under npx,
+  // detect npx again, and recurse forever. Fall back to a global install
+  // so the user gets the latest version installed globally instead.
+  const isUpdate = argv[0] === "update";
+  if (invocation === "npx" && !isUpdate) {
     const args = ["exec", "--yes", "--", `${PACKAGE_NAME}@latest`, ...argv];
     return {
       cmd: "npm",

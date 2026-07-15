@@ -19,7 +19,10 @@ export async function runCommand(argv) {
 export async function runProfile(profile, options = {}) {
   const backend = backendFor(profile.backend);
   const withHarness = options.with ?? "pi";
-
+  const validHarnesses = ["pi", "server"];
+  if (!validHarnesses.includes(withHarness)) {
+    throw new Error(`Invalid --with value: "${withHarness}". Supported: ${validHarnesses.join(", ")}`);
+  }
   if (withHarness === "pi" && !(await hasPi())) {
     console.log(pc.yellow("Pi is not installed. Run with --with server, or install Pi from https://pi.app"));
     console.log(pc.dim("Starting server only..."));
@@ -29,7 +32,12 @@ export async function runProfile(profile, options = {}) {
   const isManaged = backend.type === "managed-server";
   if (isManaged) {
     if (!(await serverReady(profile.baseUrl))) {
-      throw new Error(`${backend.label} is not running at ${profile.baseUrl}. Start it and try again.`);
+      console.log(pc.dim(`Starting ${backend.label}...`));
+      try {
+        await startServer(profile);
+      } catch (err) {
+        throw new Error(`${backend.label} could not be started: ${err.message}`, { cause: err });
+      }
     }
     const available = await modelAvailableOnServer(profile);
     if (!available) {

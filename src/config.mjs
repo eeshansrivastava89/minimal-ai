@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import pc from "picocolors";
+import { writeJson } from "./json.mjs";
+import { resolvedPathAllowMissingSync as resolvedDataDirPath } from "./paths.mjs";
 
 // ── Base directories ──────────────────────────────────────────────────────
 
@@ -13,6 +15,24 @@ export const LOG_DIR = join(DATA_DIR, "logs");
 export const RUN_DIR = join(DATA_DIR, "run");
 export const RUNTIME_DIR = join(DATA_DIR, "runtime");
 export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
+export const DATA_DIR_MARKER = join(DATA_DIR, ".offgrid-ai-data");
+export const DATA_DIR_MARKER_CONTENT = "offgrid-ai-data-v1\n";
+
+/** Return true only for a dedicated absolute data-directory path. */
+export function isSafeDataDirPath(target, { homeDir = homedir(), cwd = process.cwd() } = {}) {
+  if (typeof target !== "string" || !target || !isAbsolute(target)) return false;
+  const candidate = resolve(target);
+  const home = resolve(homeDir);
+  const working = resolve(cwd);
+  if (candidate === parse(candidate).root || candidate === home || candidate === working) return false;
+  const contains = (parent, child) => {
+    const rel = relative(parent, child);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  };
+  return !contains(candidate, home) && !contains(candidate, working);
+}
+/** Resolve existing symlink components before applying the data-dir policy. */
+export { resolvedDataDirPath };
 
 // ── Default scan directories ──────────────────────────────────────────────
 
@@ -37,9 +57,15 @@ export const PI_CONFIG = join(homedir(), ".pi", "agent", "models.json");
 // ── Ensure data directories exist ─────────────────────────────────────────
 
 export async function ensureDirs() {
+  if (!isSafeDataDirPath(DATA_DIR) || !isSafeDataDirPath(resolvedDataDirPath(DATA_DIR))) {
+    throw new Error(`Refusing unsafe OFFGRID_DIR: ${DATA_DIR}. Choose a dedicated absolute data directory.`);
+  }
   await mkdir(PROFILE_DIR, { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
   await mkdir(RUN_DIR, { recursive: true });
+  await writeFile(DATA_DIR_MARKER, DATA_DIR_MARKER_CONTENT, { flag: "wx" }).catch((error) => {
+    if (error?.code !== "EEXIST") throw error;
+  });
 }
 
 // ── User config ───────────────────────────────────────────────────────────
@@ -89,8 +115,7 @@ export async function loadConfig() {
 }
 
 export async function saveConfig(config) {
-  await mkdir(dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
+  await writeJson(CONFIG_PATH, config);
 }
 
 // ── Feature flags ──────────────────────────────────────────────────────────

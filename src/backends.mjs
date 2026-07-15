@@ -2,14 +2,13 @@ import { findLlamaServer } from "./config.mjs";
 import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
-import { scanOllamaModels } from "./ollama-runtime.mjs";
+import { scanOllamaModels, parseOllamaHost } from "./ollama-runtime.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
 
 const LOCAL_HOST = "127.0.0.1";
 const LLAMA_CPP_PORT = 8080;
 const OMLX_PORT = 8000;
-const OLLAMA_PORT = 11434;
 
 export function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
   return `http://${host}:${port}${path}`;
@@ -50,10 +49,10 @@ export const BACKENDS = {
     label: "Ollama",
     type: "managed-server",
     providerId: "ollama",
-    defaultHost: LOCAL_HOST,
-    defaultPort: OLLAMA_PORT,
-    defaultBaseUrl: baseUrlFor({ port: OLLAMA_PORT }),
-    apiBaseUrl: baseUrlFor({ port: OLLAMA_PORT, path: "" }),
+    defaultHost: parseOllamaHost().host,
+    defaultPort: parseOllamaHost().port,
+    defaultBaseUrl: baseUrlFor({ host: parseOllamaHost().host, port: parseOllamaHost().port }),
+    apiBaseUrl: baseUrlFor({ host: parseOllamaHost().host, port: parseOllamaHost().port, path: "" }),
     needsCommandFile: false,
     scanModels: () => scanOllamaModels(),
     modelIdFields: ["ollamaModel", "modelAlias"],

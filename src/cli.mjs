@@ -14,12 +14,10 @@ import { statusCommand } from "./commands/status.mjs";
 import { stopCommand } from "./commands/stop.mjs";
 import { uninstallCommand } from "./commands/uninstall.mjs";
 
-async function offerUpdate(argv) {
-  const invocation = detectInvocation();
+async function offerUpdate() {
   const update = await checkForUpdate();
   if (!update) return false;
 
-  const plan = updateCommand(invocation, argv);
   console.log(pc.yellow(`\nUpdate available: v${update.latest}. You have v${update.current}.\n`));
 
   // Show release notes for the new version (fetched from GitHub)
@@ -59,7 +57,7 @@ export async function run(argv) {
     return;
   }
   if (argv.length === 0) {
-    if (await offerUpdate(argv)) return;
+    await offerUpdate();
     await offerRuntimeUpdates();
     return mainFlow({ showReleaseNotes: true });
   }
@@ -105,7 +103,6 @@ async function runUpdate() {
 async function printVersion() {
   const version = currentPackageVersion();
   console.log(`offgrid-ai v${version}`);
-  const invocation = detectInvocation();
   const update = await checkForUpdate();
   if (update) {
     console.log(pc.yellow(`Update available: v${update.latest}. Run: offgrid-ai update`));

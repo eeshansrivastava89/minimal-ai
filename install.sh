@@ -65,7 +65,15 @@ info "Detected: ${OS}-${ARCH}"
 
 if command -v node &>/dev/null; then
   NODE_VERSION="$(node --version 2>/dev/null || echo "unknown")"
-  ok "Node.js ${NODE_VERSION} found at $(command -v node)"
+  NODE_MAJOR="$(echo "$NODE_VERSION" | sed 's/^v//' | cut -d. -f1)"
+  if [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then
+    ok "Node.js ${NODE_VERSION} found at $(command -v node)"
+  else
+    warn "Node.js ${NODE_VERSION} found, but offgrid-ai requires Node >=20."
+    echo "  Install Node.js 20+ via nvm: nvm install --lts"
+    echo "  Or download from https://nodejs.org/"
+    exit 1
+  fi
 else
   echo ""
   printf "${BOLD}offgrid-ai needs Node.js.${RESET}\n"

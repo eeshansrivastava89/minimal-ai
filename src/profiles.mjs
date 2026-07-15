@@ -132,6 +132,17 @@ export async function deleteProfile(id, options = {}) {
   return results;
 }
 
+/** Derive a Pi provider ID that is endpoint-specific for llama-cpp. */
+function endpointProviderId(backend, baseUrl) {
+  if (backend.type === "managed-server") return backend.providerId;
+  try {
+    const url = new URL(baseUrl);
+    return `${backend.providerId}-${url.port}`;
+  } catch {
+    return backend.providerId;
+  }
+}
+
 // ── Normalize / auto-detect ────────────────────────────────────────────────
 
 export function normalizeProfile(profile) {
@@ -147,9 +158,9 @@ export function normalizeProfile(profile) {
   return {
     ...profile,
     flags,
-    providerId: profile.providerId ?? backend.providerId,
+    providerId: profile.providerId ?? endpointProviderId(backend, profile.baseUrl),
     harnesses: profile.harnesses ?? {
-      pi: { enabled: true, model: `${profile.providerId ?? backend.providerId}/${profile.modelAlias ?? profile.id}` },
+      pi: { enabled: true, model: `${profile.providerId ?? endpointProviderId(backend, profile.baseUrl)}/${profile.modelAlias ?? profile.id}` },
     },
   };
 }

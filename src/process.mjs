@@ -19,4 +19,6 @@ export {
   preflightInference,
   serverModelIds,
   apiRootUrl,
+  readProcessIdentity,
+  processIdentityMatches,
 } from "./server-status.mjs";

@@ -126,8 +126,8 @@ function bytesForCacheType(type) {
   const normalized = String(type ?? "").toLowerCase();
   if (normalized === "f32") return 4;
   if (normalized === "f16" || normalized === "bf16") return 2;
-  if (normalized === "q8_0") return 1;
-  if (["q4_0", "q4_1", "iq4_nl"].includes(normalized)) return 0.5;
-  if (["q5_0", "q5_1"].includes(normalized)) return 0.625;
+  if (normalized === "q8_0") return 34 / 32;
+  if (["q4_0", "q4_1", "iq4_nl"].includes(normalized)) return 18 / 32;
+  if (["q5_0", "q5_1"].includes(normalized)) return 21 / 32;
   return undefined;
 }

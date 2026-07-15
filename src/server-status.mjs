@@ -175,6 +175,32 @@ export function pidAlive(pid) {
   catch { return false; }
 }
 
+/** Read stable process attributes used to avoid signalling a reused PID. */
+export async function readProcessIdentity(pid, exec = execFileAsync) {
+  const read = async (format) => {
+    const { stdout } = await exec("ps", ["-o", `${format}=`, "-p", String(pid)]);
+    return stdout.trim();
+  };
+  const [startToken, pgid, executable, command] = await Promise.all([
+    read("lstart"),
+    read("pgid"),
+    read("comm"),
+    read("args"),
+  ]);
+  const commandToken = command.trim().split(/\s+/u)[0] ?? "";
+  if (!startToken || !pgid || !executable || !commandToken) throw new Error("process identity is unavailable");
+  return { pid: Number(pid), pgid, startToken, executable, commandToken };
+}
+
+/** Pure comparison helper; legacy states without identity never match. */
+export function processIdentityMatches(expected, actual) {
+  if (!expected || !actual || !Number.isInteger(expected.pid) || expected.pid !== actual.pid) return false;
+  for (const field of ["startToken", "pgid", "executable", "commandToken"]) {
+    if (typeof expected[field] !== "string" || !expected[field] || expected[field] !== actual[field]) return false;
+  }
+  return true;
+}
+
 export async function pidRssBytes(pid) {
   try {
     const { stdout } = await execFileAsync("ps", ["-o", "rss=", "-p", String(pid)]);

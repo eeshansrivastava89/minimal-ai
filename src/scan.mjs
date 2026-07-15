@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadataSafe, resolveQuant } from "./gguf.mjs";
@@ -50,7 +50,8 @@ async function scanOneDir(root, sourceLabel = "local-gguf") {
     const dir = dirname(path);
     const mmprojPath = mmprojs.find((candidate) => dirname(candidate) === dir) ?? null;
     const name = basename(path).replace(/\.gguf$/i, "");
-    const sizeBytes = statSync(path).size;
+    let sizeBytes;
+    try { sizeBytes = statSync(path).size; } catch { continue; }
     if (sizeBytes < MIN_MODEL_SIZE_BYTES) continue;
     // Read GGUF metadata to detect drafter architecture and embeddings
     const meta = readGgufMetadataSafe(path);
@@ -128,14 +129,18 @@ export function isEmbeddingArchitecture(architecture, filename = "") {
 //      "gemma-4-12b-it-MTP-Q8_0" matches "gemma-4-12b-it*"
 function drafterTargetHint(name) {
   const lower = name.toLowerCase();
-  // Strip common prefixes/suffixes to get the base model identifier
+  // Strip quant suffix first (Q4_K_M, Q8_0, UD-Q4_K_XL, etc.) so that
+  // -MTP between the base name and the quant is exposed for stripping.
   let base = lower
+    .replace(/[-_]q\d_k_[a-z]+$/i, "")
+    .replace(/[-_]q\d_[01]$/i, "")
+    .replace(/[-_]ud-[a-z0-9_]+$/i, "");
+  // Now strip MTP/assistant/draft prefixes and suffixes to get the base model.
+  base = base
     .replace(/^mtp[-_]/i, "")
     .replace(/[-_]mtp$/i, "")
     .replace(/[-_]assistant([-_].*)?$/i, "")
     .replace(/[-_]draft([-_].*)?$/i, "");
-  // Remove quant suffix for matching (Q4_K_M, Q8_0, UD-Q4_K_XL, etc.)
-  base = base.replace(/[-_]q\d_k_[a-z]+$/i, "").replace(/[-_]q\d_[01]$/i, "").replace(/[-_]ud-[a-z0-9_]+$/i, "");
   return base;
 }
 
@@ -163,7 +168,14 @@ export function matchDrafter(targetPath, drafters) {
 
 async function findFiles(root, predicate) {
   const result = [];
-  async function walk(dir) {
+  const visitedDirectories = new Set();
+  const canonicalRoot = await realpath(root).catch(() => null);
+  if (!canonicalRoot) return result;
+  const isInsideRoot = (candidate) => candidate === canonicalRoot || candidate.startsWith(`${canonicalRoot}/`);
+
+  async function walk(dir, canonicalDir = canonicalRoot) {
+    if (!isInsideRoot(canonicalDir) || visitedDirectories.has(canonicalDir)) return;
+    visitedDirectories.add(canonicalDir);
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -173,10 +185,17 @@ async function findFiles(root, predicate) {
     for (const entry of entries) {
       const path = join(dir, entry.name);
       if (entry.isDirectory() || entry.isSymbolicLink()) {
-        // Follow symlinks (HF cache uses them) and avoid recursion loops.
+        // Follow directory symlinks only when their canonical target remains
+        // inside this scan root, and visit each canonical directory once.
         const stats = await stat(path).catch(() => null);
-        if (stats?.isDirectory()) await walk(path);
-        else if (stats?.isFile() && predicate(path)) result.push(path);
+        if (stats?.isDirectory()) {
+          const canonicalPath = await realpath(path).catch(() => null);
+          if (canonicalPath && isInsideRoot(canonicalPath)) await walk(path, canonicalPath);
+        } else if (stats?.isFile() && predicate(path)) {
+          // Regular symlinked model files remain discoverable, even when their
+          // target lives elsewhere; only directory recursion is constrained.
+          result.push(path);
+        }
       } else if (entry.isFile() && predicate(path)) {
         result.push(path);
       }

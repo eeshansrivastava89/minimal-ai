@@ -14,7 +14,7 @@ import { serverReady } from "./server-check.mjs";
 
 // Respect OLLAMA_HOST env var (same as Ollama itself). Format: "host:port"
 // or just "host" (defaults to port 11434). Falls back to 127.0.0.1:11434.
-function parseOllamaHost() {
+export function parseOllamaHost() {
   const raw = process.env.OLLAMA_HOST;
   if (!raw) return { host: "127.0.0.1", port: 11434 };
   // Handle "host:port" or just "host"
@@ -91,6 +91,12 @@ export async function startOllamaServer() {
   const bin = await findOllama();
   if (!bin) throw new Error("Ollama is not installed");
   const child = spawn(bin, ["serve"], { detached: true, stdio: "ignore" });
+  // Await the spawn event so an async spawn error (ENOENT, EACCES) rejects
+  // instead of becoming an unhandled 'error' event that crashes Node.
+  await new Promise((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
   child.unref();
 }
 

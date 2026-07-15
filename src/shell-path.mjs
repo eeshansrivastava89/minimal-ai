@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 const INSTALLER_PATH_MARKER = "# Added by offgrid-ai installer";
 
 function defaultShellConfigFiles(home = homedir()) {
-  return [`${home}/.zshrc`, `${home}/.bashrc`, `${home}/.bash_profile`];
+  return [`${home}/.zshrc`, `${home}/.zprofile`, `${home}/.bashrc`, `${home}/.bash_profile`];
 }
 
 export function removeInstallerPathBlock(content) {
@@ -17,12 +17,12 @@ export function removeInstallerPathBlock(content) {
     const line = lines[i];
     const next = lines[i + 1];
 
-    if (line.trim() === "" && next?.trim() === INSTALLER_PATH_MARKER) {
+    if (line.trim() === "" && next?.trim().startsWith(INSTALLER_PATH_MARKER)) {
       changed = true;
       continue;
     }
 
-    if (line.trim() === INSTALLER_PATH_MARKER) {
+    if (line.trim().startsWith(INSTALLER_PATH_MARKER)) {
       changed = true;
       const following = lines[i + 1]?.trim() ?? "";
       if (/^export\s+PATH=".+:\$PATH"$/u.test(following)) i += 1;

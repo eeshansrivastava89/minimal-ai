@@ -2,6 +2,35 @@ import { openSync, readSync, closeSync, statSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { parseModelName } from "./model-name.mjs";
 
+const MAX_METADATA_ENTRIES = 100_000;
+// GGUF token vocabularies commonly contain hundreds of thousands of strings;
+// keep that valid case while rejecting hostile/unbounded counts.
+const MAX_METADATA_ARRAY_VALUES = 1_000_000;
+
+function u64AsSafeNumber(buffer, offset) {
+  const value = buffer.readBigUInt64LE(offset);
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("GGUF integer exceeds safe range");
+  return Number(value);
+}
+
+function u64Value(buffer, offset) {
+  return u64AsSafeNumber(buffer, offset);
+}
+
+function i64Value(buffer, offset) {
+  const value = buffer.readBigInt64LE(offset);
+  if (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("GGUF integer exceeds safe range");
+  }
+  return Number(value);
+}
+
+function ensureBytes(buffer, offset, length) {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset + length > buffer.length) {
+    throw new Error("GGUF metadata offset is outside the file prefix");
+  }
+}
+
 export function readGgufMetadata(path) {
   const buffer = readFilePrefix(path, 64 * 1024 * 1024);
   let offset = 0;
@@ -10,14 +39,15 @@ export function readGgufMetadata(path) {
   offset += 4;
   offset += 4; // version
   offset += 8; // tensor count
-  if (offset + 8 > buffer.length) return meta;
-  const kvCount = Number(buffer.readBigUInt64LE(offset));
+  if (offset + 8 > buffer.length) throw new Error("GGUF metadata header is truncated");
+  const kvCount = u64AsSafeNumber(buffer, offset);
   offset += 8;
+  if (kvCount > MAX_METADATA_ENTRIES) return {};
   for (let i = 0; i < kvCount; i++) {
-    if (offset + 8 > buffer.length) return meta;
-    const keyLen = Number(buffer.readBigUInt64LE(offset));
+    if (offset + 8 > buffer.length) throw new Error("GGUF metadata key is truncated");
+    const keyLen = u64AsSafeNumber(buffer, offset);
     offset += 8;
-    if (offset + keyLen + 4 > buffer.length) return meta;
+    ensureBytes(buffer, offset, keyLen + 4);
     const key = buffer.toString("utf8", offset, offset + keyLen);
     offset += keyLen;
     const type = buffer.readUInt32LE(offset);
@@ -25,10 +55,10 @@ export function readGgufMetadata(path) {
     let read;
     try {
       read = readValue(buffer, offset, type);
-    } catch {
-      return meta;
+    } catch (error) {
+      throw new Error(`GGUF metadata value is invalid: ${error.message}`, { cause: error });
     }
-    if (read.offset > buffer.length) return meta;
+    if (read.offset > buffer.length) throw new Error("GGUF metadata value exceeds the file prefix");
     offset = read.offset;
     meta[key] = read.value;
   }
@@ -48,24 +78,27 @@ function readFilePrefix(path, maxBytes) {
 }
 
 const TYPE_READERS = [
-  (buf, off) => ({ value: buf.readUInt8(off), offset: off + 1 }),
-  (buf, off) => ({ value: buf.readInt8(off), offset: off + 1 }),
-  (buf, off) => ({ value: buf.readUInt16LE(off), offset: off + 2 }),
-  (buf, off) => ({ value: buf.readInt16LE(off), offset: off + 2 }),
-  (buf, off) => ({ value: buf.readUInt32LE(off), offset: off + 4 }),
-  (buf, off) => ({ value: buf.readInt32LE(off), offset: off + 4 }),
-  (buf, off) => ({ value: buf.readFloatLE(off), offset: off + 4 }),
-  (buf, off) => ({ value: Boolean(buf.readUInt8(off)), offset: off + 1 }),
+  (buf, off) => { ensureBytes(buf, off, 1); return { value: buf.readUInt8(off), offset: off + 1 }; },
+  (buf, off) => { ensureBytes(buf, off, 1); return { value: buf.readInt8(off), offset: off + 1 }; },
+  (buf, off) => { ensureBytes(buf, off, 2); return { value: buf.readUInt16LE(off), offset: off + 2 }; },
+  (buf, off) => { ensureBytes(buf, off, 2); return { value: buf.readInt16LE(off), offset: off + 2 }; },
+  (buf, off) => { ensureBytes(buf, off, 4); return { value: buf.readUInt32LE(off), offset: off + 4 }; },
+  (buf, off) => { ensureBytes(buf, off, 4); return { value: buf.readInt32LE(off), offset: off + 4 }; },
+  (buf, off) => { ensureBytes(buf, off, 4); return { value: buf.readFloatLE(off), offset: off + 4 }; },
+  (buf, off) => { ensureBytes(buf, off, 1); return { value: Boolean(buf.readUInt8(off)), offset: off + 1 }; },
   (buf, off) => {
-    const len = Number(buf.readBigUInt64LE(off));
+    const len = u64AsSafeNumber(buf, off);
     off += 8;
+    ensureBytes(buf, off, len);
     return { value: buf.toString("utf8", off, off + len), offset: off + len };
   },
   (buf, off) => {
+    ensureBytes(buf, off, 12);
     const itemType = buf.readUInt32LE(off);
     off += 4;
-    const len = Number(buf.readBigUInt64LE(off));
+    const len = u64AsSafeNumber(buf, off);
     off += 8;
+    if (len > MAX_METADATA_ARRAY_VALUES) throw new Error("GGUF metadata array is too large");
     const values = [];
     for (let i = 0; i < len; i++) {
       const item = readValue(buf, off, itemType);
@@ -74,9 +107,9 @@ const TYPE_READERS = [
     }
     return { value: values, offset: off };
   },
-  (buf, off) => ({ value: Number(buf.readBigUInt64LE(off)), offset: off + 8 }),
-  (buf, off) => ({ value: Number(buf.readBigInt64LE(off)), offset: off + 8 }),
-  (buf, off) => ({ value: buf.readDoubleLE(off), offset: off + 8 }),
+  (buf, off) => { ensureBytes(buf, off, 8); return { value: u64Value(buf, off), offset: off + 8 }; },
+  (buf, off) => { ensureBytes(buf, off, 8); return { value: i64Value(buf, off), offset: off + 8 }; },
+  (buf, off) => { ensureBytes(buf, off, 8); return { value: buf.readDoubleLE(off), offset: off + 8 }; },
 ];
 
 function readValue(buffer, offset, type) {

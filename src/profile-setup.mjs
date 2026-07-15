@@ -113,7 +113,7 @@ export async function configureLocalProfile(prompt, profile) {
   const hasMtp = freshCaps.mtp || Boolean(drafterPath);
   const caps = { ...freshCaps, mtp: hasMtp };
   configured = { ...configured, drafterPath: drafterPath ?? null, capabilities: { ...configured.capabilities, mtp: hasMtp } };
-  if (configured.disabledMmprojPath && configured.mmprojPath === null && freshCaps.vision) {
+  if (configured.disabledMmprojPath && configured.mmprojPath === null && existsSync(configured.disabledMmprojPath)) {
     configured = { ...configured, mmprojPath: configured.disabledMmprojPath, disabledMmprojPath: undefined, capabilities: { ...configured.capabilities, vision: true, visionDisabledReason: undefined } };
   }
 
@@ -194,7 +194,7 @@ export async function configureLocalProfile(prompt, profile) {
   // ── Context & KV cache (heatmap) ────────────────────────────────────────
   const maxCtx = caps.metaCtx ?? caps.ctxSize;
   const systemRamBytes = availableRamBytes();
-  const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, profile.drafterPath);
+  const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, drafterPath);
   const hasKvParams = Boolean(prepared.kvParams.layers);
 
   if (hasKvParams) {

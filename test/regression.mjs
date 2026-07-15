@@ -69,6 +69,13 @@ describe("regressions", () => {
     assert.deepEqual(plan.args, ["exec", "--yes", "--", "offgrid-ai@latest", "status"]);
   });
 
+  it("falls back to global install for npx update to avoid recursion", () => {
+    const invocation = detectInvocation({ npm_command: "exec" });
+    const plan = updateCommand(invocation, ["update"]);
+    assert.equal(plan.mode, "install-global");
+    assert.deepEqual(plan.args, ["install", "-g", "offgrid-ai@latest"]);
+  });
+
   it("detects MTP from LM Studio parent directory names", async () => {
     const dir = await mkdtemp(join(tmpdir(), "Qwen3.6-35B-A3B-MTP-GGUF-"));
     const file = join(dir, "Qwen3.6-35B-A3B-UD-Q4_K_S.gguf");
