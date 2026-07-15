@@ -50,21 +50,17 @@ async function offerRuntimeUpdates() {
     console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
   }
   const prompt = createPrompt();
-  try {
-    const shouldUpdate = await prompt.yesNo("Update now?", true);
-    if (!shouldUpdate) return;
-    for (const u of updates) {
-      if (u.kind === "llama.cpp") {
-        await installLlamaRelease(u.release);
-        console.log(pc.green("\u2713 llama.cpp updated."));
-      } else if (u.kind === "oMLX") {
-        await installOmlx();
-      } else if (u.kind === "Ollama") {
-        await updateOllama();
-      }
+  const shouldUpdate = await prompt.yesNo("Update now?", true);
+  if (!shouldUpdate) return;
+  for (const u of updates) {
+    if (u.kind === "llama.cpp") {
+      await installLlamaRelease(u.release);
+      console.log(pc.green("\u2713 llama.cpp updated."));
+    } else if (u.kind === "oMLX") {
+      await installOmlx();
+    } else if (u.kind === "Ollama") {
+      await updateOllama();
     }
-  } finally {
-    prompt.close();
   }
 }
 

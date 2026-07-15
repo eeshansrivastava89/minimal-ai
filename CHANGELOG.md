@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.12] - 2026-07-14
+
+### Fixed
+- Removed `prompt.close()` call that crashed after runtime update completed. The `createPrompt()` factory doesn't expose a `close` method (Inquirer prompts are stateless and need no cleanup).
+
 ## [1.0.11] - 2026-07-14
 
 ### Fixed
