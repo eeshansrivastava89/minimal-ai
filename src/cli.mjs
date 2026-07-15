@@ -1,10 +1,10 @@
-import { pc, renderRows, renderCard } from "./ui.mjs";
+import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand } from "./updates.mjs";
 import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
 import { omlxEnabled, ollamaEnabled } from "./config.mjs";
-import { checkLlamaUpdate } from "./runtime.mjs";
-import { checkOmlxUpdate } from "./omlx-runtime.mjs";
-import { checkOllamaUpdate } from "./ollama-runtime.mjs";
+import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
+import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
+import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
 import { spawn } from "node:child_process";
 
 import { mainFlow } from "./commands/main.mjs";
@@ -33,6 +33,7 @@ async function offerUpdate() {
 }
 
 async function offerRuntimeUpdates() {
+  if (!process.stdin.isTTY) return;
   const updates = [];
   const llamaUpdate = await checkLlamaUpdate();
   if (llamaUpdate) updates.push({ kind: "llama.cpp", ...llamaUpdate });
@@ -44,10 +45,27 @@ async function offerRuntimeUpdates() {
     const ollamaUpdate = await checkOllamaUpdate();
     if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
   }
+  if (updates.length === 0) return;
   for (const u of updates) {
     console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
   }
-  if (updates.length > 0) console.log();
+  const prompt = createPrompt();
+  try {
+    const shouldUpdate = await prompt.yesNo("Update now?", true);
+    if (!shouldUpdate) return;
+    for (const u of updates) {
+      if (u.kind === "llama.cpp") {
+        await installLlamaRelease(u.release);
+        console.log(pc.green("\u2713 llama.cpp updated."));
+      } else if (u.kind === "oMLX") {
+        await installOmlx();
+      } else if (u.kind === "Ollama") {
+        await updateOllama();
+      }
+    }
+  } finally {
+    prompt.close();
+  }
 }
 
 export async function run(argv) {
