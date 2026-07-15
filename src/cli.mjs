@@ -71,7 +71,8 @@ export async function run(argv) {
     return;
   }
   if (argv.length === 0) {
-    await offerUpdate();
+    const hasPackageUpdate = await offerUpdate();
+    if (hasPackageUpdate) return;
     await offerRuntimeUpdates();
     return mainFlow({ showReleaseNotes: true });
   }

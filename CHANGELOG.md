@@ -4,6 +4,11 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.0.13] - 2026-07-14
+
+### Changed
+- Update flow now prioritizes offgrid-ai package updates. If an offgrid-ai update is available, the tool shows the notification and stops — runtime update checks and main flow are skipped. This prevents overlapping update prompts and ensures the user runs the latest offgrid-ai code before dealing with runtime updates.
+
 ## [1.0.12] - 2026-07-14
 
 ### Fixed
