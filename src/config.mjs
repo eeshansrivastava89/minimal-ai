@@ -75,8 +75,6 @@ const CONFIG_PATH = join(DATA_DIR, "config.json");
 const DEFAULT_CONFIG = {
   modelScanDirs: [],
   binaryOverrides: {},
-  enable_omlx: false,
-  enable_ollama: false,
   enable_benchmarking: false,
   lastSeenVersion: null,
 };
@@ -93,9 +91,7 @@ export async function loadConfig() {
     if (config.binaryOverrides != null && typeof config.binaryOverrides !== "object") {
       config.binaryOverrides = {};
     }
-    if (typeof config.enable_omlx !== "boolean") config.enable_omlx = false;
-    if (typeof config.enable_ollama !== "boolean") config.enable_ollama = false;
-    if (typeof config.enable_benchmarking !== "boolean") config.enable_benchmarking = false;
+    if (typeof config.enable_benchmarking !== "boolean") config.enable_benchmarking = DEFAULT_CONFIG.enable_benchmarking;
     return config;
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -120,37 +116,10 @@ export async function saveConfig(config) {
 
 // ── Feature flags ──────────────────────────────────────────────────────────
 
-const OMLX_MODELS_DIR = join(homedir(), ".omlx", "models");
-
 /**
- * Check if oMLX backend is enabled.
- * Disabled by default — enable via config.json ("enable_omlx": true).
- * When disabled, all oMLX UI, scanning, profiling, and download paths are
- * hidden. Existing oMLX profiles are preserved on disk but not shown.
- * To enable for all users later, change the default below from === true
- * to !== false (one line, no other code changes needed).
- * @param {object} [config] - pre-loaded config (avoids redundant read)
- */
-export async function omlxEnabled(config) {
-  const cfg = config ?? await loadConfig();
- return cfg.enable_omlx === true;
-}
-
-/**
- * Check if Ollama backend is enabled.
- * Same pattern as oMLX — disabled by default, enable via config.json.
- */
-export async function ollamaEnabled(config) {
-  const cfg = config ?? await loadConfig();
-  return cfg.enable_ollama === true;
-}
-
-/**
- * Check if benchmarking is enabled.
- * Disabled by default — enable via config.json ("enable_benchmarking": true).
- * When disabled, the Benchmark action is hidden from the model picker.
- * To enable for all users later, change the default below from === true
- * to !== false (one line, no other code changes needed).
+ * Dev flag for the unreleased benchmark feature.
+ * Off by default — enable via config.json ("enable_benchmarking": true).
+ * Flags are dev scaffolding: remove this once the feature ships.
  * @param {object} [config] - pre-loaded config (avoids redundant read)
  */
 export async function benchmarkingEnabled(config) {
@@ -163,10 +132,6 @@ export async function benchmarkingEnabled(config) {
 export async function getModelScanDirs() {
   const config = await loadConfig();
   const dirs = [...DEFAULT_MODEL_DIRS, ...config.modelScanDirs];
-  // Exclude ~/.omlx/models when oMLX is disabled
-  if (!(await omlxEnabled(config))) {
-    return dirs.filter((d) => d !== OMLX_MODELS_DIR).filter((dir, i, arr) => arr.indexOf(dir) === i);
-  }
   return dirs.filter((dir, i, arr) => arr.indexOf(dir) === i);
 }
 

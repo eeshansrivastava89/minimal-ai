@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, installedGlobalVersion, forceReinstall } from "./updates.mjs";
 import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
-import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
@@ -36,14 +35,12 @@ async function offerRuntimeUpdates() {
   const updates = [];
   const llamaUpdate = await checkLlamaUpdate();
   if (llamaUpdate) updates.push({ kind: "llama.cpp", ...llamaUpdate });
-  if (process.platform === "darwin" && process.arch === "arm64" && (await omlxEnabled())) {
+  if (process.platform === "darwin" && process.arch === "arm64") {
     const omlxUpdate = await checkOmlxUpdate();
     if (omlxUpdate) updates.push({ kind: "oMLX", ...omlxUpdate });
   }
-  if (await ollamaEnabled()) {
-    const ollamaUpdate = await checkOllamaUpdate();
-    if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
-  }
+  const ollamaUpdate = await checkOllamaUpdate();
+  if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
   if (updates.length === 0) return;
 
   const rows = updates.map((u) => [u.kind, `${u.latest} available (you have ${u.installed})`]);

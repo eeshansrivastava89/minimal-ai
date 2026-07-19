@@ -1,4 +1,4 @@
-import { findLlamaServer, ensureDirs, omlxEnabled, ollamaEnabled } from "../config.mjs";
+import { findLlamaServer, ensureDirs } from "../config.mjs";
 import { currentPackageVersion } from "../updates.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
@@ -49,8 +49,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
     return await statusCommand();
   }
 
-  const omlxOn = await omlxEnabled();
-  const ollamaOn = await ollamaEnabled();
+  const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
   startInteractive("offgrid-ai");
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
 
@@ -59,11 +58,10 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
     llamaBinary,
     managedModels,
     piInstalled,
-    omlxInstalled: omlxOn ? await hasOmlx() : false,
-    showOmlx: omlxOn,
-    ollamaInstalled: ollamaOn ? await hasOllama() : false,
+    omlxInstalled: isAppleSilicon ? await hasOmlx() : false,
+    showOmlx: isAppleSilicon,
+    ollamaInstalled: await hasOllama(),
     ollamaServerUp: managedModels.some((m) => m.backendId === "ollama" && m.status === "ok"),
-    showOllama: ollamaOn,
     profiles,
   });
   console.log("");
@@ -71,7 +69,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
-function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, showOllama, profiles }) {
+function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, profiles }) {
   const parts = [
     llamaBinary ? status({ kind: "success", message: "llama.cpp" }) : status({ kind: "error", message: "llama.cpp" }),
   ];
@@ -83,12 +81,10 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
       parts.push(status({ kind: "error", message: "oMLX" }));
     }
   }
-  if (showOllama) {
-    if (ollamaInstalled) {
-      parts.push(ollamaServerUp ? status({ kind: "success", message: "Ollama · server up" }) : status({ kind: "warning", message: "Ollama · server down" }));
-    } else {
-      parts.push(status({ kind: "error", message: "Ollama" }));
-    }
+  if (ollamaInstalled) {
+    parts.push(ollamaServerUp ? status({ kind: "success", message: "Ollama · server up" }) : status({ kind: "warning", message: "Ollama · server down" }));
+  } else {
+    parts.push(status({ kind: "error", message: "Ollama" }));
   }
   parts.push(piInstalled ? status({ kind: "success", message: "Pi" }) : status({ kind: "error", message: "Pi" }));
   if (profiles.length > 0) {
@@ -99,7 +95,7 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
     }
     const ordered = ["llama.cpp"];
     if (showOmlx) ordered.push("oMLX");
-    if (showOllama) ordered.push("Ollama");
+    ordered.push("Ollama");
     for (const label of counts.keys()) {
       if (!ordered.includes(label)) ordered.push(label);
     }

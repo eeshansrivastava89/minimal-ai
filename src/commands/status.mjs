@@ -1,4 +1,4 @@
-import { ensureDirs, omlxEnabled } from "../config.mjs";
+import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { loadProfiles, effectiveModelId } from "../profiles.mjs";
 import { profileRuntimeStatus } from "../process.mjs";
@@ -42,20 +42,18 @@ export async function statusCommand() {
 
   console.log(card({ title: "Status", body: renderList(summaryRows) }));
 
-  if (await omlxEnabled()) {
-    const omlxCacheDir = join(homedir(), ".omlx", "cache");
-    if (existsSync(omlxCacheDir)) {
-      try {
-        const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
-        const cacheSize = duOutput.split(/\s+/)[0];
-        console.log("");
-        console.log(card({ title: "oMLX cache", body: renderList([
-          ["Location", theme.subtle(omlxCacheDir)],
-          ["Disk usage", theme.bold(cacheSize)],
-        ]) }));
-      } catch (err) {
-        console.log(theme.subtle(`  (disk usage unavailable: ${err.message})`));
-      }
+  const omlxCacheDir = join(homedir(), ".omlx", "cache");
+  if (existsSync(omlxCacheDir)) {
+    try {
+      const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
+      const cacheSize = duOutput.split(/\s+/)[0];
+      console.log("");
+      console.log(card({ title: "oMLX cache", body: renderList([
+        ["Location", theme.subtle(omlxCacheDir)],
+        ["Disk usage", theme.bold(cacheSize)],
+      ]) }));
+    } catch (err) {
+      console.log(theme.subtle(`  (disk usage unavailable: ${err.message})`));
     }
   }
 

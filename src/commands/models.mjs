@@ -1,4 +1,4 @@
-import { ensureDirs, omlxEnabled, ollamaEnabled, benchmarkingEnabled } from "../config.mjs";
+import { ensureDirs, benchmarkingEnabled } from "../config.mjs";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
@@ -114,19 +114,15 @@ async function showModelPicker(catalog) {
   }
 
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  const omlxOn = await omlxEnabled();
-  const ollamaOn = await ollamaEnabled();
-  const omlxInstalled = (isAppleSilicon && omlxOn) ? await hasOmlx() : true;
-  const ollamaInstalled = ollamaOn ? await hasOllama() : true;
+  const omlxInstalled = isAppleSilicon ? await hasOmlx() : true;
+  const ollamaInstalled = await hasOllama();
 
   const downloadItems = [
     { value: "__download_hf_gguf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for llama.cpp)")}` },
+    { value: "__download_ollama_library__", label: `${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` },
+    { value: "__download_ollama_hf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` },
   ];
-  if (ollamaOn) {
-    downloadItems.push({ value: "__download_ollama_library__", label: `${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` });
-    downloadItems.push({ value: "__download_ollama_hf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` });
-  }
-  if (omlxOn) {
+  if (isAppleSilicon) {
     downloadItems.push({ value: "__download_omlx__", label: `${theme.success("↓ oMLX model")} ${theme.subtle("(open and download from oMLX app)")}` });
   }
   groups.push({ separator: theme.bold("Download"), items: downloadItems });
@@ -135,7 +131,7 @@ async function showModelPicker(catalog) {
   if (isAppleSilicon && !omlxInstalled) {
     manageItems.push({ value: "__install_omlx__", label: `${theme.warning("↓ Install oMLX")} ${theme.subtle("(Apple Silicon — faster for MLX)")}` });
   }
-  if (ollamaOn && !ollamaInstalled) {
+  if (!ollamaInstalled) {
     manageItems.push({ value: "__install_ollama__", label: `${theme.warning("↓ Install Ollama")} ${theme.subtle("(managed model runner)")}` });
   }
   manageItems.push({ value: "__runtime_status__", label: theme.brand("⚡ Runtime status & running models") });

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { findLlamaServer, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, HF_HUB_DIR, omlxEnabled, ollamaEnabled } from "../config.mjs";
+import { findLlamaServer, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, HF_HUB_DIR } from "../config.mjs";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { stopProfile, unloadModelFromServer } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
@@ -14,10 +14,8 @@ import { card, renderList, status, theme, promptChoice, promptText } from "../ui
 export async function runtimeStatusFlow() {
   while (true) {
     const llamaBinary = await findLlamaServer();
-    const omlxOn = await omlxEnabled();
-    const omlxInstalled = omlxOn ? await hasOmlx() : false;
-    const ollamaOn = await ollamaEnabled();
-    const ollamaInstalled = ollamaOn ? await hasOllama() : false;
+    const omlxInstalled = await hasOmlx();
+    const ollamaInstalled = await hasOllama();
     const piInstalled = await hasPi();
 
     const running = await runningProfiles();
@@ -30,22 +28,18 @@ export async function runtimeStatusFlow() {
     const runtimeRows = [
       ["llama.cpp", llamaBinary ? status({ kind: "success", message: llamaBinary }) : status({ kind: "error", message: "not found" })],
     ];
-    if (omlxOn) {
-      runtimeRows.push([
-        "oMLX",
-        omlxInstalled
-          ? (omlxServerUp ? status({ kind: "success", message: "server up" }) : status({ kind: "warning", message: "installed · server down" }))
-          : status({ kind: "error", message: "not found" }),
-      ]);
-    }
-    if (ollamaOn) {
-      runtimeRows.push([
-        "Ollama",
-        ollamaInstalled
-          ? (ollamaServerUp ? status({ kind: "success", message: "server up" }) : status({ kind: "warning", message: "installed · server down" }))
-          : status({ kind: "error", message: "not found" }),
-      ]);
-    }
+    runtimeRows.push([
+      "oMLX",
+      omlxInstalled
+        ? (omlxServerUp ? status({ kind: "success", message: "server up" }) : status({ kind: "warning", message: "installed · server down" }))
+        : status({ kind: "error", message: "not found" }),
+    ]);
+    runtimeRows.push([
+      "Ollama",
+      ollamaInstalled
+        ? (ollamaServerUp ? status({ kind: "success", message: "server up" }) : status({ kind: "warning", message: "installed · server down" }))
+        : status({ kind: "error", message: "not found" }),
+    ]);
     runtimeRows.push(["Pi", piInstalled ? status({ kind: "success", message: "installed" }) : status({ kind: "error", message: "not found" })]);
 
     console.log();
