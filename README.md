@@ -25,7 +25,7 @@ Recommended workflow:
 
 - **Download models** from HuggingFace with a quant picker and RAM fit indicators
 - **Auto-detects** models from LM Studio, oMLX, Ollama, and HuggingFace cache
-- **Glass-box setup** — every configuration flag gets an explanation card with tradeoffs and memory impact
+- **Guided setup** — every setting gets a plain-language hint as you configure, with memory and context tradeoffs shown before you save
 - **Model management** — delete models from disk, remove configurations, reconfigure settings
 - **Auto-detects MTP** (multi-token prediction) and **QAT** (quantization-aware training) models, applies the correct flags
 - **Three backends**: llama.cpp (GGUF), oMLX (MLX on Apple Silicon), Ollama (GGUF + MLX)
@@ -55,7 +55,7 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 ### 2. Pick a model
 
-The first time you run offgrid-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — just pick "↓ Download a model" and enter a repo ID (e.g. `unsloth/Qwen3.5-4B-GGUF`).
+The first time you run offgrid-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — pick "↓ GGUF from HuggingFace" and enter a repo ID (e.g. `unsloth/Qwen3.5-4B-GGUF`).
 
 <img width="808" height="274" alt="image" src="https://github.com/user-attachments/assets/6e1583ab-65db-423c-b0eb-b627586fbf86" />
 
@@ -86,7 +86,7 @@ offgrid-ai uninstall    # remove offgrid-ai
 
 ## Recommended models
 
-These are good starting points sorted by minimum RAM. All are available on HuggingFace — paste the repo ID into offgrid-ai's "Download a model from Hugging Face" option.
+These are good starting points sorted by minimum RAM. All are available on HuggingFace — paste the repo ID into offgrid-ai's GGUF download option.
 
 | Model | Min RAM | GGUF (llama.cpp) | MLX |
 |-------|---------|------------------|-----|

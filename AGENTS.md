@@ -7,18 +7,23 @@
 
 ### Versioning convention
 
-The version follows `MAJOR.MINOR.PATCH` (semver). Since the project is pre-1.0
-(`0.x.y`), the MAJOR number stays at `0`. Bump rules:
+The version follows `MAJOR.MINOR.PATCH` (semver). Bump rules:
 
 | Commit type | Bump | Example |
 |-------------|------|---------|
-| `feat:` | Minor (middle) | `0.18.44` → `0.19.0` |
-| `fix:` | Patch (last) | `0.19.0` → `0.19.1` |
-| `refactor:` | Patch (last) | `0.19.1` → `0.19.2` |
-| `chore:` | Patch (last) | `0.19.2` → `0.19.3` |
-| Breaking change | Major | `0.x` → `1.0.0` |
+| `feat:` | Minor (middle) | `1.0.13` → `1.1.0` |
+| `fix:` | Patch (last) | `1.1.0` → `1.1.1` |
+| `refactor:` | Patch (last) | `1.1.1` → `1.1.2` |
+| `chore:` | Patch (last) | `1.1.2` → `1.1.3` |
+| Breaking change | Major | `1.x` → `2.0.0` |
 
 **Simple rule:** `feat:` → bump middle, everything else → bump last.
+
+### Beta features & dev flags
+
+- Unfinished features ship behind a `config.json` dev flag (e.g. `enable_benchmarking`), default off and undocumented. Flags are dev scaffolding, not user settings.
+- A flag enters with an unfinished feature and is removed in the release that ships it — delete the flag, make the code unconditional. Don't let them accumulate.
+- For pre-release soak testing use npm dist-tags (`offgrid-ai@next`) rather than in-app flags. Rollback = revert + patch release.
 
 ### Changelog
 
@@ -41,7 +46,7 @@ The version follows `MAJOR.MINOR.PATCH` (semver). Since the project is pre-1.0
 - **Explain failures, don't just report them.** When something fails, diagnose the cause and surface a specific, actionable reason.
 - **Terminal output should fit.** Long messages must wrap so cards/tables stay aligned and readable.
 - **Commit workflow.** Propose a focused conventional-commit message and ask for approval before committing. Keep commits small and logical.
-- **Document consolidation.** Completed plans go to `internal-docs/archive/`. Living runbooks go to `internal-docs/reference/`. Active strategy stays in `internal-docs/` root. Keep the README simple; detailed internals live in `internal-docs/`.
+- **Document consolidation.** Completed plans go to `internal-docs/archive/`. Living runbooks go to `internal-docs/reference/`. Active strategy stays in `internal-docs/active/`. Keep the README simple; detailed internals live in `internal-docs/`.
 - **Protect user data and live runs.** Never overwrite, move, delete, or truncate files that belong to active user sessions, run directories, logs, or model data. If you need to inspect or reproduce against live data, copy it to a temporary or test location first.
 - **Codebase is the source of truth.** Verify assumptions against current files and tests, not memory or old docs.
 - **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which offgrid-ai`, etc.).

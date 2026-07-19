@@ -4,6 +4,27 @@ All notable changes to offgrid-ai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [1.1.0] - 2026-07-19
+
+### Added
+- Unified terminal UI on @eeshans/cli-kit. Every prompt runs on Clack now, so Escape cancels cleanly on every surface.
+- Model picker groups render as real headers: bold labels, a blank line between groups, no radio bullets on header rows.
+- Status card shows a per-backend model breakdown, e.g. "5 models → llama.cpp (2) | oMLX (3) | Ollama (0)".
+
+### Changed
+- Setup and reconfigure no longer show an explanation card per setting. Each prompt gets a one-line hint instead; the state cards (model overview, context & KV cache heatmap, memory estimate, configuration summary) stay.
+- Number prompts in reconfigure come pre-filled with the current value. Press Enter to keep it, type to change it.
+- oMLX and Ollama backends are always on. The `enable_omlx` / `enable_ollama` config flags are retired — stale keys in config.json are simply ignored. `enable_benchmarking` stays as a dev flag.
+
+### Fixed
+- Escape on the uninstall and stop prompts cancelled visually but proceeded anyway. Both now actually cancel.
+- Number prompts crashed on submit after a valid entry (validate convention mismatch with Clack).
+- `offgrid-ai run <model> --with server` failed argument parsing.
+- Removed duplicate section headers above cards that already have their own titles, and a duplicate memory estimate card in reconfigure.
+
+### Removed
+- @inquirer/prompts dependency. The UI is entirely Clack.
+
 ## [1.0.13] - 2026-07-14
 
 ### Changed
