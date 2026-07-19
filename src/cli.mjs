@@ -1,11 +1,12 @@
-import { pc, renderRows, renderCard, createPrompt } from "./ui.mjs";
+import { spawn } from "node:child_process";
+
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, installedGlobalVersion, forceReinstall } from "./updates.mjs";
 import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
 import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
-import { spawn } from "node:child_process";
+import { createCli, runCli, appHeader, section, infoCard, renderList, status, formatError, theme } from "./ui.mjs";
 
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
@@ -18,17 +19,15 @@ async function offerUpdate() {
   const update = await checkForUpdate();
   if (!update) return false;
 
-  console.log(pc.yellow(`\nUpdate available: v${update.latest}. You have v${update.current}.\n`));
+  console.log();
+  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: offgrid-ai update`));
 
-  // Show release notes for the new version (fetched from GitHub)
   const remoteEntries = await fetchRemoteChangelog(`v${update.latest}`);
   const notes = entriesBetween(remoteEntries, update.current, update.latest);
   if (notes.length > 0) {
     printReleaseNotes(notes);
   }
 
-  console.log(pc.dim(`Run: offgrid-ai update`));
-  console.log();
   return true;
 }
 
@@ -46,16 +45,19 @@ async function offerRuntimeUpdates() {
     if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
   }
   if (updates.length === 0) return;
-  for (const u of updates) {
-    console.log(pc.yellow(`\n${u.kind} update available: ${u.latest} (you have ${u.installed}).`));
-  }
-  const prompt = createPrompt();
-  const shouldUpdate = await prompt.yesNo("Update now?", true);
+
+  const rows = updates.map((u) => [u.kind, `${u.latest} available (you have ${u.installed})`]);
+  console.log();
+  console.log(section("Runtime updates available"));
+  console.log(renderList(rows));
+
+  const { promptConfirm } = await import("./ui.mjs");
+  const shouldUpdate = await promptConfirm({ message: "Update runtimes now?", initialValue: true });
   if (!shouldUpdate) return;
   for (const u of updates) {
     if (u.kind === "llama.cpp") {
       await installLlamaRelease(u.release);
-      console.log(pc.green("\u2713 llama.cpp updated."));
+      console.log(status({ kind: "success", message: "llama.cpp updated." }));
     } else if (u.kind === "oMLX") {
       await installOmlx();
     } else if (u.kind === "Ollama") {
@@ -64,92 +66,139 @@ async function offerRuntimeUpdates() {
   }
 }
 
-export async function run(argv) {
-  if (process.platform === "win32") {
-    console.log(pc.red("offgrid-ai supports macOS and Linux only."));
-    console.log(pc.dim("Windows is not yet supported. Use WSL or a native macOS/Linux machine."));
-    return;
-  }
-  if (argv.length === 0) {
-    const hasPackageUpdate = await offerUpdate();
-    if (hasPackageUpdate) return;
-    await offerRuntimeUpdates();
-    return mainFlow({ showReleaseNotes: true });
-  }
-
-  const [command] = argv;
-  const handlers = {
-    help: () => printHelp(),
-    "--help": () => printHelp(),
-    "-h": () => printHelp(),
-    version: () => printVersion(),
-    "--version": () => printVersion(),
-    "-v": () => printVersion(),
-    update: () => runUpdate(),
-    models: () => modelsCommand(argv.slice(1)),
-    run: () => {
-      const runArgs = argv.slice(1);
-      if (!runArgs[0]) return mainFlow();
-      return runCommand(runArgs);
-    },
-    status: () => statusCommand(),
-    stop: () => stopCommand(argv.slice(1)),
-    uninstall: () => uninstallCommand(argv.slice(1)),
-    "--uninstall": () => uninstallCommand(argv.slice(1)),
-    "--verbose": () => mainFlow(),
-  };
-  const handler = handlers[command];
-  if (handler) return handler();
-  throw new Error(`Unknown command: ${command}. Run offgrid-ai help`);
-}
-
 async function runUpdate() {
   const invocation = detectInvocation();
   const plan = updateCommand(invocation, ["update"]);
   const before = currentPackageVersion();
-  console.log(pc.dim(`Running: ${plan.display}`));
+  console.log(status({ kind: "info", message: `Running: ${plan.display}` }));
   await new Promise((resolve, reject) => {
     const child = spawn(plan.cmd, plan.args, { stdio: "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${plan.cmd} exited with code ${code}`)));
   });
 
-  // Verify the install actually updated the version
   let installed = installedGlobalVersion();
   if (installed && installed === before) {
-    console.log(pc.yellow("npm didn't update — clearing cache and retrying..."));
+    console.log(status({ kind: "warning", message: "npm didn't update — clearing cache and retrying..." }));
     await forceReinstall(plan);
     installed = installedGlobalVersion();
   }
 
   if (installed && installed !== before) {
-    console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+    console.log(status({ kind: "success", message: "Updated. Run offgrid-ai again to use the new version." }));
   } else if (installed && installed === before) {
-    console.log(pc.red(`Update failed — still v${installed}. Try manually:\n  npm cache clean --force && npm install -g offgrid-ai@latest`));
+    console.log(status({ kind: "error", message: `Update failed — still v${installed}. Try manually:\n  npm cache clean --force && npm install -g offgrid-ai@latest` }));
   } else {
-    console.log(pc.green("Updated. Run offgrid-ai again to use the new version."));
+    console.log(status({ kind: "success", message: "Updated. Run offgrid-ai again to use the new version." }));
   }
 }
 
 async function printVersion() {
   const version = currentPackageVersion();
-  console.log(`offgrid-ai v${version}`);
+  console.log(appHeader({ name: "offgrid-ai", version }));
   const update = await checkForUpdate();
   if (update) {
-    console.log(pc.yellow(`Update available: v${update.latest}. Run: offgrid-ai update`));
+    console.log(status({ kind: "warning", message: `Update available: v${update.latest}. Run: offgrid-ai update` }));
   }
 }
 
-function printHelp() {
-  console.log(renderCard("offgrid-ai", renderRows([
-    ["What it is", "A privacy-first local AI runner"],
-    ["Start", pc.bold("offgrid-ai")],
-    ["Update", "offgrid-ai update"],
-    ["Status", "offgrid-ai status"],
-    ["Stop", "offgrid-ai stop"],
-    ["Uninstall", "offgrid-ai uninstall"],
-    ["Version", "offgrid-ai version"],
-  ]), { formatBorder: pc.cyan }));
-  console.log("\n" + renderCard("How it works", "Run offgrid-ai, choose a local model, and start chatting in Pi.\n\nFirst run walks you through missing tools. After that, offgrid-ai remembers your model setup.", { formatBorder: pc.magenta }));
-  console.log("\n" + pc.dim("Tip: use --verbose only when you want detailed install output."));
+function buildProgram() {
+  return createCli({
+    name: "offgrid-ai",
+    description: "A privacy-first local AI runner",
+    usage: "[command] [--flags]",
+    examples: [
+      "offgrid-ai",
+      "offgrid-ai run <profile-id>",
+      "offgrid-ai status",
+      "offgrid-ai update",
+    ],
+    globalOptions: [
+      { flags: "-v, --version", description: "Show version" },
+      { flags: "--verbose", description: "Run in verbose mode (interactive flow only)" },
+      { flags: "--uninstall", description: "Remove offgrid-ai" },
+    ],
+    rootAction: async (options, thisCommand) => {
+      if (options.uninstall) return await uninstallCommand(thisCommand.args);
+      if (options.version) return await printVersion();
+      if (options.verbose) return await mainFlow();
+      if (thisCommand.args.length > 0) {
+        throw new Error(`Unknown command: ${thisCommand.args[0]}. Run offgrid-ai help`);
+      }
+
+      if (process.platform === "win32") {
+        console.log(formatError("offgrid-ai supports macOS and Linux only."));
+        console.log(theme.subtle("Windows is not yet supported. Use WSL or a native macOS/Linux machine."));
+        return;
+      }
+
+      const hasPackageUpdate = await offerUpdate();
+      if (hasPackageUpdate) return;
+      await offerRuntimeUpdates();
+      return await mainFlow({ showReleaseNotes: true });
+    },
+    commands: [
+      {
+        name: "models [id]",
+        description: "Show model picker or inspect a profile",
+        allowUnknownOption: true,
+        action: async () => {
+          const argv = process.argv.slice(2);
+          const args = argv[0] === "models" ? argv.slice(1) : argv;
+          return await modelsCommand(args);
+        },
+      },
+      {
+        name: "run [model]",
+        description: "Run a model non-interactively",
+        allowUnknownOption: true,
+        action: async () => {
+          const argv = process.argv.slice(2);
+          const args = argv[0] === "run" ? argv.slice(1) : argv;
+          if (args.length === 0) return await mainFlow();
+          return await runCommand(args);
+        },
+      },
+      {
+        name: "status",
+        description: "Show runtime status",
+        action: statusCommand,
+      },
+      {
+        name: "stop [id]",
+        description: "Stop a running model server",
+        allowUnknownOption: true,
+        action: async () => {
+          const argv = process.argv.slice(2);
+          const args = argv[0] === "stop" ? argv.slice(1) : argv;
+          return await stopCommand(args);
+        },
+      },
+      {
+        name: "uninstall",
+        description: "Remove offgrid-ai",
+        allowUnknownOption: true,
+        action: async () => {
+          const argv = process.argv.slice(2);
+          const args = argv[0] === "uninstall" ? argv.slice(1) : argv;
+          return await uninstallCommand(args);
+        },
+      },
+      {
+        name: "update",
+        description: "Update offgrid-ai to the latest version",
+        action: runUpdate,
+      },
+      {
+        name: "version",
+        description: "Show version",
+        action: printVersion,
+      },
+    ],
+  });
+}
+
+export async function run(argv) {
+  const program = buildProgram();
+  await runCli(program, argv);
 }

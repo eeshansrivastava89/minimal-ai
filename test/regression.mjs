@@ -13,7 +13,7 @@ import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-flags.mjs";
-import { parseOptions, renderRows } from "../src/ui.mjs";
+import { parseOptions, renderList } from "../src/ui.mjs";
 
 describe("regressions", () => {
   it("parseOptions handles short booleans and --key=value", () => {
@@ -23,8 +23,8 @@ describe("regressions", () => {
     });
   });
 
-  it("renderRows handles an empty row list", () => {
-    assert.equal(renderRows([]), "");
+  it("renderList handles an empty row list", () => {
+    assert.equal(renderList([]), "");
   });
 
   it("removes installer PATH blocks without depending on current npm bin", () => {

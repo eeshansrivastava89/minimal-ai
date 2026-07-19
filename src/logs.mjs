@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import pc from "picocolors";
+import { theme } from "./ui.mjs";
 import { stripVTControlCharacters } from "node:util";
 
 export function tailFriendly(rawLogPath, friendlyLogPath) {
@@ -30,14 +30,14 @@ export function tailFriendly(rawLogPath, friendlyLogPath) {
 }
 
 const LOG_LINE_PATTERNS = [
-  { test: (l) => l.includes("ctx_other") || l.includes("failed to measure draft model memory"), tag: "[mtp]", color: pc.dim },
-  { test: (l) => l.includes("error") || l.includes("failed"), tag: "[error]", color: pc.red },
-  { test: (l) => l.includes("listening") || l.includes("http server"), tag: "[server]", color: pc.green },
-  { test: (l) => l.includes("llm_load") || l.includes("load_model") || l.includes("loading model"), tag: "[load]", color: pc.cyan },
-  { test: (l) => l.includes("mmproj"), tag: "[vision]", color: pc.cyan },
-  { test: (l) => l.includes("prompt eval") || l.includes("prompt eval time"), tag: "[timing]", color: pc.green },
-  { test: (l) => l.includes("eval time") || l.includes("generation"), tag: "[timing]", color: pc.green },
-  { test: (l) => l.includes("slot") && l.includes("launch_slot"), tag: "[request]", color: pc.cyan },
+  { test: (l) => l.includes("ctx_other") || l.includes("failed to measure draft model memory"), tag: "[mtp]", color: theme.subtle },
+  { test: (l) => l.includes("error") || l.includes("failed"), tag: "[error]", color: theme.error },
+  { test: (l) => l.includes("listening") || l.includes("http server"), tag: "[server]", color: theme.success },
+  { test: (l) => l.includes("llm_load") || l.includes("load_model") || l.includes("loading model"), tag: "[load]", color: theme.brand },
+  { test: (l) => l.includes("mmproj"), tag: "[vision]", color: theme.brand },
+  { test: (l) => l.includes("prompt eval") || l.includes("prompt eval time"), tag: "[timing]", color: theme.success },
+  { test: (l) => l.includes("eval time") || l.includes("generation"), tag: "[timing]", color: theme.success },
+  { test: (l) => l.includes("slot") && l.includes("launch_slot"), tag: "[request]", color: theme.brand },
 ];
 
 function friendlyLine(line) {

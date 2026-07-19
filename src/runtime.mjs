@@ -5,16 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MANAGED_LLAMA_SERVER, RUNTIME_DIR, findLlamaServer } from "./config.mjs";
 import { execFileAsync } from "./exec.mjs";
-import { pc } from "./ui.mjs";
+import { status, theme } from "./ui.mjs";
 const RELEASE_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
 const VERSION_PATH = join(RUNTIME_DIR, "llama.cpp", "VERSION.json");
 
-/**
- * Check for the latest llama.cpp release on GitHub.
- * Returns null if the check fails (network error, timeout, etc.).
- * Callers must treat null as "check failed, skip prompt" — do not
- * treat null as "no update available."
- */
 export async function latestLlamaRelease(fetchImpl = globalThis.fetch) {
   try {
     const response = await fetchImpl(RELEASE_API, { signal: AbortSignal.timeout(5000) });
@@ -36,7 +30,7 @@ export async function installLlamaRelease(release, { fetchImpl = globalThis.fetc
   const binDir = join(RUNTIME_DIR, "bin");
 
   try {
-    console.log(pc.dim(`Downloading ${release.asset.name}...`));
+    console.log(theme.subtle(`Downloading ${release.asset.name}...`));
     const response = await fetchImpl(release.asset.url);
     if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
@@ -65,7 +59,7 @@ export async function installLlamaRelease(release, { fetchImpl = globalThis.fetc
       llamaServer,
     }, null, 2) + "\n", "utf8");
 
-    console.log(pc.green(`✓ Installed llama.cpp ${release.tag}`));
+    console.log(status({ kind: "success", message: `Installed llama.cpp ${release.tag}` }));
   } finally {
     await rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
@@ -99,7 +93,6 @@ function verifyDigest(bytes, digest) {
   if (actual !== expected) throw new Error("llama.cpp: checksum mismatch");
 }
 
-/** Read the installed llama.cpp release tag from VERSION.json. */
 async function readInstalledLlamaTag() {
   if (!existsSync(VERSION_PATH)) return null;
   try {
@@ -110,10 +103,6 @@ async function readInstalledLlamaTag() {
   }
 }
 
-/**
- * Get the installed llama.cpp build number from the binary itself.
- * Falls back to this when VERSION.json doesn't exist (e.g. Homebrew install).
- */
 async function installedLlamaBuildNumber() {
   const bin = await findLlamaServer();
   if (!bin) return null;
@@ -127,19 +116,14 @@ async function installedLlamaBuildNumber() {
   }
 }
 
-/** Check if a newer llama.cpp release is available. Returns { installed, latest, release } or null. */
 export async function checkLlamaUpdate() {
   const latest = await latestLlamaRelease();
   if (!latest) return null;
-
-  // 1. Managed runtime — compare tags directly from VERSION.json
   const installedTag = await readInstalledLlamaTag();
   if (installedTag) {
     if (installedTag === latest.tag) return null;
     return { installed: installedTag, latest: latest.tag, release: latest };
   }
-
-  // 2. External install (Homebrew, PATH) — compare build numbers from the binary
   const buildNumber = await installedLlamaBuildNumber();
   if (!buildNumber) return null;
   const latestBuildNumber = latest.tag.replace(/^b/u, "");

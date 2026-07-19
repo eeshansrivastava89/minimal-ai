@@ -9,7 +9,7 @@ import { startOmlxServer } from "./omlx-runtime.mjs";
 import { startOllamaServer, unloadOllamaModel } from "./ollama-runtime.mjs";
 import { sleep, execFileAsync } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
-import { pc } from "./ui.mjs";
+import { status } from "./ui.mjs";
 import { computeServerCommand, buildStartScript, timestampForFile } from "./server-command.mjs";
 import { pidAlive, readProcessIdentity, processIdentityMatches, serverModelIds, apiRootUrl, responseErrorDetail } from "./server-status.mjs";
 
@@ -146,29 +146,29 @@ async function ensureOmlxMtpSetting(profile) {
     });
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        console.log(pc.yellow(`[mtp] Could not enable MTP: oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or enable MTP manually from the admin panel.`));
+        console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or enable MTP manually from the admin panel.` }));
       } else if (response.status === 404) {
-        console.log(pc.yellow(`[mtp] Model ${modelId} not found on oMLX server. MTP setting not applied.`));
+        console.log(status({ kind: "warning", message: `[mtp] Model ${modelId} not found on oMLX server. MTP setting not applied.` }));
       } else {
         const detail = await response.text().catch(() => "");
-        console.log(pc.yellow(`[mtp] Could not enable MTP: HTTP ${response.status} ${detail}`));
+        console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: HTTP ${response.status} ${detail}` }));
       }
       return;
     }
     // PUT succeeded — verify the setting was actually persisted via GET
     const verifyResponse = await fetch(settingsUrl, { signal: AbortSignal.timeout(5000) });
     if (!verifyResponse.ok) {
-      console.log(pc.yellow(`[mtp] MTP setting sent but could not verify (HTTP ${verifyResponse.status}). Check oMLX admin panel.`));
+      console.log(status({ kind: "warning", message: `[mtp] MTP setting sent but could not verify (HTTP ${verifyResponse.status}). Check oMLX admin panel.` }));
       return;
     }
     const settings = await verifyResponse.json();
     if (settings.mtp_enabled === true) {
-      console.log(pc.green(`[mtp] Verified: MTP enabled for ${modelId}`));
+      console.log(status({ kind: "success", message: `[mtp] Verified: MTP enabled for ${modelId}` }));
     } else {
-      console.log(pc.yellow(`[mtp] MTP setting was not persisted. Enable manually from oMLX admin panel.`));
+      console.log(status({ kind: "warning", message: `[mtp] MTP setting was not persisted. Enable manually from oMLX admin panel.` }));
     }
   } catch (err) {
-    console.log(pc.yellow(`[mtp] Could not enable MTP: ${err.message}`));
+    console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: ${err.message}` }));
   }
 }
 

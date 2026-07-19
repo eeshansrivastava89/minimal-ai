@@ -12,7 +12,7 @@ const { readGgufMetadataSafe } = await import("../src/gguf.mjs");
 const { scanGgufModels } = await import("../src/scan.mjs");
 
 function makePrompt(yes = true) {
-  return { yesNo: async () => yes };
+  return async () => yes;
 }
 
 function sparseFile(path, size = 11 * 1024 * 1024) {
@@ -143,7 +143,7 @@ describe("P0 deletion transaction gating", () => {
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
     await chmod(dir, 0o555); // read+execute only — unlink will fail with EACCES
-    const result = await deleteModelFromSource(makePrompt(true), { type: "new", model: { path: file } });
+    const result = await deleteModelFromSource({ type: "new", model: { path: file } }, makePrompt(true));
     assert.equal(result.confirmed, false, "deletion should not be confirmed when unlink fails");
     assert.ok(result.reason, "a failure reason should be provided");
   });
@@ -153,7 +153,7 @@ describe("P0 deletion transaction gating", () => {
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
-    const result = await deleteModelFromSource(makePrompt(true), { type: "new", model: { path: file } });
+    const result = await deleteModelFromSource({ type: "new", model: { path: file } }, makePrompt(true));
     assert.equal(result.confirmed, true, "deletion should be confirmed on success");
   });
 
@@ -162,7 +162,7 @@ describe("P0 deletion transaction gating", () => {
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
-    const result = await deleteModelFromSource(makePrompt(false), { type: "new", model: { path: file } });
+    const result = await deleteModelFromSource({ type: "new", model: { path: file } }, makePrompt(false));
     assert.equal(result.confirmed, false);
     assert.equal(result.cancelled, true);
   });

@@ -1,20 +1,46 @@
 #!/usr/bin/env node
-// Verifies that every named import across the codebase actually exists
-// in the source module's exports. Catches the "imported from wrong module"
-// bug class that ESLint's no-undef doesn't cover.
-//
-// Usage: node scripts/verify-imports.mjs
-// Exit 0 = all imports valid, exit 1 = at least one broken import.
-
 import { readdirSync, readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 let errors = 0;
 
-// 1. Collect all exports per module
-const exportsMap = new Map(); // absolute path -> Set of export names
+const exportsMap = new Map();
+
+function readSource(filePath) {
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function parseExports(source, filePath) {
+  const names = new Set();
+  const starExports = [];
+
+  for (const m of source.matchAll(/export\s+class\s+(\w+)/g)) names.add(m[1]);
+  for (const m of source.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)) names.add(m[1]);
+  for (const m of source.matchAll(/export\s+(?:const|let|var)\s+(\w+)/g)) names.add(m[1]);
+  for (const m of source.matchAll(/export\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+    for (const name of m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean)) {
+      names.add(name);
+    }
+  }
+  for (const m of source.matchAll(/export\s*\{([^}]*)\}/g)) {
+    if (!source.slice(m.index, m.index + 100).includes("from ")) {
+      for (const name of m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean)) {
+        names.add(name);
+      }
+    }
+  }
+  for (const m of source.matchAll(/export\s+\*\s+from\s*["']([^"']+)["']/g)) {
+    starExports.push({ path: m[1], filePath });
+  }
+
+  return { names, starExports };
+}
 
 function collectExports(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -24,35 +50,56 @@ function collectExports(dir) {
     }
     if (!entry.name.endsWith(".mjs")) continue;
     const filePath = join(dir, entry.name);
-    const source = readFileSync(filePath, "utf8");
-    const names = new Set();
-
-    // export function foo, export async function foo
-    for (const m of source.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)) names.add(m[1]);
-    // export const foo, export let foo, export var foo
-    for (const m of source.matchAll(/export\s+(?:const|let|var)\s+(\w+)/g)) names.add(m[1]);
-    // export { foo, bar } from "..."  (re-export)
-    for (const m of source.matchAll(/export\s+\{([^}]+)\}\s+from\s+["']([^"']+)["']/g)) {
-      for (const name of m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean)) {
-        names.add(name);
-      }
-    }
-    // export { foo, bar } (local re-export)
-    for (const m of source.matchAll(/export\s+\{([^}]+)\}/g)) {
-      if (!source.slice(m.index, m.index + 100).includes("from ")) {
-        for (const name of m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean)) {
-          names.add(name);
-        }
-      }
-    }
-
-    exportsMap.set(filePath, names);
+    const source = readSource(filePath);
+    if (!source) continue;
+    exportsMap.set(filePath, parseExports(source, filePath));
   }
+}
+
+function resolveStar(specifier, fromFilePath) {
+  if (specifier.startsWith(".")) {
+    return join(dirname(fromFilePath), specifier);
+  }
+  try {
+    const resolved = import.meta.resolve(specifier, pathToFileURL(fromFilePath).href);
+    if (resolved.startsWith("file://")) return fileURLToPath(resolved);
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+function resolveAllExports(filePath, visited = new Set()) {
+  if (visited.has(filePath)) return new Set();
+  visited.add(filePath);
+  const entry = exportsMap.get(filePath);
+  if (!entry) {
+    // Try to read and parse the file dynamically (e.g. external package)
+    const source = readSource(filePath);
+    if (!source) return new Set();
+    const parsed = parseExports(source, filePath);
+    const all = new Set(parsed.names);
+    for (const star of parsed.starExports) {
+      const target = resolveStar(star.path, star.filePath);
+      if (target) for (const name of resolveAllExports(target, visited)) all.add(name);
+    }
+    return all;
+  }
+  const all = new Set(entry.names);
+  for (const star of entry.starExports) {
+    const target = resolveStar(star.path, star.filePath);
+    if (target) for (const name of resolveAllExports(target, visited)) all.add(name);
+  }
+  return all;
 }
 
 collectExports(ROOT);
 
-// 2. Collect all named imports and verify
+const resolvedExportsMap = new Map();
+for (const [path] of exportsMap) {
+  resolvedExportsMap.set(path, resolveAllExports(path));
+}
+
 function checkImports(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
@@ -63,17 +110,14 @@ function checkImports(dir) {
     const filePath = join(dir, entry.name);
     const source = readFileSync(filePath, "utf8");
 
-    // import { foo, bar } from "./path.mjs"
-    for (const m of source.matchAll(/import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["']/g)) {
+    for (const m of source.matchAll(/import\s+\{([^}]+)\}\s*from\s*["']([^"']+)["']/g)) {
       const importNames = m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
       const importPath = m[2];
 
-      // Skip node: builtins and npm packages
       if (importPath.startsWith("node:") || !importPath.startsWith(".")) continue;
 
-      // Resolve relative to the importing file
       const resolvedPath = join(dirname(filePath), importPath);
-      const exportedNames = exportsMap.get(resolvedPath);
+      const exportedNames = resolvedExportsMap.get(resolvedPath);
 
       if (!exportedNames) {
         console.error(`✗ ${relative(ROOT, filePath)}: imports from ${importPath} but module not found at ${resolvedPath}`);

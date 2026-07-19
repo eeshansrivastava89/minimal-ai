@@ -1,19 +1,10 @@
-import { select as inquirerSelect, input, confirm, number, Separator } from "@inquirer/prompts";
+import { Separator } from "@inquirer/prompts";
 import pc from "picocolors";
-import { stripVTControlCharacters } from "node:util";
 import { fitCheck } from "./hardware.mjs";
+import { renderList } from "@eeshans/cli-kit";
 
-export { pc };
-export { Separator };
-
-// ── Formatting helpers (no prompt dependency) ───────────────────────────────
-
-/** Pad text to a visible column width (min 1 space). Optional color applied before padding. */
-export function padCol(text, width, color) {
-  const visible = stripVTControlCharacters(String(text)).length;
-  const str = color ? color(String(text)) : String(text);
-  return str + " ".repeat(Math.max(1, width - visible));
-}
+export { pc, Separator };
+export * from "@eeshans/cli-kit";
 
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
@@ -24,7 +15,6 @@ export function formatBytes(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 }
 
-/** Format a context length in tokens as a human-readable label (e.g. "32k", "512"). */
 export function formatCtxLabel(ctx) {
   if (ctx == null) return "—";
   if (ctx >= 1048576) return `${(ctx / 1048576).toFixed(0)}M`;
@@ -32,147 +22,12 @@ export function formatCtxLabel(ctx) {
   return String(ctx);
 }
 
-export function renderRows(rows, { wrapWidth } = {}) {
-  if (rows.length === 0) return "";
-  const width = Math.max(...rows.map(([key]) => stripVTControlCharacters(String(key)).length));
-  return rows.map(([key, value]) => {
-    const visible = stripVTControlCharacters(String(key)).length;
-    const indent = " ".repeat(Math.max(1, width - visible + 2));
-    const valStr = String(value ?? "");
-    // If wrapWidth is set and the full line exceeds it, wrap the value
-    if (wrapWidth) {
-      const prefix = `${key}${indent}`;
-      const prefixLen = stripVTControlCharacters(prefix).length;
-      const availWidth = wrapWidth - prefixLen;
-      if (stripVTControlCharacters(valStr).length > availWidth) {
-        const lines = wrapText(valStr, availWidth);
-        return [prefix + lines[0], ...lines.slice(1).map((l) => " ".repeat(prefixLen) + l)].join("\n");
-      }
-    }
-    return `${key}${indent}${valStr}`;
-  }).join("\n");
-}
-
-export function wrapText(text, width) {
-  const words = String(text).split(/(\s+)/u);
-  const lines = [];
-  let current = "";
-  for (let word of words) {
-    // Hard-break long unbreakable strings (file paths, etc.)
-    while (stripVTControlCharacters(word).length > width) {
-      if (current.trim()) { lines.push(current.trimEnd()); current = ""; }
-      lines.push(word.slice(0, width));
-      word = word.slice(width);
-    }
-    if (stripVTControlCharacters(current + word).length > width && current.trim()) {
-      lines.push(current.trimEnd());
-      current = word.trimStart();
-    } else {
-      current += word;
-    }
-  }
-  if (current.trim()) lines.push(current.trimEnd());
-  return lines.length > 0 ? lines : [text];
-}
-
-// ── Box renderer ────────────────────────────────────────────────────────────
-
-function visibleLen(text) {
-  return stripVTControlCharacters(String(text)).length;
-}
-
-function padVisible(text, width) {
-  const pad = Math.max(0, width - visibleLen(text));
-  return text + " ".repeat(pad);
-}
-
-export function renderCard(title, body, options = {}) {
-  const borderColor = options.formatBorder ?? pc.magenta;
-  const maxCols = options.columns ?? process.stdout.columns ?? 88;
-  const rawLines = String(body ?? "").split("\n");
-  const titleStr = title ? ` ${title} ` : "";
-
-  // Calculate content width: max of title, all lines, capped by maxCols
-  const innerWidth = Math.max(
-    visibleLen(titleStr),
-    ...rawLines.map(visibleLen),
-  );
-  const contentWidth = Math.min(innerWidth, maxCols - 4); // 4 = borders + padding
-  const width = contentWidth + 2; // inner content area
-
-  // Wrap lines that exceed contentWidth
-  const lines = [];
-  for (const line of rawLines) {
-    if (visibleLen(line) > contentWidth) {
-      lines.push(...wrapText(line, contentWidth));
-    } else {
-      lines.push(line);
-    }
-  }
-
-  const topTitle = title ? `╭${pc.reset(titleStr)}` : "╭";
-  const topFill = "─".repeat(Math.max(0, width - visibleLen(titleStr)));
-  const top = `${topTitle}${topFill}╮`;
-
-  const middle = lines.map((line) => `│ ${padVisible(line, contentWidth)} │`);
-
-  const bottom = `╰${"─".repeat(width)}╯`;
-
-  return [top, ...middle, bottom].map((l) => borderColor(l)).join("\n");
-}
-
-// wrapVisible was a 1-line wrapper for wrapText — inlined directly in renderCard
-
-export function renderSectionRows(title, rows, options = {}) {
-  const maxCols = options.columns ?? process.stdout.columns ?? 88;
-  const contentWidth = maxCols - 4;
-  return renderSection(title, renderRows(rows, { wrapWidth: contentWidth }), { ...options, columns: maxCols });
-}
-
-export function renderSection(title, body, options = {}) {
-  return renderCard(title, body, { formatBorder: pc.magenta, ...options });
-}
-
-/** A dim horizontal divider with an optional label, for separating sections in menus. */
-export function divider(label = "") {
-  const cols = process.stdout.columns ?? 80;
-  if (!label) return pc.dim("─".repeat(Math.min(cols, 72)));
-  const text = ` ${label} `;
-  const remaining = Math.min(cols, 72) - stripVTControlCharacters(text).length;
-  return pc.dim(text + "─".repeat(Math.max(0, remaining)));
-}
-
-/** Returns the picocolors function for a memory fit status. Uses shared fitCheck. */
 export function fitColor(totalBytes, availableBytes) {
   const { status } = fitCheck(totalBytes, availableBytes);
   if (status === "fits") return pc.green;
   if (status === "tight") return pc.yellow;
   return pc.red;
 }
-
-/**
- * Render a memory estimate card. Single source of truth for the memory
- * estimate display — used by both profile-setup.mjs and run.mjs.
- * @param {object} est - from computeMemoryTotal/estimateMemory
- * @param {object} flags - profile flags (for ctx/cache display)
- * @returns {string} rendered section
- */
-export function renderMemoryEstimate(est, flags) {
-  try {
-    return renderSection("Memory estimate", renderRows([
-      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-      ["Model", formatBytes(est.modelBytes)],
-      ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
-      ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
-      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${flags.ctxSize.toLocaleString()} ctx, ${flags.cacheTypeK}/${flags.cacheTypeV})` : "unknown"],
-      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
-    ]));
-  } catch {
-    return renderSection("Memory estimate", pc.dim("Estimate unavailable for this model."));
-  }
-}
-
-// ── Status / capability helpers ─────────────────────────────────────────────
 
 export function humanCapabilitySummary(caps = {}) {
   const parts = [];
@@ -183,139 +38,20 @@ export function humanCapabilitySummary(caps = {}) {
   return parts.length > 0 ? parts.join(" · ") : "General chat";
 }
 
-// ── Escape-to-cancel helper ─────────────────────────────────────────────────
-
-function withEscape() {
-  const controller = new AbortController();
-  let escapeTimer = null;
-  const onData = (data) => {
-    // Standalone Escape = 0x1b byte alone (arrow keys send 0x1b + more bytes)
-    if (data.length === 1 && data[0] === 0x1b) {
-      escapeTimer = setTimeout(() => controller.abort(), 50);
-    } else if (escapeTimer) {
-      clearTimeout(escapeTimer);
-      escapeTimer = null;
-    }
-  };
-  process.stdin.on("data", onData);
-  const cleanup = () => {
-    process.stdin.removeListener("data", onData);
-    if (escapeTimer) clearTimeout(escapeTimer);
-  };
-  return { signal: controller.signal, cleanup };
-}
-
-async function runPrompt(fn, config) {
-  const { signal, cleanup } = withEscape();
+export function renderMemoryEstimate(est, flags) {
   try {
-    return await fn(config, { signal });
-  } catch (err) {
-    if (err.name === "AbortPromptError") {
-      console.log(pc.dim("\nCancelled."));
-      process.exit(0);
-    }
-    throw err;
-  } finally {
-    cleanup();
+    return renderList([
+      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
+      ["Model", formatBytes(est.modelBytes)],
+      ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
+      ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
+      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${flags.ctxSize.toLocaleString()} ctx, ${flags.cacheTypeK}/${flags.cacheTypeV})` : "unknown"],
+      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
+    ]);
+  } catch {
+    return "Estimate unavailable for this model.";
   }
 }
-
-// 4 lines reserved for: prompt message, blank spacer, description line, help line.
-// Falls back to 24 (common default) when stdout is piped/non-TTY.
-function dynamicPageSize(choiceCount) {
-  const rows = process.stdout.rows ?? 24;
-  return Math.min(choiceCount, Math.max(rows - 4, 7));
-}
-
-// ── Interactive prompt factory ──────────────────────────────────────────────
-
-export function startInteractive() {
-  if (process.stdin.isTTY) console.clear();
-}
-
-export function createPrompt() {
-  return {
-    async text(label, defaultValue) {
-      const value = await runPrompt(input, {
-        message: label,
-        default: defaultValue === undefined ? undefined : String(defaultValue),
-      });
-      return value?.trim() || String(defaultValue ?? "");
-    },
-
-    async number(label, defaultValue, min, max, { float = false } = {}) {
-      const value = await runPrompt(number, {
-        message: label,
-        default: defaultValue,
-        min,
-        max,
-        step: float ? 'any' : 1,
-        validate(input) {
-          if (!Number.isFinite(input) || input < min || input > max) {
-            return `Enter a number from ${min} to ${max}.`;
-          }
-          return true;
-        },
-      });
-      return Number(value);
-    },
-
-    async yesNo(label, defaultValue) {
-      return await runPrompt(confirm, { message: label, default: defaultValue });
-    },
-
-    async choice(label, choices, defaultValue) {
-      const mapped = choices.map((c) => {
-        if (c instanceof Separator) return c;
-        const name = c.hint ? `${c.label ?? c.value} ${pc.dim(`(${c.hint})`)}` : (c.label ?? c.value);
-        return { value: c.value, name, disabled: c.disabled || undefined };
-      });
-      return await runPrompt(inquirerSelect, {
-        message: label,
-        default: defaultValue,
-        choices: mapped,
-        pageSize: dynamicPageSize(mapped.length),
-        loop: false,
-      });
-    },
-  };
-}
-
-// ── Model picker with grouped select ────────────────────────────────────────
-
-export async function modelSelect(label, groups, { defaultKey } = {}) {
-  const choices = [];
-  // Blank line after the prompt message for visual separation
-  choices.push(new Separator(" "));
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i];
-    // Add blank line before each group (except the first)
-    if (i > 0) choices.push(new Separator(" "));
-    if (group.separator) {
-      choices.push(new Separator(group.separator));
-    }
-    for (const item of group.items) {
-      if (item.separator) {
-        choices.push(new Separator(item.separator));
-        continue;
-      }
-      choices.push({
-        value: item.value,
-        name: item.description ? `${item.label ?? item.value} ${item.description}` : (item.label ?? item.value),
-        disabled: item.disabled || undefined,
-      });
-    }
-  }
-  return await runPrompt(inquirerSelect, {
-    message: label,
-    default: defaultKey,
-    choices,
-    pageSize: dynamicPageSize(choices.length),
-    loop: false,
-  });
-}
-
-// ── Option parsing (no prompt dependency) ────────────────────────────────────
 
 export function parseOptions(argv) {
   const positional = [];
@@ -339,4 +75,8 @@ export function parseOptions(argv) {
     }
   }
   return { positional, options };
+}
+
+export function startInteractive() {
+  if (process.stdin.isTTY) console.clear();
 }

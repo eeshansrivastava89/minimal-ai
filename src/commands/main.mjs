@@ -7,7 +7,7 @@ import { hasPi } from "../harness-pi.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { pc, startInteractive, renderCard } from "../ui.mjs";
+import { appHeader, card, status, introScreen, startInteractive, theme } from "../ui.mjs";
 import { showReleaseNotesIfUpdated } from "../changelog.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
@@ -30,11 +30,9 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   if (!piInstalled) missingDeps.push("Pi");
   if (missingDeps.length > 0) {
     if (!process.stdin.isTTY) throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run offgrid-ai interactively to install.`);
-    console.log(pc.yellow(`Missing: ${missingDeps.join(", ")}`));
-    console.log(pc.dim("offgrid-ai needs these to run. Let's finish setup.\n"));
+    console.log(status({ kind: "warning", message: `Missing: ${missingDeps.join(", ")}` }));
+    console.log(theme.subtle("offgrid-ai needs these to run. Let's finish setup.\n"));
     const result = await onboardFlow();
-    // Chain: on success, re-scan and continue to the picker (fresh state).
-    // On decline or failure, exit.
     if (result === "success") return mainFlow();
     return;
   }
@@ -51,12 +49,12 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
     return await statusCommand();
   }
 
-  // Interactive: show the picker (even with no models — user can download)
   const omlxOn = await omlxEnabled();
   const ollamaOn = await ollamaEnabled();
   startInteractive("offgrid-ai");
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
-  console.log(""); // top spacing
+
+  introScreen(appHeader({ name: "offgrid-ai", version: currentPackageVersion() }));
   printStatusHeader({
     llamaBinary,
     managedModels,
@@ -69,30 +67,33 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
     profiles,
   });
   console.log("");
+
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
 function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, showOllama, profiles }) {
   const parts = [
-    llamaBinary ? pc.green("llama.cpp ✓") : pc.red("llama.cpp ✗"),
+    llamaBinary ? status({ kind: "success", message: "llama.cpp" }) : status({ kind: "error", message: "llama.cpp" }),
   ];
   if (showOmlx) {
     const omlxServerUp = managedModels.some((m) => m.backendId === "omlx" && m.status === "ok");
     if (omlxInstalled) {
-      parts.push(omlxServerUp ? pc.green("oMLX ✓ server up") : pc.yellow("oMLX ✓ server down"));
+      parts.push(omlxServerUp ? status({ kind: "success", message: "oMLX · server up" }) : status({ kind: "warning", message: "oMLX · server down" }));
     } else {
-      parts.push(pc.red("oMLX ✗"));
+      parts.push(status({ kind: "error", message: "oMLX" }));
     }
   }
   if (showOllama) {
     if (ollamaInstalled) {
-      parts.push(ollamaServerUp ? pc.green("Ollama ✓ server up") : pc.yellow("Ollama ✓ server down"));
+      parts.push(ollamaServerUp ? status({ kind: "success", message: "Ollama · server up" }) : status({ kind: "warning", message: "Ollama · server down" }));
     } else {
-      parts.push(pc.red("Ollama ✗"));
+      parts.push(status({ kind: "error", message: "Ollama" }));
     }
   }
-  parts.push(piInstalled ? pc.green("Pi ✓") : pc.red("Pi ✗"));
-  if (profiles.length > 0) parts.push(pc.dim(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
-  console.log(renderCard(`offgrid-ai v${currentPackageVersion()}`, parts.join(pc.dim("  ·  ")), { formatBorder: pc.cyan }));
-  console.log("");
+  parts.push(piInstalled ? status({ kind: "success", message: "Pi" }) : status({ kind: "error", message: "Pi" }));
+  if (profiles.length > 0) {
+    parts.push(theme.subtle(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
+  }
+  console.log(card({ title: "offgrid-ai", body: parts.join("  \n") }));
 }
+

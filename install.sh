@@ -37,15 +37,49 @@ done
 
 dry() { if $DRY_RUN; then printf "[dry-run] %s\n" "$*"; return 0; else "$@"; fi; }
 
-# ── Output helpers ──────────────────────────────────────────────────────────
+# ── Visual style (Fang-inspired) ────────────────────────────────────────────
 
-BOLD='\033[1m' RESET='\033[0m' GREEN='\033[32m' YELLOW='\033[33m' BLUE='\033[34m' RED='\033[31m'
-info()  { printf "${BLUE}→${RESET} %s\n" "$*"; }
+BOLD='\033[1m' RESET='\033[0m'
+CYAN='\033[36m' MAGENTA='\033[35m' GREEN='\033[32m'
+YELLOW='\033[33m' RED='\033[31m' DIM='\033[2m'
+
+_term_width() {
+  tput cols 2>/dev/null || echo 72
+}
+
+_section_line() {
+  local width
+  width=$(_term_width)
+  [ "$width" -gt 80 ] && width=80
+  local fill=$((width - ${#1} - 1))
+  [ "$fill" -lt 0 ] && fill=0
+  printf '%*s' "$fill" '' | tr ' ' '─'
+}
+
+section() {
+  printf "\n${BOLD}${MAGENTA}%s${RESET} ${DIM}%s${RESET}\n" "$1" "$(_section_line "$1")"
+}
+
+codeblock() {
+  printf "  ${DIM}│${RESET} %s\n" "$1"
+}
+
+info()  { printf "${CYAN}→${RESET} %s\n" "$*"; }
 ok()     { printf "${GREEN}✓${RESET} %s\n" "$*"; }
 warn()   { printf "${YELLOW}!${RESET} %s\n" "$*"; }
 fail()   { printf "${RED}✗${RESET} %s\n" "$*"; exit 1; }
 
+# ── Header ───────────────────────────────────────────────────────────────────
+
+printf "\n${BOLD}${CYAN}offgrid-ai${RESET} ${DIM}— A privacy-first local AI runner${RESET}\n\n"
+
+printf "  ${DIM}Install:${RESET}\n"
+codeblock "curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash"
+printf "\n"
+
 # ── Detect OS ───────────────────────────────────────────────────────────────
+
+section "DETECTED SYSTEM"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -59,9 +93,11 @@ case "$ARCH" in
   arm64|aarch64) ARCH="arm64" ;;
   *)             fail "Unsupported architecture: $ARCH" ;;
 esac
-info "Detected: ${OS}-${ARCH}"
+ok "Detected: ${OS}-${ARCH}"
 
 # ── Check for Node.js ───────────────────────────────────────────────────────
+
+section "NODE.JS"
 
 if command -v node &>/dev/null; then
   NODE_VERSION="$(node --version 2>/dev/null || echo "unknown")"
@@ -110,10 +146,9 @@ else
   fi
 fi
 
-# ── Ensure ~/.local/bin is on PATH (for HuggingFace CLI) ────────────────────
-# The HF CLI standalone installer puts hf in ~/.local/bin. Add it to .zprofile
-# (or .bashrc on Linux) so it's available in future shells. Also add it to the
-# current script's PATH so it's available immediately.
+# ── Ensure ~/.local/bin is on PATH (for HuggingFace CLI) ───────────────────
+
+section "PATH SETUP"
 
 LOCAL_BIN="$HOME/.local/bin"
 if ! $DRY_RUN; then
@@ -129,11 +164,13 @@ if ! $DRY_RUN; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$PROFILE_FILE"
   fi
 fi
+ok "~/.local/bin is on PATH"
 
 # ── Install offgrid-ai ──────────────────────────────────────────────────────
 
-echo ""
-printf "${BOLD}Installing offgrid-ai...${RESET}\n"
+section "INSTALL"
+
+info "Installing offgrid-ai via npm..."
 dry npm install -g offgrid-ai@latest --prefer-online
 
 # ── Dry-run early exit ──────────────────────────────────────────────────────
@@ -141,9 +178,9 @@ dry npm install -g offgrid-ai@latest --prefer-online
 if $DRY_RUN; then
   ok "offgrid-ai installed (dry-run)"
   echo ""
-  printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+  printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
   printf "${BOLD}${GREEN}  offgrid-ai is ready! (dry-run)${RESET}\n"
-  printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+  printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
   echo ""
   echo "  Run: offgrid-ai"
   echo ""
@@ -164,16 +201,20 @@ else
   echo "  Or run: npx offgrid-ai"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# ── Done ────────────────────────────────────────────────────────────────────
 
-echo ""
-printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+section "READY"
+
+printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
 printf "${BOLD}${GREEN}  offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }is ready!${RESET}\n"
-printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-echo ""
-echo "  First run will walk you through setting up everything you need"
-echo "  (managed llama.cpp runtime for GGUF models, model backends, Pi)."
-echo ""
+printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
+
+cat << 'EOF'
+
+  First run will walk you through setting up everything you need
+  (managed llama.cpp runtime for GGUF models, model backends, Pi).
+
+EOF
 
 # ── Launch offgrid-ai ──────────────────────────────────────────────────────
 #
@@ -185,8 +226,7 @@ echo ""
 # PATH, so just run it directly.
 
 if [[ -c /dev/tty ]]; then
-  echo "${BOLD}Launching offgrid-ai...${RESET}"
-  echo ""
+  printf "${BOLD}Launching offgrid-ai...${RESET}\n\n"
   if $NVM_INSTALLED; then
     SHELL="${SHELL:-/bin/zsh}"
     # Login shell sources .zprofile (nvm → PATH), runs offgrid-ai,

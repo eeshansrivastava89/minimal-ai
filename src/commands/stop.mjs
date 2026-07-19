@@ -1,7 +1,7 @@
 import { ensureDirs } from "../config.mjs";
 import { readProfile, loadProfiles } from "../profiles.mjs";
 import { stopProfile, profileRuntimeStatus } from "../process.mjs";
-import { pc, startInteractive, createPrompt, parseOptions } from "../ui.mjs";
+import { startInteractive, promptChoice, parseOptions, status, theme } from "../ui.mjs";
 
 export async function stopCommand(argv) {
   await ensureDirs();
@@ -12,23 +12,22 @@ export async function stopCommand(argv) {
 
   const running = await runningProfiles();
   if (running.length === 0) {
-    console.log(pc.dim("No offgrid-ai servers are running."));
+    console.log(theme.subtle("No offgrid-ai servers are running."));
     return;
   }
 
   if (!process.stdin.isTTY) {
-    for (const { profile, status } of running) console.log(`  ${pc.green("●")} ${pc.bold(profile.label)} · pid ${status.pid}`);
-    console.log(pc.dim("Stop with: offgrid-ai stop <id>"));
+    for (const { profile, status: s } of running) console.log(`  ${status({ kind: "success", message: "" })} ${theme.bold(profile.label)} · pid ${s.pid}`);
+    console.log(theme.subtle("Stop with: offgrid-ai stop <id>"));
     return;
   }
 
   startInteractive("offgrid-ai stop");
-  const prompt = createPrompt();
-  const choices = running.map(({ profile, status }) => ({ value: profile.id, label: profile.label, hint: `pid ${status.pid} · ${profile.baseUrl}` }));
+  const choices = running.map(({ profile, status: s }) => ({ value: profile.id, label: profile.label, hint: `pid ${s.pid} · ${profile.baseUrl}` }));
   if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
   choices.push({ value: "__cancel", label: "Cancel" });
 
-  const selected = await prompt.choice("Stop", choices, choices[0].value);
+  const selected = await promptChoice({ message: "Stop", choices, defaultValue: choices[0].value });
   if (selected === "__cancel") return;
 
   const targets = selected === "__all" ? running : running.filter((item) => item.profile.id === selected);
@@ -43,7 +42,7 @@ async function stopOne(id) {
 async function stopAll() {
   const running = await runningProfiles();
   if (running.length === 0) {
-    console.log(pc.dim("No offgrid-ai servers are running."));
+    console.log(theme.subtle("No offgrid-ai servers are running."));
     return;
   }
   for (const { profile } of running) await printStopResult(profile);
@@ -57,5 +56,5 @@ export async function runningProfiles() {
 
 async function printStopResult(profile) {
   const result = await stopProfile(profile);
-  console.log(result.stopped ? pc.green(result.message) : pc.yellow(result.message));
+  console.log(result.stopped ? status({ kind: "success", message: result.message }) : status({ kind: "warning", message: result.message }));
 }

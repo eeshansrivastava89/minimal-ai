@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { HF_HUB_DIR, hasHomebrew } from "./config.mjs";
 import { execFileAsync, execCommand, commandExists } from "./exec.mjs";
-import { pc } from "./ui.mjs";
+import { status, theme } from "./ui.mjs";
 
 /** Extract HuggingFace repo ID from a cache path (e.g. .../models--Qwen--Qwen3-8B/... → Qwen/Qwen3-8B). */
 export function hfRepoFromPath(path) {
@@ -275,7 +275,7 @@ export async function downloadModel(model, options = {}) {
  * @returns {Promise<boolean>} true if hf CLI is available after install
  */
 export async function installHfCli() {
-  console.log(pc.cyan("Installing HuggingFace CLI..."));
+  console.log(status({ kind: "info", message: "Installing HuggingFace CLI..." }));
 
   // 1. Standalone installer (HF recommended — zero dependencies)
   try {
@@ -286,7 +286,7 @@ export async function installHfCli() {
       process.env.PATH = `${localBin}:${process.env.PATH}`;
     }
     if (await hasHfCli()) {
-      console.log(pc.green("HuggingFace CLI installed via standalone installer."));
+      console.log(status({ kind: "success", message: "HuggingFace CLI installed via standalone installer." }));
       return true;
     }
   } catch { /* fall through to Homebrew */ }
@@ -296,7 +296,7 @@ export async function installHfCli() {
     try {
       await execCommand("brew", ["install", "hf"], { label: "hf", verbose: true });
       if (await hasHfCli()) {
-        console.log(pc.green("HuggingFace CLI installed via Homebrew."));
+        console.log(status({ kind: "success", message: "HuggingFace CLI installed via Homebrew." }));
         return true;
       }
     } catch { /* fall through to pip */ }
@@ -309,22 +309,22 @@ export async function installHfCli() {
     } else if (await commandExists("python3")) {
       await execCommand("python3", ["-m", "pip", "install", "huggingface_hub"], { label: "huggingface_hub", verbose: true });
     } else {
-      console.log(pc.red("Could not install HuggingFace CLI — no Homebrew, standalone installer, or Python found."));
-      console.log(pc.dim("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
+      console.log(status({ kind: "error", message: "Could not install HuggingFace CLI — no Homebrew, standalone installer, or Python found." }));
+      console.log(theme.subtle("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
       return false;
     }
   } catch (err) {
-    console.log(pc.red(`Installation failed: ${err.message}`));
-    console.log(pc.dim("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
+    console.log(status({ kind: "error", message: `Installation failed: ${err.message}` }));
+    console.log(theme.subtle("Install manually: brew install hf  — or  curl -LsSf https://hf.co/cli/install.sh | bash"));
     return false;
   }
 
   // Verify it's now available
   if (!(await hasHfCli())) {
-    console.log(pc.yellow("HuggingFace CLI was installed but not found on PATH."));
-    console.log(pc.dim("Restart your terminal and run offgrid-ai again."));
+    console.log(status({ kind: "warning", message: "HuggingFace CLI was installed but not found on PATH." }));
+    console.log(theme.subtle("Restart your terminal and run offgrid-ai again."));
     return false;
   }
-  console.log(pc.green("HuggingFace CLI installed."));
+  console.log(status({ kind: "success", message: "HuggingFace CLI installed." }));
   return true;
 }

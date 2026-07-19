@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import pc from "picocolors";
+import { theme } from "./ui.mjs";
 import { writeJson } from "./json.mjs";
 import { resolvedPathAllowMissingSync as resolvedDataDirPath } from "./paths.mjs";
 
@@ -102,7 +102,7 @@ export async function loadConfig() {
       // Auto-create config.json with defaults so the user can find and edit it
       await mkdir(dirname(CONFIG_PATH), { recursive: true });
       await writeFile(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8").catch((err) => {
-        console.warn(pc.dim(`Warning: could not create config at ${CONFIG_PATH}: ${err.message}`));
+        console.warn(theme.subtle(`Warning: could not create config at ${CONFIG_PATH}: ${err.message}`));
       });
       return { ...DEFAULT_CONFIG };
     }

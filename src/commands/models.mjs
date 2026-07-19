@@ -7,7 +7,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { pc, startInteractive, createPrompt, modelSelect, divider } from "../ui.mjs";
+import { startInteractive, promptSelectModel, promptChoice, promptConfirm, section, theme, icons, status } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
@@ -45,7 +45,7 @@ async function showModelPicker(catalog) {
   const normalized = normalizeCatalog(catalog);
   const allItems = buildCatalogItems(normalized);
   if (allItems.length === 0) {
-    console.log(pc.dim("No models found yet — pick a download option below to get started.\n"));
+    console.log(theme.subtle("No models found yet — pick a download option below to get started.\n"));
   }
 
   const runningProfilesNow = [];
@@ -59,9 +59,6 @@ async function showModelPicker(catalog) {
       if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
     }
   }));
-  // Flag all missing profiles (file missing for llama.cpp, model missing
-  // for oMLX managed-server) so actionsForItem/performAction can handle both
-  // cases uniformly.
   for (const item of allItems) {
     if (item.type === "profile") {
       item.missing = item.fileMissing || modelMissingIds.has(item.profile.id);
@@ -80,7 +77,6 @@ async function showModelPicker(catalog) {
     return "setup";
   };
 
-  // Group ready/running/missing profiles by backend, setup items separate
   const byBackend = new Map();
   const setupItems = [];
   for (const item of allItems) {
@@ -100,12 +96,13 @@ async function showModelPicker(catalog) {
   for (const { backendId, sourceId, items } of byBackend.values()) {
     const backendLabel = backendFor(backendId)?.label ?? backendId;
     const sourceLabel = formatSourceLabel(sourceId);
-    const sep = `  ${pc.dim(backendLabel + " · " + sourceLabel + " (" + items.length + ")")}`;
+    const label = backendLabel === sourceLabel ? backendLabel : `${backendLabel} · ${sourceLabel}`;
+    const sep = `${theme.subtle(`${label} (${items.length})`)}`;
     const groupItems = items.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `  ${sep}`, items: groupItems });
+    groups.push({ separator: sep, items: groupItems });
   }
 
   if (setupItems.length > 0) {
@@ -113,70 +110,74 @@ async function showModelPicker(catalog) {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
-    groups.push({ separator: `    ${pc.yellow("Needs setup (" + setupItems.length + ")")}`, items: groupItems });
+    groups.push({ separator: theme.warning(`Needs setup (${setupItems.length})`), items: groupItems });
   }
 
-  // Build action items — grouped by section with dividers
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
   const omlxOn = await omlxEnabled();
   const ollamaOn = await ollamaEnabled();
   const omlxInstalled = (isAppleSilicon && omlxOn) ? await hasOmlx() : true;
   const ollamaInstalled = ollamaOn ? await hasOllama() : true;
 
-  // Download section — each path is one click, no sub-menus
+  const radio = theme.subtle(icons.radioOff);
   const downloadItems = [
-    { value: "__download_hf_gguf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for llama.cpp)")}` },
+    { value: "__download_hf_gguf__", label: `${radio}  ${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for llama.cpp)")}` },
   ];
   if (ollamaOn) {
-    downloadItems.push({ value: "__download_ollama_library__", label: `${pc.dim("○")}  ${pc.green("↓ Model from Ollama library")} ${pc.dim("(for Ollama)")}` });
-    downloadItems.push({ value: "__download_ollama_hf__", label: `${pc.dim("○")}  ${pc.green("↓ GGUF from HuggingFace")} ${pc.dim("(for Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_library__", label: `${radio}  ${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_hf__", label: `${radio}  ${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` });
   }
   if (omlxOn) {
-    downloadItems.push({ value: "__download_omlx__", label: `${pc.green("↓ oMLX model")} ${pc.dim("(open and download from oMLX app)")}`, disabled: true });
+    downloadItems.push({ value: "__download_omlx__", label: `${radio}  ${theme.success("↓ oMLX model")} ${theme.subtle("(open and download from oMLX app)")}` });
   }
-  groups.push({ separator: `  ${divider("Download")}`, items: downloadItems });
+  groups.push({ separator: section("Download"), items: downloadItems });
 
-  // Manage section — runtime status, discovery paths, installs
   const manageItems = [];
   if (isAppleSilicon && !omlxInstalled) {
-    manageItems.push({ value: "__install_omlx__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install oMLX")} ${pc.dim("(Apple Silicon — faster for MLX)")}` });
+    manageItems.push({ value: "__install_omlx__", label: `${radio}  ${theme.warning("↓ Install oMLX")} ${theme.subtle("(Apple Silicon — faster for MLX)")}` });
   }
   if (ollamaOn && !ollamaInstalled) {
-    manageItems.push({ value: "__install_ollama__", label: `${pc.dim("○")}  ${pc.yellow("↓ Install Ollama")} ${pc.dim("(managed model runner)")}` });
+    manageItems.push({ value: "__install_ollama__", label: `${radio}  ${theme.warning("↓ Install Ollama")} ${theme.subtle("(managed model runner)")}` });
   }
-  manageItems.push({ value: "__runtime_status__", label: `${pc.dim("○")}  ${pc.cyan("⚡ Runtime status & running models")}` });
-  manageItems.push({ value: "__discovery_paths__", label: `${pc.dim("○")}  ${pc.cyan("📁 Discovery paths")}` });
-  groups.push({ separator: `  ${divider("Manage")}`, items: manageItems });
+  manageItems.push({ value: "__runtime_status__", label: `${radio}  ${theme.brand("⚡ Runtime status & running models")}` });
+  manageItems.push({ value: "__discovery_paths__", label: `${radio}  ${theme.brand("📁 Discovery paths")}` });
+  groups.push({ separator: section("Manage"), items: manageItems });
 
-  const prompt = createPrompt();
-  const selected = await modelSelect("Select a model", groups);
+  if (runningProfilesNow.length > 0) {
+    console.log("");
+  }
+
+  const selected = await promptSelectModel({ message: "Select a model", groups });
   if (!selected) return;
 
-  // Download actions — flattened, no sub-menu
   if (selected === "__download_hf_gguf__") {
-    await downloadHfGguf(prompt);
+    await downloadHfGguf();
     console.log("");
     return;
   }
   if (selected === "__download_ollama_library__") {
-    await downloadOllamaLibrary(prompt);
+    await downloadOllamaLibrary();
     console.log("");
     return;
   }
   if (selected === "__download_ollama_hf__") {
-    await downloadOllamaHfGguf(prompt);
+    await downloadOllamaHfGguf();
     console.log("");
     return;
   }
+  if (selected === "__download_omlx__") {
+    console.log(status({ kind: "info", message: "oMLX models are downloaded from the oMLX app." }));
+    console.log(theme.subtle("Open oMLX, browse the model library, and download a model. It will appear here automatically.\n"));
+    return;
+  }
 
-  // Manage actions
   if (selected === "__runtime_status__") {
-    await runtimeStatusFlow(prompt);
+    await runtimeStatusFlow();
     console.log("");
     return;
   }
   if (selected === "__discovery_paths__") {
-    await discoveryPathsFlow(prompt);
+    await discoveryPathsFlow();
     console.log("");
     return;
   }
@@ -198,19 +199,19 @@ async function showModelPicker(catalog) {
 
   const benchOn = await benchmarkingEnabled();
   const actions = actionsForItem(item, { runningProfilesNow, benchOn });
-  const action = await prompt.choice(item.label, actions, actions[0].value);
+  const action = await promptChoice({ message: item.label, choices: actions });
   if (!action) return;
-  await performAction(prompt, action, item, { benchOn });
+  await performAction(action, item, { benchOn });
   console.log("");
 }
 
 function formatActions(rawActions) {
-  const sep = pc.dim("  │  ");
+  const sep = theme.subtle("  │  ");
   const maxName = Math.max(...rawActions.map((a) => stripVTControlCharacters(a.name).length));
   const width = Math.max(17, maxName + 2);
   return rawActions.map((a) => {
-    const name = a.dimmed ? pc.dim(pc.strikethrough(a.name.padEnd(width).slice(0, width))) : pc.bold(a.name.padEnd(width).slice(0, width));
-    const desc = a.dimmed ? pc.red(a.dimmedDesc ?? "not available") : pc.dim(a.desc);
+    const name = a.dimmed ? theme.subtle(a.name.padEnd(width).slice(0, width)) : theme.bold(a.name.padEnd(width).slice(0, width));
+    const desc = a.dimmed ? theme.error(a.dimmedDesc ?? "not available") : theme.subtle(a.desc);
     return { value: a.value, label: name + sep + desc };
   });
 }
@@ -271,12 +272,12 @@ function actionsForItem(item, { runningProfilesNow = [], benchOn = false } = {})
   ]);
 }
 
-async function performAction(prompt, action, item, { benchOn = false } = {}) {
+async function performAction(action, item, { benchOn = false } = {}) {
   const missing = item.type === "profile" && item.missing;
   if (missing && ["run", "reconfigure"].includes(action)) {
     const backend = item.type === "profile" ? backendFor(item.profile.backend) : null;
     const reason = backend?.type === "managed-server" ? "model is no longer available on the server" : "model file is no longer on disk";
-    console.log(pc.red(`This model's ${reason}. Remove the setup or restore the model.`));
+    console.log(status({ kind: "error", message: `This model's ${reason}. Remove the setup or restore the model.` }));
     return;
   }
   if (action === "benchmark" && item.type === "profile") {
@@ -284,8 +285,8 @@ async function performAction(prompt, action, item, { benchOn = false } = {}) {
     const profile = item.profile;
     const isManaged = backendFor(profile.backend).type === "managed-server";
     if (!resolveBenchyModel(profile, isManaged)) {
-      console.log(pc.yellow("Benchmarking is not supported for this model."));
-      console.log(pc.dim("llama-benchy needs a HuggingFace model name for the tokenizer. Only models from HuggingFace can be benchmarked."));
+      console.log(status({ kind: "warning", message: "Benchmarking is not supported for this model." }));
+      console.log(theme.subtle("llama-benchy needs a HuggingFace model name for the tokenizer. Only models from HuggingFace can be benchmarked."));
       return;
     }
   }
@@ -298,9 +299,9 @@ async function performAction(prompt, action, item, { benchOn = false } = {}) {
   if (action === "server") return await startServerItem(item);
   if (action === "stop") return await stopServerItem(item);
   if (action === "benchmark") return await benchmarkItem(item);
-  if (action === "reconfigure" || action === "setup") return await setupItem(prompt, item);
+  if (action === "reconfigure" || action === "setup") return await setupItem(item);
   if (action === "remove_config" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
-  if (action === "delete_model") return await deleteModelFromSource(prompt, item);
+  if (action === "delete_model") return await deleteModelFromSource(item);
 }
 
 async function runItem(item) {
@@ -317,29 +318,29 @@ async function stopServerItem(item) {
   if (isManaged) {
     const result = await unloadModelFromServer(profile);
     if (result.unloaded) {
-      console.log(pc.green(`[unload] ${profile.label}: model unloaded`));
+      console.log(status({ kind: "success", message: `[unload] ${profile.label}: model unloaded` }));
     } else if (result.reason) {
-      console.log(pc.dim(`[unload] ${profile.label}: ${result.reason}`));
+      console.log(theme.subtle(`[unload] ${profile.label}: ${result.reason}`));
     } else if (result.error) {
-      console.log(pc.yellow(`[unload] ${profile.label}: ${result.error}`));
+      console.log(status({ kind: "warning", message: `[unload] ${profile.label}: ${result.error}` }));
     }
   } else {
     const result = await stopProfile(profile);
-    console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+    console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
   }
 }
 
 function printProfileSaved(id) {
-  console.log(pc.dim(`  Profile: ${profileJsonPath(id)}`));
+  console.log(theme.subtle(`  Profile: ${profileJsonPath(id)}`));
 }
 
-async function setupItem(prompt, item) {
+async function setupItem(item) {
   if (item.type === "profile") {
     const profile = await readProfile(item.profile.id);
     const backend = backendFor(profile.backend);
     const configured = backend.type === "managed-server"
-      ? await configureManagedProfile(prompt, profile)
-      : await configureLocalProfile(prompt, profile);
+      ? await configureManagedProfile(profile)
+      : await configureLocalProfile(profile);
     if (!configured) return;
     await saveProfile(configured);
     await syncPiConfig(configured);
@@ -348,7 +349,7 @@ async function setupItem(prompt, item) {
   }
   if (item.type === "managed") {
     const profile = createManagedProfile(item.model, item.backendId);
-    const configured = await configureManagedProfile(prompt, profile);
+    const configured = await configureManagedProfile(profile);
     if (!configured) return;
     await saveProfile(configured);
     await syncPiConfig(configured);
@@ -357,11 +358,11 @@ async function setupItem(prompt, item) {
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
   if (profile.capabilities?.missingContextLength) {
-    console.log(pc.red("\nCannot configure this model: GGUF metadata is missing context_length."));
-    console.log(pc.dim("Without context_length, we cannot safely determine KV cache size —\nthis can cause out-of-memory errors or silent context truncation.\nUse a GGUF with complete metadata, or fix the file with a GGUF editor."));
+    console.log(status({ kind: "error", message: "\nCannot configure this model: GGUF metadata is missing context_length." }));
+    console.log(theme.subtle("Without context_length, we cannot safely determine KV cache size —\nthis can cause out-of-memory errors or silent context truncation.\nUse a GGUF with complete metadata, or fix the file with a GGUF editor."));
     return;
   }
-  const configured = await configureLocalProfile(prompt, profile);
+  const configured = await configureLocalProfile(profile);
   if (!configured) return;
   await saveProfile(configured);
   await syncPiConfig(configured);
@@ -371,20 +372,19 @@ async function setupItem(prompt, item) {
 async function removeProfileInteractive(id) {
   const profile = await readProfile(id);
   if (!process.stdin.isTTY) {
-    console.log(pc.red(`Use --force to remove ${id} non-interactively.`));
+    console.log(status({ kind: "error", message: `Use --force to remove ${id} non-interactively.` }));
     return;
   }
-  const prompt = createPrompt();
-  const confirmed = await prompt.yesNo(`Remove ${profile.label} (${profile.id})?`, false);
+  const confirmed = await promptConfirm({ message: `Remove ${profile.label} (${profile.id})?`, initialValue: false });
   if (!confirmed) {
-    console.log(pc.dim("Cancelled."));
+    console.log(theme.subtle("Cancelled."));
     return;
   }
   if (await isProfileRunning(profile)) {
-    console.log(pc.yellow("Stopping running server..."));
+    console.log(status({ kind: "warning", message: "Stopping running server..." }));
     await stopProfile(profile);
   }
   await removeFromPiConfig(profile);
   await deleteProfile(id);
-  console.log(pc.green(`Removed ${profile.label} (${profile.id})`));
+  console.log(status({ kind: "success", message: `Removed ${profile.label} (${profile.id})` }));
 }

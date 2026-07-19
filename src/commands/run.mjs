@@ -7,7 +7,7 @@ import { serverReady } from "../server-check.mjs";
 import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
-import { pc, renderMemoryEstimate, parseOptions } from "../ui.mjs";
+import { renderMemoryEstimate, parseOptions, status, theme } from "../ui.mjs";
 
 export async function runCommand(argv) {
   await ensureDirs();
@@ -24,15 +24,15 @@ export async function runProfile(profile, options = {}) {
     throw new Error(`Invalid --with value: "${withHarness}". Supported: ${validHarnesses.join(", ")}`);
   }
   if (withHarness === "pi" && !(await hasPi())) {
-    console.log(pc.yellow("Pi is not installed. Run with --with server, or install Pi from https://pi.app"));
-    console.log(pc.dim("Starting server only..."));
+    console.log(status({ kind: "warning", message: "Pi is not installed. Run with --with server, or install Pi from https://pi.app" }));
+    console.log(theme.subtle("Starting server only..."));
     return await runProfile(profile, { ...options, with: "server" });
   }
 
   const isManaged = backend.type === "managed-server";
   if (isManaged) {
     if (!(await serverReady(profile.baseUrl))) {
-      console.log(pc.dim(`Starting ${backend.label}...`));
+      console.log(theme.subtle(`Starting ${backend.label}...`));
       try {
         await startServer(profile);
       } catch (err) {
@@ -44,7 +44,7 @@ export async function runProfile(profile, options = {}) {
       const modelId = effectiveModelId(profile);
       throw new Error(`${modelId} is not available on ${backend.label} at ${profile.baseUrl}.`);
     }
-    console.log(pc.green(`[ready] ${backend.label} at ${profile.baseUrl}`));
+    console.log(status({ kind: "success", message: `[ready] ${backend.label} at ${profile.baseUrl}` }));
   } else {
     const startup = await ensureLocalServer(profile, backend, options);
     if (startup?.handled) return startup.result;
@@ -52,7 +52,7 @@ export async function runProfile(profile, options = {}) {
 
   printMemoryEstimate(profile, isManaged);
 
-  console.log(pc.dim("Verifying model loads (pre-flight inference test)..."));
+  console.log(theme.subtle("Verifying model loads (pre-flight inference test)..."));
   const preflight = await preflightInference(profile);
   if (!preflight.ok) {
     if (!isManaged) {
@@ -63,7 +63,7 @@ export async function runProfile(profile, options = {}) {
     const modelId = effectiveModelId(profile);
     throw new Error(`Model "${modelId}" failed to generate a test token: ${preflight.error}. The server was ready but the model could not load or infer. Check the model format and backend compatibility.`);
   }
-  console.log(pc.green("[preflight] Model loaded and generated a test token."));
+  console.log(status({ kind: "success", message: "[preflight] Model loaded and generated a test token." }));
 
   await launchHarness(profile, options, isManaged, withHarness, backend);
   console.log("");
@@ -75,18 +75,18 @@ async function ensureLocalServer(profile, backend, options) {
     if (!match.matches) {
       throw new Error(`A different server is already responding at ${profile.baseUrl}. ${match.reason}. Stop it with offgrid-ai stop --all, or choose a different port.`);
     }
-    console.log(pc.green(`[ready] Reusing server at ${profile.baseUrl}`));
+    console.log(status({ kind: "success", message: `[ready] Reusing server at ${profile.baseUrl}` }));
     return;
   }
 
-  console.log(pc.dim(`Starting ${backend.label} for ${profile.label}...`));
+  console.log(theme.subtle(`Starting ${backend.label} for ${profile.label}...`));
   let state;
   try {
     state = await startServer(profile);
     const tail = state?.rawLogPath ? tailFriendly(state.rawLogPath, state.friendlyLogPath) : { stop() {} };
     try {
       await waitForReady(profile, state?.pid, state?.rawLogPath);
-      console.log(pc.green(`[ready] ${profile.baseUrl}/models`));
+      console.log(status({ kind: "success", message: `[ready] ${profile.baseUrl}/models` }));
     } finally {
       tail.stop();
     }
@@ -95,8 +95,8 @@ async function ensureLocalServer(profile, backend, options) {
       try { await stopProfile(profile); } catch { /* best effort */ }
     }
     if (!options.textOnlyRetry && isUnsupportedMmprojError(err, profile)) {
-      console.log(pc.yellow("Vision projector is not supported by this llama.cpp build. Retrying text-only."));
-      console.log(pc.dim("Update llama.cpp later to re-enable vision for this model."));
+      console.log(status({ kind: "warning", message: "Vision projector is not supported by this llama.cpp build. Retrying text-only." }));
+      console.log(theme.subtle("Update llama.cpp later to re-enable vision for this model."));
       const textOnly = textOnlyProfile(profile);
       await saveProfile(textOnly);
       return { handled: true, result: await runProfile(textOnly, { ...options, textOnlyRetry: true }) };
@@ -118,10 +118,10 @@ function printMemoryEstimate(profile, isManaged) {
 async function launchHarness(profile, options, isManaged, withHarness, backend) {
   if (withHarness !== "pi") {
     if (!isManaged) {
-      console.log(pc.dim(`Server running at ${profile.baseUrl}`));
-      console.log(pc.dim(`Stop with: offgrid-ai stop ${profile.id}`));
+      console.log(theme.subtle(`Server running at ${profile.baseUrl}`));
+      console.log(theme.subtle(`Stop with: offgrid-ai stop ${profile.id}`));
     } else {
-      console.log(pc.dim(`${backend.label} is a managed service — offgrid-ai does not stop it.`));
+      console.log(theme.subtle(`${backend.label} is a managed service — offgrid-ai does not stop it.`));
     }
     return;
   }
@@ -134,15 +134,15 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
     if (!options["keep-server"]) {
       if (!isManaged) {
         const result = await stopProfile(profile);
-        console.log(result.stopped ? pc.green(`[stop] ${result.message}`) : pc.dim(`[stop] ${result.message}`));
+        console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
       } else {
         const result = await unloadModelFromServer(profile);
         if (result.unloaded) {
-          console.log(pc.green(`[unload] ${backend.label}: model unloaded`));
+          console.log(status({ kind: "success", message: `[unload] ${backend.label}: model unloaded` }));
         } else if (result.reason) {
-          console.log(pc.dim(`[unload] ${backend.label}: ${result.reason}`));
+          console.log(theme.subtle(`[unload] ${backend.label}: ${result.reason}`));
         } else if (result.error) {
-          console.log(pc.yellow(`[unload] ${backend.label}: ${result.error}`));
+          console.log(status({ kind: "warning", message: `[unload] ${backend.label}: ${result.error}` }));
         }
       }
     }
@@ -162,4 +162,3 @@ function textOnlyProfile(profile) {
     capabilities: { ...(profile.capabilities ?? {}), vision: false, visionDisabledReason: "unsupported-mmproj" },
   });
 }
-

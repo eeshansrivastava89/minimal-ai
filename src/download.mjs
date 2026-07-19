@@ -1,12 +1,3 @@
-// Model download flow — HuggingFace + Ollama downloads with quant picker.
-// Used by onboarding (no models found) and the model picker (download actions).
-//
-// Each download path is exported as a separate function so the main menu
-// can call them directly without a sub-menu:
-//   - downloadHfGguf(prompt)       → HuggingFace GGUF for llama.cpp
-//   - downloadOllamaLibrary(prompt) → Ollama library pull
-//   - downloadOllamaHfGguf(prompt)  → HuggingFace GGUF via Ollama
-
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
@@ -14,37 +5,26 @@ import { HF_HUB_DIR } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, OLLAMA_URLS } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
-import { pc, formatBytes, renderCard, renderRows } from "./ui.mjs";
+import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, section, card, renderList } from "./ui.mjs";
 
-/**
- * Download a GGUF model from HuggingFace for llama.cpp.
- * Shows quant picker with RAM fit indicators, downloads to HF cache.
- */
-export async function downloadHfGguf(prompt) {
-  console.log(pc.dim("  Browse models at huggingface.co/models"));
-  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
+export async function downloadHfGguf() {
+  console.log(theme.subtle("  Browse models at huggingface.co/models"));
+  const input = await promptText({ message: "HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", defaultValue: "" });
   if (!input || !input.trim()) return false;
   const ref = parseHfRef(input.trim());
-  return await _downloadHfGguf(prompt, ref.repo, ref.filename);
+  return await _downloadHfGguf(ref.repo, ref.filename);
 }
 
-/**
- * Pull a model from the Ollama library (e.g. qwen3:8b).
- */
-export async function downloadOllamaLibrary(prompt) {
-  console.log(pc.dim("  Browse models at ollama.com/library"));
-  const input = await prompt.text("Ollama model name (e.g. qwen3:8b, llama3.2:3b)", "");
+export async function downloadOllamaLibrary() {
+  console.log(theme.subtle("  Browse models at ollama.com/library"));
+  const input = await promptText({ message: "Ollama model name (e.g. qwen3:8b, llama3.2:3b)", defaultValue: "" });
   if (!input || !input.trim()) return false;
-  return await downloadViaOllama(prompt, input.trim());
+  return await downloadViaOllama(input.trim());
 }
 
-/**
- * Pull a GGUF model from HuggingFace via Ollama (with quant picker).
- * Downloads through Ollama's pull API using hf.co/ prefix.
- */
-export async function downloadOllamaHfGguf(prompt) {
-  console.log(pc.dim("  Browse GGUF models at huggingface.co/models"));
-  const input = await prompt.text("HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", "");
+export async function downloadOllamaHfGguf() {
+  console.log(theme.subtle("  Browse GGUF models at huggingface.co/models"));
+  const input = await promptText({ message: "HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", defaultValue: "" });
   if (!input || !input.trim()) return false;
   const ref = parseHfRef(input.trim());
 
@@ -52,83 +32,77 @@ export async function downloadOllamaHfGguf(prompt) {
   try {
     ggufFiles = await listGgufFiles(ref.repo);
   } catch (err) {
-    console.log(pc.red(`Could not fetch repo info: ${err.message}`));
+    console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
     return false;
   }
   if (ggufFiles.length === 0) {
-    console.log(pc.yellow("No GGUF files found in this repo. Look for a repo ending in -GGUF."));
+    console.log(status({ kind: "warning", message: "No GGUF files found in this repo. Look for a repo ending in -GGUF." }));
     return false;
   }
 
-  const filename = await pickGgufQuant(prompt, ref.repo, ggufFiles);
+  const filename = await pickGgufQuant(ref.repo, ggufFiles);
   if (!filename) return false;
 
   const modelRef = `hf.co/${ref.repo}:${filename}`;
-  return await downloadViaOllama(prompt, modelRef);
+  return await downloadViaOllama(modelRef);
 }
 
-// ── HuggingFace GGUF download (shared by direct and legacy paths) ───────────
-
-async function _downloadHfGguf(prompt, repo, filename) {
-  // For GGUF repos without a specific file, show quant picker.
+async function _downloadHfGguf(repo, filename) {
   if (!filename) {
     let ggufFiles;
     try {
       ggufFiles = await listGgufFiles(repo);
     } catch (err) {
-      console.log(pc.red(`Could not fetch repo info: ${err.message}`));
+      console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
       return false;
     }
     if (ggufFiles.length > 0) {
-      filename = await pickGgufQuant(prompt, repo, ggufFiles);
+      filename = await pickGgufQuant(repo, ggufFiles);
       if (!filename) return false;
     } else {
-      // No GGUF files — check if it's an MLX repo
       let modelInfo;
       try {
         modelInfo = await getHfModelInfo(repo);
       } catch {
-        console.log(pc.red(`Could not fetch repo info for ${repo}. Check the repo ID and try again.`));
+        console.log(status({ kind: "error", message: `Could not fetch repo info for ${repo}. Check the repo ID and try again.` }));
         return false;
       }
       if (isMlxRepo(modelInfo)) {
-        console.log(pc.yellow("This is an MLX repo, not GGUF. llama.cpp cannot run MLX models."));
-        console.log(pc.dim("  To use MLX: enable the oMLX backend and download via the oMLX app."));
-        console.log(pc.dim("  To find GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
+        console.log(status({ kind: "warning", message: "This is an MLX repo, not GGUF. llama.cpp cannot run MLX models." }));
+        console.log(theme.subtle("  To use MLX: enable the oMLX backend and download via the oMLX app."));
+        console.log(theme.subtle("  To find GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
         return false;
       } else {
-        console.log(pc.yellow(`This repo is not a GGUF or MLX model (library: ${modelInfo.library_name ?? "unknown"}).`));
-        console.log(pc.dim("For GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
-        console.log(pc.dim("For MLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
+        console.log(status({ kind: "warning", message: `This repo is not a GGUF or MLX model (library: ${modelInfo.library_name ?? "unknown"}).` }));
+        console.log(theme.subtle("For GGUF: look for a repo ending in -GGUF (e.g. org/model-name-GGUF)"));
+        console.log(theme.subtle("For MLX: look for a repo in mlx-community/ (e.g. mlx-community/model-name-4bit)"));
         return false;
       }
     }
   }
 
-  // Ensure HuggingFace CLI is available — offer to install if missing
   if (!(await hasHfCli())) {
-    const shouldInstall = await prompt.yesNo(
-      "HuggingFace CLI is required to download models. Install it now?", true,
-    );
+    const shouldInstall = await promptConfirm({
+      message: "HuggingFace CLI is required to download models. Install it now?",
+      initialValue: true,
+    });
     if (!shouldInstall) {
-      console.log(pc.dim("Install it manually: pip3 install huggingface_hub"));
+      console.log(theme.subtle("Install it manually: pip3 install huggingface_hub"));
       return false;
     }
     const installed = await installHfCli();
     if (!installed) return false;
   }
 
-  // Resolve download plan
   const downloadRef = filename ? `${repo}/${filename}` : repo;
   let plan;
   try {
     plan = await resolveHfDownload(downloadRef);
   } catch (err) {
-    console.log(pc.red(`Could not resolve download: ${err.message}`));
+    console.log(status({ kind: "error", message: `Could not resolve download: ${err.message}` }));
     return false;
   }
 
-  // For GGUF, check if the repo has a vision projector (mmproj) to download alongside
   let extraFiles = [];
   if (plan.format === "gguf") {
     try {
@@ -137,58 +111,48 @@ async function _downloadHfGguf(prompt, repo, filename) {
         const mmproj = mmprojFiles[0];
         extraFiles = [mmproj.path];
         plan.totalSizeBytes += mmproj.sizeBytes;
-        console.log(pc.dim(`Includes vision projector: ${mmproj.path} (${formatBytes(mmproj.sizeBytes)})`));
+        console.log(theme.subtle(`Includes vision projector: ${mmproj.path} (${formatBytes(mmproj.sizeBytes)})`));
       }
     } catch {
-      // If we can't check for mmproj, proceed without it
+      // proceed without mmproj
     }
   }
 
-  // Check disk space — all downloads go to HF cache
   const freeBytes = getFreeDiskBytes(HF_HUB_DIR);
   if (plan.totalSizeBytes > 0 && freeBytes < plan.totalSizeBytes * 1.1) {
-    console.log(pc.red(`Not enough disk space: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.`));
+    console.log(status({ kind: "error", message: `Not enough disk space: need ~${formatBytes(plan.totalSizeBytes)}, only ${formatBytes(freeBytes)} free.` }));
     return false;
   }
 
-  console.log(pc.dim(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})`));
-  console.log(pc.dim(`Location: HF cache (${HF_HUB_DIR})\n`));
+  console.log(theme.subtle(`\nDownloading ${repo}${filename ? `/${filename}` : ""} (${formatBytes(plan.totalSizeBytes)})`));
+  console.log(theme.subtle(`Location: HF cache (${HF_HUB_DIR})\n`));
 
   try {
     await downloadModel(plan, { extraFiles });
-    console.log(pc.green("\n✓ Download complete. Run offgrid-ai again to see the model in the picker."));
+    console.log(status({ kind: "success", message: "Download complete. Run offgrid-ai again to see the model in the picker." }));
     return true;
   } catch (err) {
-    console.log(pc.red("\nDownload failed: " + err.message));
+    console.log(status({ kind: "error", message: "Download failed: " + err.message }));
     return false;
   }
 }
 
-/**
- * Download a model through Ollama's pull API.
- * Ollama manages model storage, loading, and unloading automatically.
- * @param {object} prompt - createPrompt() instance
- * @param {string} modelRef - Ollama model reference (e.g. "hf.co/org/repo:file.gguf" or "qwen3:8b")
- * @returns {Promise<boolean>} true if pull succeeded
- */
-async function downloadViaOllama(prompt, modelRef) {
-  // Ensure Ollama is installed
+async function downloadViaOllama(modelRef) {
   if (!(await hasOllama())) {
-    console.log(pc.yellow("Ollama is enabled but not installed."));
-    const shouldInstall = await prompt.yesNo("Install Ollama now?", true);
+    console.log(status({ kind: "warning", message: "Ollama is enabled but not installed." }));
+    const shouldInstall = await promptConfirm({ message: "Install Ollama now?", initialValue: true });
     if (!shouldInstall) {
-      console.log(pc.dim("Install manually: brew install ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh"));
+      console.log(theme.subtle("Install manually: brew install ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh"));
       return false;
     }
     const installed = await installOllama();
     if (!installed) return false;
   }
 
-  // Ensure server is running
   await ensureOllamaServer();
   const OLLAMA_V1 = OLLAMA_URLS.v1;
   if (!(await serverReady(OLLAMA_V1))) {
-    process.stdout.write(pc.dim("Waiting for Ollama server"));
+    process.stdout.write(theme.subtle("Waiting for Ollama server"));
     for (let i = 0; i < 30; i++) {
       await sleep(1000);
       if (await serverReady(OLLAMA_V1)) break;
@@ -196,71 +160,58 @@ async function downloadViaOllama(prompt, modelRef) {
     }
     console.log("");
     if (!(await serverReady(OLLAMA_V1))) {
-      console.log(pc.yellow("Ollama server is starting up — try again in a moment."));
-      console.log(pc.dim("  Run: ollama serve"));
+      console.log(status({ kind: "warning", message: "Ollama server is starting up — try again in a moment." }));
+      console.log(theme.subtle("  Run: ollama serve"));
       return false;
     }
   }
 
-  console.log(pc.dim(`\nOllama will pull ${modelRef}`));
-  console.log(pc.dim("Ollama manages model storage and loading automatically.\n"));
+  console.log(theme.subtle(`\nOllama will pull ${modelRef}`));
+  console.log(theme.subtle("Ollama manages model storage and loading automatically.\n"));
 
   const ok = await pullOllamaModel(modelRef);
   if (ok) {
-    console.log(pc.green("\n✓ Run offgrid-ai again to see the model in the picker."));
+    console.log(status({ kind: "success", message: "Run offgrid-ai again to see the model in the picker." }));
   }
   return ok;
 }
 
-// ── Quant picker with RAM fit indicators ───────────────────────────────────
-
-async function pickGgufQuant(prompt, repo, ggufFiles) {
+async function pickGgufQuant(repo, ggufFiles) {
   const availableRam = availableRamBytes();
-
-  // Sort by size ascending (smallest first, largest last)
   const sorted = [...ggufFiles].sort((a, b) => a.sizeBytes - b.sizeBytes);
-
-  // Find recommended: largest file that fits comfortably
-  // Add ~10% for KV cache + runtime overhead (rough estimate; heatmap is precise)
   const fitting = sorted.filter((f) => fitCheck(f.sizeBytes + Math.round(f.sizeBytes * 0.1), availableRam).status === "fits");
   const recommended = fitting[fitting.length - 1];
 
-  console.log("");
-  console.log(renderCard("Select quantization", renderRows([
-    ["Your RAM", `${installedRamGB()} GB`],
-    ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
-    ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
-  ]), { formatBorder: pc.cyan }));
-  console.log("");
+  console.log();
+  console.log(section("Select quantization"));
+  console.log(card({
+    title: "Select quantization",
+    body: renderList([
+      ["Your RAM", `${installedRamGB()} GB`],
+      ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
+      ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
+    ]),
+  }));
+  console.log();
 
   const choices = sorted.map((file) => {
     const sizeBytes = file.sizeBytes;
     const parsed = parseModelName(file.path, "huggingface");
     const quant = parsed.quant ?? file.path.replace(/\.gguf$/i, "");
-    const { status } = fitCheck(sizeBytes + Math.round(sizeBytes * 0.1), availableRam);
+    const { status: fitStatus } = fitCheck(sizeBytes + Math.round(sizeBytes * 0.1), availableRam);
 
-    let indicator, fitLabel;
-    if (status === "won't fit") {
-      indicator = pc.red("✗");
-      fitLabel = pc.red("won't fit");
-    } else if (status === "tight") {
-      indicator = pc.yellow("⚠");
-      fitLabel = pc.yellow("tight");
-    } else {
-      indicator = pc.green("✓");
-      fitLabel = pc.green("fits");
-    }
+    let fitLabel;
+    if (fitStatus === "won't fit") fitLabel = status({ kind: "error", message: "won't fit" });
+    else if (fitStatus === "tight") fitLabel = status({ kind: "warning", message: "tight" });
+    else fitLabel = status({ kind: "success", message: "fits" });
 
     const isRecommended = recommended && file.path === recommended.path;
-    const hint = isRecommended ? "recommended" : undefined;
-
     return {
       value: file.path,
-      label: `${indicator}  ${quant.padEnd(12)} ${formatBytes(sizeBytes).padEnd(10)} ${fitLabel}`,
-      ...(hint ? { hint } : {}),
+      label: `${quant.padEnd(12)} ${formatBytes(sizeBytes).padEnd(10)}`,
+      hint: isRecommended ? "recommended" : fitLabel,
     };
   });
 
-  const defaultValue = recommended?.path;
-  return await prompt.choice("Quantization", choices, defaultValue);
+  return await promptSelect({ message: "Quantization", choices, defaultValue: recommended?.path });
 }

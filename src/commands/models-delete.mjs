@@ -11,7 +11,7 @@ import { deleteProfile, effectiveModelId } from "../profiles.mjs";
 import { deleteOllamaModel } from "../ollama-runtime.mjs";
 import { offerOmlxRestart } from "../omlx-runtime.mjs";
 import { findOmlxModelDir } from "../mlx-discovery.mjs";
-import { pc } from "../ui.mjs";
+import { promptConfirm, status, theme } from "../ui.mjs";
 import { execFileAsync } from "../exec.mjs";
 import { hfRepoFromPath } from "../huggingface.mjs";
 
@@ -25,8 +25,6 @@ function fallbackOmlxModelDir(modelId) {
   return join(OMLX_MODELS_ROOT, ...parts);
 }
 
-
-/** Determine where a model's files live on disk. */
 export async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
@@ -59,7 +57,6 @@ export async function modelLocationForItem(item) {
   return { kind: "unknown" };
 }
 
-/** Pure lexical guard: target must be a strict descendant, never the root. */
 export function isStrictDescendantPath(target, root) {
   if (typeof target !== "string" || typeof root !== "string" || !isAbsolute(target) || !isAbsolute(root)) return false;
   const rel = relative(resolve(root), resolve(target)).replace(/\\/gu, "/");
@@ -85,34 +82,38 @@ export async function isSafeOmlxDeletionTarget(target, root = OMLX_MODELS_ROOT) 
   return Boolean(canonicalRoot && canonicalTarget && isSafeOmlxModelPath(canonicalTarget, canonicalRoot));
 }
 
-export async function deleteModelFromSource(prompt, item) {
+export async function deleteModelFromSource(item, confirm = promptConfirm) {
   const loc = await modelLocationForItem(item);
   if (loc.kind === "unknown") {
-    console.log(pc.yellow("Could not determine where this model's files are located."));
+    console.log(status({ kind: "warning", message: "Could not determine where this model's files are located." }));
     return { confirmed: false, reason: loc.reason ?? "unknown location" };
   }
 
   const locationLabel = loc.kind === "hf-cache" ? (loc.path ?? loc.repoId)
     : loc.kind === "mlx" ? loc.dir : loc.kind === "ollama" ? loc.modelId : loc.path;
-  console.log(pc.yellow("\nThis will permanently delete " + (item.type === "profile" ? "the configuration and the model from:" : "the model from:")));
-  console.log(pc.dim(`  ${locationLabel}`));
+  console.log(status({ kind: "warning", message: "\nThis will permanently delete " + (item.type === "profile" ? "the configuration and the model from:" : "the model from:") }));
+  console.log(theme.subtle(`  ${locationLabel}`));
   if (loc.kind === "hf-cache" && loc.repoId) {
-    console.log(pc.yellow(`\nWarning: HuggingFace cache deletion is repository-wide. All files in ${loc.repoId} (including other quants, projectors, and drafters) will be removed.`));
-    console.log(pc.dim("To delete only this file, remove it manually from the cache directory."));
-    if (!await prompt.yesNo("Delete the entire repository?", false)) {
-      console.log(pc.dim("Cancelled."));
+    console.log(status({ kind: "warning", message: `Warning: HuggingFace cache deletion is repository-wide. All files in ${loc.repoId} (including other quants, projectors, and drafters) will be removed.` }));
+    console.log(theme.subtle("To delete only this file, remove it manually from the cache directory."));
+    const confirmed = await confirm({ message: "Delete the entire repository?", initialValue: false });
+    if (!confirmed) {
+      console.log(theme.subtle("Cancelled."));
       return { confirmed: false, cancelled: true };
     }
-  } else if (!await prompt.yesNo("Delete this model?", false)) {
-    console.log(pc.dim("Cancelled."));
-    return { confirmed: false, cancelled: true };
+  } else {
+    const confirmed = await confirm({ message: "Delete this model?", initialValue: false });
+    if (!confirmed) {
+      console.log(theme.subtle("Cancelled."));
+      return { confirmed: false, cancelled: true };
+    }
   }
 
   if (item.type === "profile" && backendFor(item.profile.backend).type === "local-server" && await isProfileRunning(item.profile)) {
-    console.log(pc.dim("Stopping running server..."));
+    console.log(theme.subtle("Stopping running server..."));
     const stopResult = await stopProfile(item.profile);
     if (!stopResult.stopped && await isProfileRunning(item.profile)) {
-      console.log(pc.yellow(`Keeping configuration because the server could not be stopped: ${stopResult.message}`));
+      console.log(status({ kind: "warning", message: `Keeping configuration because the server could not be stopped: ${stopResult.message}` }));
       return { confirmed: false, reason: "server is still running" };
     }
   }
@@ -121,90 +122,90 @@ export async function deleteModelFromSource(prompt, item) {
   if (loc.kind === "ollama") {
     try {
       if (await deleteOllamaModel(loc.modelId)) {
-        console.log(pc.green(`✓ Deleted ${loc.modelId} from Ollama`));
+        console.log(status({ kind: "success", message: `Deleted ${loc.modelId} from Ollama` }));
         sourceDeletion = { confirmed: true };
       } else {
-        console.log(pc.red(`✗ Ollama did not confirm deletion of ${loc.modelId}`));
-        console.log(pc.dim(`Delete manually: ollama rm ${loc.modelId}`));
+        console.log(status({ kind: "error", message: `Ollama did not confirm deletion of ${loc.modelId}` }));
+        console.log(theme.subtle(`Delete manually: ollama rm ${loc.modelId}`));
       }
     } catch (err) {
-      console.log(pc.red(`✗ Failed: ${err.message}`));
-      console.log(pc.dim(`Delete manually: ollama rm ${loc.modelId}`));
+      console.log(status({ kind: "error", message: `Failed: ${err.message}` }));
+      console.log(theme.subtle(`Delete manually: ollama rm ${loc.modelId}`));
     }
   } else if (loc.kind === "hf-cache" && loc.repoId) {
     const cacheDir = join(HF_HUB_DIR, `models--${loc.repoId.replace(/\//g, "--")}`);
     try {
       const { stdout } = await execFileAsync("hf", ["cache", "rm", `model/${loc.repoId}`, "--yes"], { timeout: 30000 });
-      if (stdout.trim()) console.log(pc.dim(stdout.trim()));
+      if (stdout.trim()) console.log(theme.subtle(stdout.trim()));
       if (existsSync(cacheDir)) {
-        console.log(pc.red(`✗ Model still exists at ${cacheDir}`));
-        console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
+        console.log(status({ kind: "error", message: `Model still exists at ${cacheDir}` }));
+        console.log(theme.subtle(`Delete manually: hf cache rm model/${loc.repoId}`));
       } else {
-        console.log(pc.green(`✓ Deleted ${loc.repoId} from HuggingFace cache`));
+        console.log(status({ kind: "success", message: `Deleted ${loc.repoId} from HuggingFace cache` }));
         sourceDeletion = { confirmed: true };
       }
     } catch (err) {
       const detail = err.stderr?.trim() || err.message;
-      console.log(pc.red(`✗ Failed: ${detail}`));
-      console.log(pc.dim(`Delete manually: hf cache rm model/${loc.repoId}`));
+      console.log(status({ kind: "error", message: `Failed: ${detail}` }));
+      console.log(theme.subtle(`Delete manually: hf cache rm model/${loc.repoId}`));
     }
   } else if (loc.kind === "mlx") {
     const root = join(homedir(), ".omlx", "models");
     if (!await isSafeOmlxDeletionTarget(loc.dir, root)) {
-      console.log(pc.red(`✗ Refusing to delete: path is outside ~/.omlx/models/ or is the models root.`));
-      console.log(pc.dim(`  Target: ${loc.dir}`));
+      console.log(status({ kind: "error", message: "Refusing to delete: path is outside ~/.omlx/models/ or is the models root." }));
+      console.log(theme.subtle(`  Target: ${loc.dir}`));
       return { confirmed: false, reason: "unsafe oMLX path" };
     }
     if (!existsSync(loc.dir)) {
-      console.log(pc.yellow(`Directory not found: ${loc.dir}`));
+      console.log(status({ kind: "warning", message: `Directory not found: ${loc.dir}` }));
       sourceDeletion = { confirmed: true, alreadyAbsent: true };
     } else {
       try {
         await rm(loc.dir, { recursive: true, force: true });
       } catch (err) {
-        console.log(pc.red(`✗ Failed: ${err.message}`));
-        console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
+        console.log(status({ kind: "error", message: `Failed: ${err.message}` }));
+        console.log(theme.subtle(`Delete manually: rm -rf ${loc.dir}`));
         return { confirmed: false, reason: err.message };
       }
       if (existsSync(loc.dir)) {
-        console.log(pc.red(`✗ Directory still exists: ${loc.dir}`));
-        console.log(pc.dim(`Delete manually: rm -rf ${loc.dir}`));
+        console.log(status({ kind: "error", message: `Directory still exists: ${loc.dir}` }));
+        console.log(theme.subtle(`Delete manually: rm -rf ${loc.dir}`));
       } else {
-        console.log(pc.green(`✓ Deleted ${loc.dir}`));
+        console.log(status({ kind: "success", message: `Deleted ${loc.dir}` }));
         sourceDeletion = { confirmed: true };
-        await offerOmlxRestart(prompt, "to update its model list");
+        await offerOmlxRestart("to update its model list");
       }
     }
   } else if (loc.kind === "file") {
     if (!existsSync(loc.path)) {
-      console.log(pc.yellow(`File not found: ${loc.path}`));
+      console.log(status({ kind: "warning", message: `File not found: ${loc.path}` }));
       sourceDeletion = { confirmed: true, alreadyAbsent: true };
     } else {
       try {
         await unlink(loc.path);
       } catch (err) {
-        console.log(pc.red(`✗ Failed: ${err.message}`));
-        console.log(pc.dim(`Delete manually: rm ${loc.path}`));
+        console.log(status({ kind: "error", message: `Failed: ${err.message}` }));
+        console.log(theme.subtle(`Delete manually: rm ${loc.path}`));
         return { confirmed: false, reason: err.message };
       }
       if (existsSync(loc.path)) {
-        console.log(pc.red(`✗ File still exists: ${loc.path}`));
-        console.log(pc.dim(`Delete manually: rm ${loc.path}`));
+        console.log(status({ kind: "error", message: `File still exists: ${loc.path}` }));
+        console.log(theme.subtle(`Delete manually: rm ${loc.path}`));
       } else {
-        console.log(pc.green(`✓ Deleted ${loc.path}`));
+        console.log(status({ kind: "success", message: `Deleted ${loc.path}` }));
         sourceDeletion = { confirmed: true };
       }
     }
   }
 
   if (!sourceDeletion.confirmed) {
-    console.log(pc.yellow("Keeping configuration because source deletion was not confirmed."));
+    console.log(status({ kind: "warning", message: "Keeping configuration because source deletion was not confirmed." }));
     return sourceDeletion;
   }
   if (item.type === "profile") {
     await removeFromPiConfig(item.profile);
     await deleteProfile(item.profile.id);
-    console.log(pc.dim(`Removed configuration: ${item.profile.id}`));
+    console.log(theme.subtle(`Removed configuration: ${item.profile.id}`));
   }
   return sourceDeletion;
 }
