@@ -50,6 +50,12 @@ test("run command rejects missing profile", async () => {
   assert(stderr.includes("not found"), `stderr: ${stderr}`);
 });
 
+test("run command accepts flags after profile", async () => {
+  const { code, stderr } = await run(["run", "--with", "server", "does-not-exist"]);
+  assert.notStrictEqual(code, 0);
+  assert(stderr.includes("not found"), `stderr: ${stderr}`);
+});
+
 test("stop --all works when nothing is running", async () => {
   const { code, stderr } = await run(["stop", "--all"]);
   assert.strictEqual(code, 0, `stderr: ${stderr}`);

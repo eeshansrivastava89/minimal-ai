@@ -6,7 +6,7 @@ import { omlxEnabled, ollamaEnabled } from "./config.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
-import { createCli, runCli, appHeader, section, infoCard, renderList, status, formatError, theme } from "./ui.mjs";
+import { createCli, runCli, appHeader, section, infoCard, renderList, status, formatError, theme, promptConfirm } from "./ui.mjs";
 
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
@@ -51,7 +51,6 @@ async function offerRuntimeUpdates() {
   console.log(section("Runtime updates available"));
   console.log(renderList(rows));
 
-  const { promptConfirm } = await import("./ui.mjs");
   const shouldUpdate = await promptConfirm({ message: "Update runtimes now?", initialValue: true });
   if (!shouldUpdate) return;
   for (const u of updates) {
@@ -141,22 +140,16 @@ function buildProgram() {
       {
         name: "models [id]",
         description: "Show model picker or inspect a profile",
-        allowUnknownOption: true,
-        action: async () => {
-          const argv = process.argv.slice(2);
-          const args = argv[0] === "models" ? argv.slice(1) : argv;
-          return await modelsCommand(args);
-        },
+        action: ({ args }) => modelsCommand(args),
       },
       {
         name: "run [model]",
         description: "Run a model non-interactively",
         allowUnknownOption: true,
-        action: async () => {
-          const argv = process.argv.slice(2);
-          const args = argv[0] === "run" ? argv.slice(1) : argv;
-          if (args.length === 0) return await mainFlow();
-          return await runCommand(args);
+        allowExcessArguments: true,
+        action: ({ args }) => {
+          if (args.length === 0) return mainFlow();
+          return runCommand(args);
         },
       },
       {
@@ -168,21 +161,15 @@ function buildProgram() {
         name: "stop [id]",
         description: "Stop a running model server",
         allowUnknownOption: true,
-        action: async () => {
-          const argv = process.argv.slice(2);
-          const args = argv[0] === "stop" ? argv.slice(1) : argv;
-          return await stopCommand(args);
-        },
+        allowExcessArguments: true,
+        action: ({ args }) => stopCommand(args),
       },
       {
         name: "uninstall",
         description: "Remove offgrid-ai",
         allowUnknownOption: true,
-        action: async () => {
-          const argv = process.argv.slice(2);
-          const args = argv[0] === "uninstall" ? argv.slice(1) : argv;
-          return await uninstallCommand(args);
-        },
+        allowExcessArguments: true,
+        action: ({ args }) => uninstallCommand(args),
       },
       {
         name: "update",

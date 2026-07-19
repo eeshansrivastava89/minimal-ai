@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { section, card, wrapText, theme, screenHeader } from "./ui.mjs";
+import { card, wrapText, theme, screenHeader } from "./ui.mjs";
 import { compareVersions, currentPackageVersion } from "./updates.mjs";
 import { loadConfig, saveConfig } from "./config.mjs";
 
@@ -107,7 +107,6 @@ export function printReleaseNotes(entries) {
         bodyLines.push(...wrapText(line, 76).map((l) => `  ${l}`));
       }
     }
-    console.log(section(`v${entry.version}`));
     console.log(card({ title: `v${entry.version}`, body: bodyLines.join("\n") }));
   }
   console.log("");

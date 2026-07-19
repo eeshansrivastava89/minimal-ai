@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileAsync } from "../exec.mjs";
-import { section, card, renderList, status, theme } from "../ui.mjs";
+import { card, renderList, status, theme } from "../ui.mjs";
 
 export async function statusCommand() {
   await ensureDirs();
@@ -40,7 +40,6 @@ export async function statusCommand() {
 
   summaryRows.push(["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : status({ kind: "warning", message: "Run offgrid-ai to set up a model" })]);
 
-  console.log(section("Status"));
   console.log(card({ title: "Status", body: renderList(summaryRows) }));
 
   if (await omlxEnabled()) {
@@ -50,7 +49,6 @@ export async function statusCommand() {
         const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
         const cacheSize = duOutput.split(/\s+/)[0];
         console.log("");
-        console.log(section("oMLX cache"));
         console.log(card({ title: "oMLX cache", body: renderList([
           ["Location", theme.subtle(omlxCacheDir)],
           ["Disk usage", theme.bold(cacheSize)],
@@ -73,14 +71,12 @@ export async function statusCommand() {
       detailRows.push(["Server", `${backend.label} at ${profile.baseUrl}`]);
     }
     console.log("");
-    console.log(section("Managed servers"));
     console.log(card({ title: "Managed servers", body: renderList(detailRows) }));
   }
 
   if (running.length === 0) return;
 
   console.log("");
-  console.log(section("Running"));
   console.log(card({ title: "Running", body: renderList([["Stop", "offgrid-ai stop"]]) }));
   for (const { profile, status: s } of running) {
     const backend = backendFor(profile.backend);

@@ -3,7 +3,7 @@ import { hasPi, setupPiConfig } from "../harness-pi.mjs";
 import { latestLlamaRelease, installLlamaRelease } from "../runtime.mjs";
 import { hasHfCli, installHfCli } from "../huggingface.mjs";
 import { execCommand } from "../exec.mjs";
-import { startInteractive, promptConfirm, status, theme, screenHeader, section, card, withSpinner } from "../ui.mjs";
+import { startInteractive, promptConfirm, status, theme, screenHeader, card, withSpinner } from "../ui.mjs";
 
 export async function onboardFlow() {
   await ensureDirs();
@@ -25,7 +25,6 @@ export async function onboardFlow() {
     return "success";
   }
 
-  console.log(section("I'll install"));
   console.log(card({ title: "Missing dependencies", body: toInstall.map((item) => `${theme.brand("•")} ${item}`).join("\n") }));
 
   const proceed = await promptConfirm({ message: "Proceed?", initialValue: true });

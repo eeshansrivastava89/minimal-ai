@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { formatBytes, formatCtxLabel, section, card, renderList, padEndVisible, theme, status, icons } from "./ui.mjs";
+import { formatBytes, formatCtxLabel, card, renderList, padEndVisible, theme, status, icons } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 
@@ -199,8 +199,7 @@ export async function printProfileDetails(profile) {
   const fileMissing = !isManaged && isProfileFileMissing(profile);
   const stateLabel = fileMissing ? status({ kind: "error", message: "File missing" }) : running ? status({ kind: "success", message: "Running now" }) : status({ kind: "info", message: "Ready" });
 
-  console.log("\n" + section("Model overview"));
-  console.log(card({ title: "Model overview", body: renderList([
+  console.log("\n" + card({ title: "Model overview", body: renderList([
     ["Name", theme.bold(profile.label)],
     ["Status", stateLabel],
     ["Details", profileDetailParts(profile, { fileMissing }).join(theme.subtle(" · "))],
@@ -223,8 +222,7 @@ export async function printProfileDetails(profile) {
       detailRows.push(["Drafter", existsSync(profile.drafterPath) ? profile.drafterPath : status({ kind: "error", message: `${profile.drafterPath} (not found)` })]);
     }
   }
-  console.log("\n" + section("Model details"));
-  console.log(card({ title: "Model details", body: renderList(detailRows) }));
+  console.log("\n" + card({ title: "Model details", body: renderList(detailRows) }));
 
   if (fileMissing) console.log("\n" + status({ kind: "warning", message: "This model's file is no longer on disk. Remove this setup or move the file back." }));
 
@@ -233,8 +231,7 @@ export async function printProfileDetails(profile) {
     if (command) {
       const script = buildStartScript(profile, command);
       const scriptPath = join(profileDir(profile.id), "start.sh");
-      console.log("\n" + section("Server command"));
-      console.log(card({ title: "Server command", body: renderList([
+      console.log("\n" + card({ title: "Server command", body: renderList([
         ["Run manually", theme.brand(`bash ${scriptPath}`)],
       ]) }));
       console.log("");
@@ -246,8 +243,7 @@ export async function printProfileDetails(profile) {
 export function printGgufModelDetails(model, drafter) {
   const { caps, parts } = ggufDetailParts(model, drafter);
   parts.push(formatBytes(model.sizeBytes));
-  console.log("\n" + section("Downloaded model"));
-  console.log(card({ title: "Downloaded model", body: renderList([
+  console.log("\n" + card({ title: "Downloaded model", body: renderList([
     ["Name", theme.bold(model.label)],
     ["Status", status({ kind: "warning", message: "Needs one-time setup" })],
     ["Details", parts.join(theme.subtle(" · "))],
@@ -260,13 +256,11 @@ export function printGgufModelDetails(model, drafter) {
     ["Quant", model.quant ?? "unknown"],
   ];
   if (drafter) detailRows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);
-  console.log("\n" + section("Model details"));
-  console.log(card({ title: "Model details", body: renderList(detailRows) }));
+  console.log("\n" + card({ title: "Model details", body: renderList(detailRows) }));
 }
 
 export function printManagedModelDetails(model, backend) {
-  console.log("\n" + section(`${backend.label} model`));
-  console.log(card({ title: `${backend.label} model`, body: renderList([
+  console.log("\n" + card({ title: `${backend.label} model`, body: renderList([
     ["Name", theme.bold(model.label)],
     ["Status", status({ kind: "success", message: `Local model via ${backend.label}` })],
     ["Model ID", theme.brand(model.id)],

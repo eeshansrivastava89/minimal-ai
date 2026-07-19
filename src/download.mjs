@@ -5,7 +5,7 @@ import { HF_HUB_DIR } from "./config.mjs";
 import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, OLLAMA_URLS } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
-import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, section, card, renderList } from "./ui.mjs";
+import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
 
 export async function downloadHfGguf() {
   console.log(theme.subtle("  Browse models at huggingface.co/models"));
@@ -183,7 +183,6 @@ async function pickGgufQuant(repo, ggufFiles) {
   const recommended = fitting[fitting.length - 1];
 
   console.log();
-  console.log(section("Select quantization"));
   console.log(card({
     title: "Select quantization",
     body: renderList([

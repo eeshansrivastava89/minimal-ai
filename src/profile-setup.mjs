@@ -4,7 +4,7 @@ import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { availableRamBytes } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
-import { formatBytes, formatCtxLabel, renderList, section, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
+import { formatBytes, formatCtxLabel, renderList, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
@@ -104,7 +104,6 @@ export async function configureLocalProfile(profile) {
   }
 
   console.log("");
-  console.log(section("Model overview"));
   console.log(card({ title: "Model overview", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Detected", capabilitySummary(caps)],
@@ -114,7 +113,6 @@ export async function configureLocalProfile(profile) {
 
   if (caps.mtp) {
     console.log("");
-    console.log(section("MTP (Multi-Token Prediction)"));
     console.log(card({ title: "MTP (Multi-Token Prediction)", body: renderList([
       ["What it does", "Speculative decoding — predicts multiple tokens at once, verifies them"],
       ["Speed", "1.5–3x faster generation"],
@@ -126,7 +124,6 @@ export async function configureLocalProfile(profile) {
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
     if (useMtp) {
       console.log("");
-      console.log(section("MTP draft tokens"));
       console.log(card({ title: "MTP draft tokens", body: renderList([
         ["What it is", "Maximum number of tokens the draft model predicts per step"],
         ["Range", "1 – 8"],
@@ -143,7 +140,6 @@ export async function configureLocalProfile(profile) {
     const supported = !gemma4Unified || await runtimeSupportsGemma4Unified();
     let mmprojSize = "unknown";
     try { mmprojSize = formatBytes(statSync(profile.mmprojPath).size); } catch { /* file not found */ }
-    console.log(section("Vision projector"));
     console.log(card({ title: "Vision projector", body: renderList([
       ["What it does", "Enables image understanding — model can see and reason about images"],
       ["Projector type", caps.mmprojProjectorType ?? "unknown"],
@@ -157,7 +153,6 @@ export async function configureLocalProfile(profile) {
 
   if (caps.thinking) {
     console.log("");
-    console.log(section("Thinking mode"));
     console.log(card({ title: "Thinking mode", body: renderList([
       ["What it does", "Model reasons step-by-step before answering"],
       ["Benefit", "Better results for math, code, logic — but slower (more output tokens)"],
@@ -169,7 +164,6 @@ export async function configureLocalProfile(profile) {
   }
 
   console.log("");
-  console.log(section("GPU layers"));
   console.log(card({ title: "GPU layers", body: renderList([
     ["What it does", "Number of model layers to offload to GPU (Metal on Apple Silicon, CUDA on NVIDIA)"],
     ["Range", "0 – 999 (0 = CPU only, 99 = all layers on GPU)"],
@@ -185,7 +179,6 @@ export async function configureLocalProfile(profile) {
 
   if (hasKvParams) {
     console.log("");
-    console.log(section("Context & KV cache"));
     console.log(card({ title: "Context & KV cache", body: renderContextCacheHeatmap(prepared, configured.flags, maxCtx, systemRamBytes) }));
 
     const ctxPresets = CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx);
@@ -229,7 +222,6 @@ export async function configureLocalProfile(profile) {
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeK, cacheTypeV });
   } else {
     console.log("");
-    console.log(section("Context window"));
     console.log(card({ title: "Context window", body: renderList([
       ["What it does", "Maximum tokens the model can process at once (prompt + response + history)"],
       ["Range", `1,024 – ${maxCtx.toLocaleString()} tokens`],
@@ -242,7 +234,6 @@ export async function configureLocalProfile(profile) {
     configured = applyRuntimeFlagOverrides(configured, { ctxSize });
 
     console.log("");
-    console.log(section("K cache precision"));
     console.log(card({ title: "K cache precision", body: renderList([
       ["What it is", "KV cache stores attention 'keys' — previous token states used for prediction"],
       ["Tradeoff", "Lower precision = less memory, potential quality loss"],
@@ -251,7 +242,6 @@ export async function configureLocalProfile(profile) {
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeK });
 
     console.log("");
-    console.log(section("V cache precision"));
     console.log(card({ title: "V cache precision", body: renderList([
       ["What it is", "KV cache stores attention 'values' — token representations from previous layers"],
       ["Tradeoff", "Same as K cache. Some models are more sensitive to V precision than K"],
@@ -261,11 +251,9 @@ export async function configureLocalProfile(profile) {
   }
 
   console.log("");
-  console.log(section("Memory estimate"));
   console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
 
   console.log("");
-  console.log(section("Temperature"));
   console.log(card({ title: "Temperature", body: renderList([
     ["What it does", "Controls randomness in token selection"],
     ["Range", "0.0 – 2.0"],
@@ -278,7 +266,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { temperature });
 
   console.log("");
-  console.log(section("Top-p (nucleus sampling)"));
   console.log(card({ title: "Top-p (nucleus sampling)", body: renderList([
     ["What it does", "Only considers tokens in the top p fraction of probability mass"],
     ["Range", "0.0 – 1.0 (1.0 = consider all tokens)"],
@@ -288,7 +275,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { topP });
 
   console.log("");
-  console.log(section("Top-k"));
   console.log(card({ title: "Top-k", body: renderList([
     ["What it does", "Limits token selection to top K most likely tokens at each step"],
     ["Range", "0 – 1000 (0 = disabled, uses top-p instead)"],
@@ -298,7 +284,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { topK });
 
   console.log("");
-  console.log(section("Min-p"));
   console.log(card({ title: "Min-p", body: renderList([
     ["What it does", "Excludes tokens with probability below this threshold"],
     ["Range", "0.0 – 1.0 (0 = disabled)"],
@@ -308,7 +293,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { minP });
 
   console.log("");
-  console.log(section("Presence penalty"));
   console.log(card({ title: "Presence penalty", body: renderList([
     ["What it does", "Discourages repeated tokens — each used token gets a fixed logit penalty"],
     ["Range", "0.0 – 2.0 (0 = off)"],
@@ -318,7 +302,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { presencePenalty });
 
   console.log("");
-  console.log(section("Repeat penalty"));
   console.log(card({ title: "Repeat penalty", body: renderList([
     ["What it does", "Multiplies probability of repeated tokens (multiplicative, vs presence's additive)"],
     ["Range", "0.0 – 2.0 (1.0 = no effect)"],
@@ -328,7 +311,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { repeatPenalty });
 
   console.log("");
-  console.log(section("Batch size"));
   console.log(card({ title: "Batch size", body: renderList([
     ["What it does", "Tokens processed in parallel during prompt processing (before generation)"],
     ["Range", "1 – 4096"],
@@ -338,7 +320,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { batchSize });
 
   console.log("");
-  console.log(section("Parallel slots"));
   console.log(card({ title: "Parallel slots", body: renderList([
     ["What it does", "Number of concurrent request slots (each handles an independent conversation)"],
     ["Range", "1 – 10"],
@@ -349,7 +330,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { parallel });
 
   console.log("");
-  console.log(section("Flash attention"));
   console.log(card({ title: "Flash attention", body: renderList([
     ["What it does", "Memory-efficient attention algorithm — faster and less RAM than standard"],
     ["Guidance", "Always on for modern hardware · Turn off only for old GPU driver compat issues"],
@@ -358,7 +338,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { flashAttention: flashAttn ? "on" : "off" });
 
   console.log("");
-  console.log(section("Jinja chat templates"));
   console.log(card({ title: "Jinja chat templates", body: renderList([
     ["What it does", "Enables Jinja2 template rendering for proper chat formatting"],
     ["Guidance", "Always on for modern models · Turn off only for very old models without chat templates"],
@@ -367,7 +346,6 @@ export async function configureLocalProfile(profile) {
   configured = applyRuntimeFlagOverrides(configured, { jinja });
 
   console.log("");
-  console.log(section("Configuration summary"));
   console.log(card({ title: "Configuration summary", body: renderList([
     ["Model", theme.bold(configured.label)],
     ["Backend", configured.backend],
@@ -391,7 +369,6 @@ export async function configureLocalProfile(profile) {
   ]) }));
 
   console.log("");
-  console.log(section("Memory estimate"));
   console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
 
   if (!(await promptConfirm({ message: "Save profile with these settings?", initialValue: true }))) return null;
@@ -412,7 +389,6 @@ async function configureOmlxProfile(profile) {
     const mtpResult = await detectOmlxMtpCapability(modelDir);
     if (mtpResult.compatible) {
       console.log("");
-      console.log(section("MTP detected"));
       console.log(card({ title: "MTP detected", body: renderList([
         ["Feature", "Multi-Token Prediction (speculative decoding)"],
         ["Mechanism", "oMLX native MTP (enabled via admin API at load time)"],
@@ -421,7 +397,6 @@ async function configureOmlxProfile(profile) {
       configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), mtp: useMtp } };
     } else if (mtpResult.reason !== "model has no MTP heads in config") {
       console.log("");
-      console.log(section("MTP not available"));
       console.log(card({ title: "MTP not available", body: renderList([
         ["Feature", "Multi-Token Prediction (speculative decoding)"],
         ["Reason", theme.warning(mtpResult.reason)],
@@ -430,7 +405,6 @@ async function configureOmlxProfile(profile) {
   }
 
   console.log("");
-  console.log(section("Model setup"));
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
@@ -457,7 +431,6 @@ async function configureOllamaProfile(profile) {
   } catch { /* model info unavailable */ }
 
   console.log("");
-  console.log(section("Model setup"));
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "Ollama"],

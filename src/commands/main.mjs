@@ -7,7 +7,7 @@ import { hasPi } from "../harness-pi.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { appHeader, card, status, introScreen, startInteractive, theme } from "../ui.mjs";
+import { appHeader, card, status, startInteractive, theme } from "../ui.mjs";
 import { showReleaseNotesIfUpdated } from "../changelog.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
@@ -54,7 +54,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   startInteractive("offgrid-ai");
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
 
-  introScreen(appHeader({ name: "offgrid-ai", version: currentPackageVersion() }));
+  console.log(appHeader({ name: "offgrid-ai", version: currentPackageVersion() }));
   printStatusHeader({
     llamaBinary,
     managedModels,
