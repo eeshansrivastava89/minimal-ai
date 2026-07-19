@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { formatBytes, formatCtxLabel, card, renderList, padEndVisible, theme, status, icons } from "./ui.mjs";
+import { formatBytes, formatCtxLabel, card, renderList, padEndVisible, theme, status } from "./ui.mjs";
 import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 
@@ -136,11 +136,10 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
       : undefined;
 
     if (compact) {
-      const indicator = theme.subtle(icons.radioOff);
       const stateTag = statusTag === "running" ? theme.success("running") : statusTag === "missing" ? theme.error("missing") : "";
       return {
         value: itemKey(item),
-        label: [indicator, theme.bold(padEndVisible(item.label, nameWidth)), optionQuantLabel(item), optionCtxLabel(item), theme.subtle(optionSizeLabel(item)), stateTag].join(OPTION_SEPARATOR),
+        label: [theme.bold(padEndVisible(item.label, nameWidth)), optionQuantLabel(item), optionCtxLabel(item), theme.subtle(optionSizeLabel(item)), stateTag].join(OPTION_SEPARATOR),
         ...(hint ? { description: theme.error(hint) } : {}),
       };
     }
@@ -166,7 +165,7 @@ export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, n
     const full = `${item.label} · ${backendLabel}`;
     return {
       value: itemKey(item),
-      label: [theme.warning(icons.radioOff), theme.warning(theme.bold(padEndVisible(full, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), theme.subtle(optionSizeLabel(item))].join(OPTION_SEPARATOR),
+      label: [theme.warning(theme.bold(padEndVisible(full, nameWidth))), optionQuantLabel(item), optionCtxLabel(item), theme.subtle(optionSizeLabel(item))].join(OPTION_SEPARATOR),
     };
   }
 

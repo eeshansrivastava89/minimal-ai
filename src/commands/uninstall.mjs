@@ -46,7 +46,7 @@ export async function uninstallCommand(argv) {
     defaultValue: "keep-data",
   });
 
-  if (mode === "cancel") {
+  if (!mode || mode === "cancel") {
     console.log(theme.subtle("Cancelled."));
     return;
   }

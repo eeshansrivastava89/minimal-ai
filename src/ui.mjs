@@ -1,9 +1,8 @@
-import { Separator } from "@inquirer/prompts";
 import pc from "picocolors";
 import { fitCheck } from "./hardware.mjs";
 import { renderList } from "@eeshans/cli-kit";
 
-export { pc, Separator };
+export { pc };
 export * from "@eeshans/cli-kit";
 
 export function formatBytes(bytes) {

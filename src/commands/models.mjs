@@ -7,7 +7,7 @@ import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { startInteractive, promptSelectModel, promptChoice, promptConfirm, section, theme, icons, status } from "../ui.mjs";
+import { startInteractive, promptSelectModel, promptChoice, promptConfirm, theme, status } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
@@ -119,29 +119,28 @@ async function showModelPicker(catalog) {
   const omlxInstalled = (isAppleSilicon && omlxOn) ? await hasOmlx() : true;
   const ollamaInstalled = ollamaOn ? await hasOllama() : true;
 
-  const radio = theme.subtle(icons.radioOff);
   const downloadItems = [
-    { value: "__download_hf_gguf__", label: `${radio}  ${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for llama.cpp)")}` },
+    { value: "__download_hf_gguf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for llama.cpp)")}` },
   ];
   if (ollamaOn) {
-    downloadItems.push({ value: "__download_ollama_library__", label: `${radio}  ${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` });
-    downloadItems.push({ value: "__download_ollama_hf__", label: `${radio}  ${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_library__", label: `${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` });
+    downloadItems.push({ value: "__download_ollama_hf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` });
   }
   if (omlxOn) {
-    downloadItems.push({ value: "__download_omlx__", label: `${radio}  ${theme.success("↓ oMLX model")} ${theme.subtle("(open and download from oMLX app)")}` });
+    downloadItems.push({ value: "__download_omlx__", label: `${theme.success("↓ oMLX model")} ${theme.subtle("(open and download from oMLX app)")}` });
   }
-  groups.push({ separator: section("Download"), items: downloadItems });
+  groups.push({ separator: theme.bold("Download"), items: downloadItems });
 
   const manageItems = [];
   if (isAppleSilicon && !omlxInstalled) {
-    manageItems.push({ value: "__install_omlx__", label: `${radio}  ${theme.warning("↓ Install oMLX")} ${theme.subtle("(Apple Silicon — faster for MLX)")}` });
+    manageItems.push({ value: "__install_omlx__", label: `${theme.warning("↓ Install oMLX")} ${theme.subtle("(Apple Silicon — faster for MLX)")}` });
   }
   if (ollamaOn && !ollamaInstalled) {
-    manageItems.push({ value: "__install_ollama__", label: `${radio}  ${theme.warning("↓ Install Ollama")} ${theme.subtle("(managed model runner)")}` });
+    manageItems.push({ value: "__install_ollama__", label: `${theme.warning("↓ Install Ollama")} ${theme.subtle("(managed model runner)")}` });
   }
-  manageItems.push({ value: "__runtime_status__", label: `${radio}  ${theme.brand("⚡ Runtime status & running models")}` });
-  manageItems.push({ value: "__discovery_paths__", label: `${radio}  ${theme.brand("📁 Discovery paths")}` });
-  groups.push({ separator: section("Manage"), items: manageItems });
+  manageItems.push({ value: "__runtime_status__", label: theme.brand("⚡ Runtime status & running models") });
+  manageItems.push({ value: "__discovery_paths__", label: theme.brand("📁 Discovery paths") });
+  groups.push({ separator: theme.bold("Manage"), items: manageItems });
 
   if (runningProfilesNow.length > 0) {
     console.log("");

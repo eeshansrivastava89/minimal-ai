@@ -28,7 +28,7 @@ export async function stopCommand(argv) {
   choices.push({ value: "__cancel", label: "Cancel" });
 
   const selected = await promptChoice({ message: "Stop", choices, defaultValue: choices[0].value });
-  if (selected === "__cancel") return;
+  if (!selected || selected === "__cancel") return;
 
   const targets = selected === "__all" ? running : running.filter((item) => item.profile.id === selected);
   for (const { profile } of targets) await printStopResult(profile);

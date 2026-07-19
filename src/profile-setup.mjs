@@ -24,6 +24,19 @@ const CACHE_CHOICES = [
 const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
 const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
 
+function hint(text) {
+  console.log(theme.subtle(`  ${text}`));
+}
+
+class CancelSetup extends Error {}
+
+/** Unwrap a prompt result; null means the user pressed Escape — cancel the whole setup. */
+async function ask(promise) {
+  const value = await promise;
+  if (value === null) throw new CancelSetup();
+  return value;
+}
+
 function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) {
   const presets = [...CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx)];
   const currentCtx = baseFlags.ctxSize;
@@ -82,6 +95,18 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) 
 }
 
 export async function configureLocalProfile(profile) {
+  try {
+    return await configureLocalProfileInner(profile);
+  } catch (err) {
+    if (err instanceof CancelSetup) {
+      console.log(theme.subtle("Cancelled."));
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function configureLocalProfileInner(profile) {
   let configured = profile;
   const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
   if (freshCaps.missingContextLength) {
@@ -113,23 +138,13 @@ export async function configureLocalProfile(profile) {
 
   if (caps.mtp) {
     console.log("");
-    console.log(card({ title: "MTP (Multi-Token Prediction)", body: renderList([
-      ["What it does", "Speculative decoding — predicts multiple tokens at once, verifies them"],
-      ["Speed", "1.5–3x faster generation"],
-      ["Quality", "No loss — rejected predictions fall back to normal"],
-      ["Memory", "Slightly more for draft model weights"],
-      ...(configured.drafterPath ? [["Drafter", configured.drafterPath]] : []),
-    ]) }));
-    const useMtp = await promptConfirm({ message: "Enable MTP speculative decoding?", initialValue: true });
+    hint(`Predicts multiple tokens per step — 1.5–3x faster, no quality loss${configured.drafterPath ? ` · drafter: ${configured.drafterPath}` : ""}`);
+    const useMtp = await ask(promptConfirm({ message: "Enable MTP speculative decoding?", initialValue: true }));
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
     if (useMtp) {
       console.log("");
-      console.log(card({ title: "MTP draft tokens", body: renderList([
-        ["What it is", "Maximum number of tokens the draft model predicts per step"],
-        ["Range", "1 – 8"],
-        ["Guidance", "2: recommended for most models · 4: more aggressive (may waste compute) · 1: minimal speedup"],
-      ]) }));
-      const specDraftNMax = await promptNumber({ message: "Draft tokens per step", defaultValue: configured.flags.specDraftNMax ?? 2, min: 1, max: 8 });
+      hint("Tokens the draft model predicts per step · 2 recommended · 4 aggressive");
+      const specDraftNMax = await ask(promptNumber({ message: "Draft tokens per step", defaultValue: configured.flags.specDraftNMax ?? 2, min: 1, max: 8 }));
       configured = applyRuntimeFlagOverrides(configured, { specDraftNMax });
     }
   }
@@ -140,36 +155,21 @@ export async function configureLocalProfile(profile) {
     const supported = !gemma4Unified || await runtimeSupportsGemma4Unified();
     let mmprojSize = "unknown";
     try { mmprojSize = formatBytes(statSync(profile.mmprojPath).size); } catch { /* file not found */ }
-    console.log(card({ title: "Vision projector", body: renderList([
-      ["What it does", "Enables image understanding — model can see and reason about images"],
-      ["Projector type", caps.mmprojProjectorType ?? "unknown"],
-      ["Flag", `--mmproj ${profile.mmprojPath}`],
-      ["Memory", `${mmprojSize} for projector weights`],
-      ...(gemma4Unified && !supported ? [["Note", theme.warning("Gemma 4 unified projectors need llama.cpp b9549+.")]] : []),
-    ]) }));
-    const useVision = await promptConfirm({ message: "Enable vision?", initialValue: supported });
+    hint(`Enables image understanding · projector ${mmprojSize} · type ${caps.mmprojProjectorType ?? "unknown"}${gemma4Unified && !supported ? " · needs llama.cpp b9549+" : ""}`);
+    const useVision = await ask(promptConfirm({ message: "Enable vision?", initialValue: supported }));
     configured = useVision ? applyVisionDefaults(configured) : removeVisionDefaults(configured, gemma4Unified && !supported ? "gemma4-unified-unsupported" : "user-disabled");
   }
 
   if (caps.thinking) {
     console.log("");
-    console.log(card({ title: "Thinking mode", body: renderList([
-      ["What it does", "Model reasons step-by-step before answering"],
-      ["Benefit", "Better results for math, code, logic — but slower (more output tokens)"],
-      ["Sampling changes", "top-k → 64, presence penalty → 0, repeat penalty → 1.1 (adjustable below)"],
-      ["Template", "--chat-template-kwargs { enable_thinking: true }"],
-    ]) }));
-    const useThinking = await promptConfirm({ message: "Use thinking/loop-safe defaults?", initialValue: true });
+    hint("Step-by-step reasoning — slower but better for math/code/logic · sets top-k 64, presence 0, repeat 1.1");
+    const useThinking = await ask(promptConfirm({ message: "Use thinking/loop-safe defaults?", initialValue: true }));
     configured = useThinking ? applyThinkingDefaults(configured) : removeThinkingDefaults(configured);
   }
 
   console.log("");
-  console.log(card({ title: "GPU layers", body: renderList([
-    ["What it does", "Number of model layers to offload to GPU (Metal on Apple Silicon, CUDA on NVIDIA)"],
-    ["Range", "0 – 999 (0 = CPU only, 99 = all layers on GPU)"],
-    ["Guidance", "99: recommended for Apple Silicon (unified memory) · 0: CPU-only fallback"],
-  ]) }));
-  const nGpuLayers = await promptNumber({ message: "GPU layers", defaultValue: configured.flags.nGpuLayers ?? 99, min: 0, max: 999 });
+  hint("Layers offloaded to GPU · 99 = all on GPU (recommended for Apple Silicon) · 0 = CPU only");
+  const nGpuLayers = await ask(promptNumber({ message: "GPU layers", defaultValue: configured.flags.nGpuLayers ?? 99, min: 0, max: 999 }));
   configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
   const maxCtx = caps.metaCtx ?? caps.ctxSize;
@@ -189,10 +189,10 @@ export async function configureLocalProfile(profile) {
       { value: "custom", label: "Custom (enter tokens)" },
     ];
     console.log("");
-    const ctxChoice = await promptSelect({ message: "Select context window", choices: ctxChoices, defaultValue: ctxDefault });
+    const ctxChoice = await ask(promptSelect({ message: "Select context window", choices: ctxChoices, defaultValue: ctxDefault }));
     let ctxSize;
     if (ctxChoice === "custom") {
-      ctxSize = await promptNumber({ message: "Context window tokens", defaultValue: currentCtx, min: 1024, max: maxCtx });
+      ctxSize = await ask(promptNumber({ message: "Context window tokens", defaultValue: currentCtx, min: 1024, max: maxCtx }));
     } else {
       ctxSize = ctxChoice;
     }
@@ -212,41 +212,28 @@ export async function configureLocalProfile(profile) {
         return { value: c.value, label: c.label, hint: c.hint };
       }
     });
-    const cacheType = await promptSelect({ message: "KV cache precision (K = V)", choices: cacheChoices, defaultValue: configured.flags.cacheTypeK });
+    const cacheType = await ask(promptSelect({ message: "KV cache precision (K = V)", choices: cacheChoices, defaultValue: configured.flags.cacheTypeK }));
 
-    const sameV = await promptConfirm({ message: "Use same precision for V cache?", initialValue: true });
+    const sameV = await ask(promptConfirm({ message: "Use same precision for V cache?", initialValue: true }));
     let cacheTypeK = cacheType, cacheTypeV = cacheType;
     if (!sameV) {
-      cacheTypeV = await promptSelect({ message: "V cache precision", choices: CACHE_CHOICES, defaultValue: cacheType });
+      cacheTypeV = await ask(promptSelect({ message: "V cache precision", choices: CACHE_CHOICES, defaultValue: cacheType }));
     }
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeK, cacheTypeV });
   } else {
     console.log("");
-    console.log(card({ title: "Context window", body: renderList([
-      ["What it does", "Maximum tokens the model can process at once (prompt + response + history)"],
-      ["Range", `1,024 – ${maxCtx.toLocaleString()} tokens`],
-      ["Memory", "KV cache grows linearly — larger context = more RAM"],
-      ["Guidance", "8k–32k: chat · 32k–80k: coding/long convos · 128k+: long documents"],
-      ["Model max", `${maxCtx.toLocaleString()} tokens`],
-      ["Default", `${configured.flags.ctxSize.toLocaleString()} tokens`],
-    ]) }));
-    const ctxSize = await promptNumber({ message: "Context window tokens", defaultValue: configured.flags.ctxSize, min: 1024, max: maxCtx });
+    hint(`Max tokens per request · KV cache grows with context · model max ${maxCtx.toLocaleString()}`);
+    const ctxSize = await ask(promptNumber({ message: "Context window tokens", defaultValue: configured.flags.ctxSize, min: 1024, max: maxCtx }));
     configured = applyRuntimeFlagOverrides(configured, { ctxSize });
 
     console.log("");
-    console.log(card({ title: "K cache precision", body: renderList([
-      ["What it is", "KV cache stores attention 'keys' — previous token states used for prediction"],
-      ["Tradeoff", "Lower precision = less memory, potential quality loss"],
-    ]) }));
-    const cacheTypeK = await promptSelect({ message: "K cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeK });
+    hint("KV cache precision · lower = less memory · bf16 best quality · q8_0 usually safe");
+    const cacheTypeK = await ask(promptSelect({ message: "K cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeK }));
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeK });
 
     console.log("");
-    console.log(card({ title: "V cache precision", body: renderList([
-      ["What it is", "KV cache stores attention 'values' — token representations from previous layers"],
-      ["Tradeoff", "Same as K cache. Some models are more sensitive to V precision than K"],
-    ]) }));
-    const cacheTypeV = await promptSelect({ message: "V cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeV });
+    hint("Same tradeoff as K cache · some models are more sensitive to V precision");
+    const cacheTypeV = await ask(promptSelect({ message: "V cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeV }));
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeV });
   }
 
@@ -254,95 +241,53 @@ export async function configureLocalProfile(profile) {
   console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
 
   console.log("");
-  console.log(card({ title: "Temperature", body: renderList([
-    ["What it does", "Controls randomness in token selection"],
-    ["Range", "0.0 – 2.0"],
-    ["0.0", "Deterministic — always picks most likely token"],
-    ["0.6", "Balanced — default for most models"],
-    ["1.0+", "Creative — more random, may hallucinate"],
-    ["Guidance", "0–0.3: coding/factual · 0.4–0.8: chat · 0.9+: creative writing"],
-  ]) }));
-  const temperature = await promptNumber({ message: "Temperature", defaultValue: configured.flags.temperature, min: 0, max: 2, float: true });
+  hint("Randomness · 0 = deterministic · 0.6 balanced · 0.9+ creative");
+  const temperature = await ask(promptNumber({ message: "Temperature", defaultValue: configured.flags.temperature, min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { temperature });
 
   console.log("");
-  console.log(card({ title: "Top-p (nucleus sampling)", body: renderList([
-    ["What it does", "Only considers tokens in the top p fraction of probability mass"],
-    ["Range", "0.0 – 1.0 (1.0 = consider all tokens)"],
-    ["Guidance", "0.9–0.95: good default · Lower = more focused · Higher = more diverse"],
-  ]) }));
-  const topP = await promptNumber({ message: "Top-p", defaultValue: configured.flags.topP, min: 0, max: 1, float: true });
+  hint("Token pool by probability mass · 0.9–0.95 good default");
+  const topP = await ask(promptNumber({ message: "Top-p", defaultValue: configured.flags.topP, min: 0, max: 1, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { topP });
 
   console.log("");
-  console.log(card({ title: "Top-k", body: renderList([
-    ["What it does", "Limits token selection to top K most likely tokens at each step"],
-    ["Range", "0 – 1000 (0 = disabled, uses top-p instead)"],
-    ["Guidance", "20: general chat · 40–64: thinking/reasoning · 0: rely on top-p"],
-  ]) }));
-  const topK = await promptNumber({ message: "Top-k", defaultValue: configured.flags.topK, min: 0, max: 1000 });
+  hint("Limits to top K tokens · 0 = off (uses top-p) · 20 chat · 40–64 thinking");
+  const topK = await ask(promptNumber({ message: "Top-k", defaultValue: configured.flags.topK, min: 0, max: 1000 }));
   configured = applyRuntimeFlagOverrides(configured, { topK });
 
   console.log("");
-  console.log(card({ title: "Min-p", body: renderList([
-    ["What it does", "Excludes tokens with probability below this threshold"],
-    ["Range", "0.0 – 1.0 (0 = disabled)"],
-    ["Guidance", "0: off (default) · 0.05–0.1: reduces hallucination while keeping creativity"],
-  ]) }));
-  const minP = await promptNumber({ message: "Min-p", defaultValue: configured.flags.minP, min: 0, max: 1, float: true });
+  hint("Probability floor · 0 = off · 0.05–0.1 reduces hallucination");
+  const minP = await ask(promptNumber({ message: "Min-p", defaultValue: configured.flags.minP, min: 0, max: 1, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { minP });
 
   console.log("");
-  console.log(card({ title: "Presence penalty", body: renderList([
-    ["What it does", "Discourages repeated tokens — each used token gets a fixed logit penalty"],
-    ["Range", "0.0 – 2.0 (0 = off)"],
-    ["Guidance", "0: thinking/reasoning · 1.0–1.5: general chat · Too high = incoherent"],
-  ]) }));
-  const presencePenalty = await promptNumber({ message: "Presence penalty", defaultValue: configured.flags.presencePenalty, min: 0, max: 2, float: true });
+  hint("Penalizes any used token · 0 = off · 1.0–1.5 general chat");
+  const presencePenalty = await ask(promptNumber({ message: "Presence penalty", defaultValue: configured.flags.presencePenalty, min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { presencePenalty });
 
   console.log("");
-  console.log(card({ title: "Repeat penalty", body: renderList([
-    ["What it does", "Multiplies probability of repeated tokens (multiplicative, vs presence's additive)"],
-    ["Range", "0.0 – 2.0 (1.0 = no effect)"],
-    ["Guidance", "1.0–1.1: most use cases · Higher = aggressive anti-repeat · Can break code patterns"],
-  ]) }));
-  const repeatPenalty = await promptNumber({ message: "Repeat penalty", defaultValue: configured.flags.repeatPenalty, min: 0, max: 2, float: true });
+  hint("Multiplies down repeated tokens · 1.0 = no effect · 1.0–1.1 typical");
+  const repeatPenalty = await ask(promptNumber({ message: "Repeat penalty", defaultValue: configured.flags.repeatPenalty, min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { repeatPenalty });
 
   console.log("");
-  console.log(card({ title: "Batch size", body: renderList([
-    ["What it does", "Tokens processed in parallel during prompt processing (before generation)"],
-    ["Range", "1 – 4096"],
-    ["Guidance", "512: good default · 2048+: faster for long prompts · Lower if memory tight"],
-  ]) }));
-  const batchSize = await promptNumber({ message: "Batch size", defaultValue: configured.flags.batchSize, min: 1, max: 4096 });
+  hint("Tokens processed per step during prompt ingestion · 512 default · higher for long prompts");
+  const batchSize = await ask(promptNumber({ message: "Batch size", defaultValue: configured.flags.batchSize, min: 1, max: 4096 }));
   configured = applyRuntimeFlagOverrides(configured, { batchSize });
 
   console.log("");
-  console.log(card({ title: "Parallel slots", body: renderList([
-    ["What it does", "Number of concurrent request slots (each handles an independent conversation)"],
-    ["Range", "1 – 10"],
-    ["Memory", "KV cache is multiplied by this number"],
-    ["Guidance", "1: single-user local · 2+: multiple clients connecting simultaneously"],
-  ]) }));
-  const parallel = await promptNumber({ message: "Parallel slots", defaultValue: configured.flags.parallel, min: 1, max: 10 });
+  hint("Concurrent request slots · 1 = single user · KV cache multiplies by slots");
+  const parallel = await ask(promptNumber({ message: "Parallel slots", defaultValue: configured.flags.parallel, min: 1, max: 10 }));
   configured = applyRuntimeFlagOverrides(configured, { parallel });
 
   console.log("");
-  console.log(card({ title: "Flash attention", body: renderList([
-    ["What it does", "Memory-efficient attention algorithm — faster and less RAM than standard"],
-    ["Guidance", "Always on for modern hardware · Turn off only for old GPU driver compat issues"],
-  ]) }));
-  const flashAttn = await promptConfirm({ message: "Enable flash attention?", initialValue: true });
+  hint("Faster, less memory · on for modern hardware · off only for old driver issues");
+  const flashAttn = await ask(promptConfirm({ message: "Enable flash attention?", initialValue: true }));
   configured = applyRuntimeFlagOverrides(configured, { flashAttention: flashAttn ? "on" : "off" });
 
   console.log("");
-  console.log(card({ title: "Jinja chat templates", body: renderList([
-    ["What it does", "Enables Jinja2 template rendering for proper chat formatting"],
-    ["Guidance", "Always on for modern models · Turn off only for very old models without chat templates"],
-  ]) }));
-  const jinja = await promptConfirm({ message: "Enable Jinja templates?", initialValue: true });
+  hint("Proper chat formatting · on for modern models · off only for very old models");
+  const jinja = await ask(promptConfirm({ message: "Enable Jinja templates?", initialValue: true }));
   configured = applyRuntimeFlagOverrides(configured, { jinja });
 
   console.log("");
@@ -368,17 +313,22 @@ export async function configureLocalProfile(profile) {
     ...(configured.capabilities?.thinking ? [["Thinking", "enabled"]] : []),
   ]) }));
 
-  console.log("");
-  console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
-
-  if (!(await promptConfirm({ message: "Save profile with these settings?", initialValue: true }))) return null;
+  if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;
 }
 
 export async function configureManagedProfile(profile) {
-  const backend = backendFor(profile.backend);
-  if (backend.id === "ollama") return await configureOllamaProfile(profile);
-  return await configureOmlxProfile(profile);
+  try {
+    const backend = backendFor(profile.backend);
+    if (backend.id === "ollama") return await configureOllamaProfile(profile);
+    return await configureOmlxProfile(profile);
+  } catch (err) {
+    if (err instanceof CancelSetup) {
+      console.log(theme.subtle("Cancelled."));
+      return null;
+    }
+    throw err;
+  }
 }
 
 async function configureOmlxProfile(profile) {
@@ -389,18 +339,12 @@ async function configureOmlxProfile(profile) {
     const mtpResult = await detectOmlxMtpCapability(modelDir);
     if (mtpResult.compatible) {
       console.log("");
-      console.log(card({ title: "MTP detected", body: renderList([
-        ["Feature", "Multi-Token Prediction (speculative decoding)"],
-        ["Mechanism", "oMLX native MTP (enabled via admin API at load time)"],
-      ]) }));
-      const useMtp = await promptConfirm({ message: "Use MTP speculative decoding?", initialValue: true });
+      hint("oMLX native MTP — speculative decoding enabled at load time");
+      const useMtp = await ask(promptConfirm({ message: "Use MTP speculative decoding?", initialValue: true }));
       configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), mtp: useMtp } };
     } else if (mtpResult.reason !== "model has no MTP heads in config") {
       console.log("");
-      console.log(card({ title: "MTP not available", body: renderList([
-        ["Feature", "Multi-Token Prediction (speculative decoding)"],
-        ["Reason", theme.warning(mtpResult.reason)],
-      ]) }));
+      hint(`MTP not available — ${mtpResult.reason}`);
     }
   }
 
@@ -411,7 +355,7 @@ async function configureOmlxProfile(profile) {
     ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
   ]) }));
 
-  if (!(await promptConfirm({ message: "Save profile with these settings?", initialValue: true }))) return null;
+  if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;
 }
 
@@ -438,7 +382,7 @@ async function configureOllamaProfile(profile) {
     ...(capabilities.length > 0 ? [["Capabilities", capabilities.join(" · ")]] : []),
   ]) }));
 
-  if (!(await promptConfirm({ message: "Save profile with these settings?", initialValue: true }))) return null;
+  if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;
 }
 
