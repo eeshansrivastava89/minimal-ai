@@ -92,7 +92,20 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
   }
   parts.push(piInstalled ? status({ kind: "success", message: "Pi" }) : status({ kind: "error", message: "Pi" }));
   if (profiles.length > 0) {
-    parts.push(theme.subtle(`${profiles.length} model${profiles.length === 1 ? "" : "s"}`));
+    const counts = new Map();
+    for (const profile of profiles) {
+      const label = backendFor(profile.backend).label;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    const ordered = ["llama.cpp"];
+    if (showOmlx) ordered.push("oMLX");
+    if (showOllama) ordered.push("Ollama");
+    for (const label of counts.keys()) {
+      if (!ordered.includes(label)) ordered.push(label);
+    }
+    const breakdown = ordered.map((label) => `${label} (${counts.get(label) ?? 0})`).join(" | ");
+    const total = `${profiles.length} model${profiles.length === 1 ? "" : "s"}`;
+    parts.push(`${theme.bold(total)} ${theme.subtle("→")} ${breakdown}`);
   }
   console.log(card({ title: "offgrid-ai", body: parts.join("  \n") }));
 }

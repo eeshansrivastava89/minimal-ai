@@ -97,7 +97,7 @@ async function showModelPicker(catalog) {
     const backendLabel = backendFor(backendId)?.label ?? backendId;
     const sourceLabel = formatSourceLabel(sourceId);
     const label = backendLabel === sourceLabel ? backendLabel : `${backendLabel} · ${sourceLabel}`;
-    const sep = `${theme.subtle(`${label} (${items.length})`)}`;
+    const sep = `${theme.bold(label)} ${theme.subtle(`(${items.length})`)}`;
     const groupItems = items.map((item) => {
       const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
       return { value: opt.value, label: opt.label, description: opt.description };
