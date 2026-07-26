@@ -3,8 +3,7 @@
 ## Project Context
 
 - **Renamed from offgrid-ai to minimal-ai** (v2.0.0). Umbrella brand: Minimal Intelligence (eeshans.com, "a Minimal Intelligence tool" byline). Sibling tools (goalbot, sidequests) carry their own plain names — no shared prefix. Data migrates `~/.offgrid-ai` → `~/.minimal-ai` on first run; the on-disk marker (`.offgrid-ai-data`) is a stable legacy format — do not rename it.
-- **@eeshans/cli-kit** (`~/dev/eeshans-cli-kit`) is the shared CLI design system (Clack-based) used by this repo. It is currently a local `file:` dependency, being published to GitHub (`eeshansrivastava89/cli-kit`) and npm as v0.1.0 with the same tag-triggered CI release workflow as this repo.
-- After the kit is published, this repo depends on `@eeshans/cli-kit: ^0.1.0` — the `file:` dep cannot ship. For local co-development across the two repos, use `npm link`.
+- **@eeshans/cli-kit** (`~/dev/eeshans-cli-kit`, github.com/eeshansrivastava89/cli-kit) is the shared CLI design system (Clack-based), published on npm. This repo depends on `@eeshans/cli-kit: ^0.1.0`; the kit follows the same tag-triggered CI release workflow. For local co-development across the two repos, use `npm link`; bump the dep range here when a new kit minor ships.
 
 ## Release Workflow
 
