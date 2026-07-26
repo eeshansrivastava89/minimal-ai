@@ -4,7 +4,7 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-07-26
 
 ### Changed
 - **Renamed from offgrid-ai to minimal-ai.** The npm package, command, and GitHub repo are all `minimal-ai` now. Your data migrates automatically on first run (`~/.offgrid-ai` → `~/.minimal-ai`). To update: `npm install -g minimal-ai`. The `OFFGRID_*` environment variables are now `MINIMAL_*`.
