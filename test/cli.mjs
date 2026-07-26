@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import { spawn } from "node:child_process";
+import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -14,7 +15,8 @@ function run(args) {
     child.stdout.on("data", (d) => { stdout += d; });
     child.stderr.on("data", (d) => { stderr += d; });
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    // Strip ANSI codes: output is colored when FORCE_COLOR is set (e.g. GitHub Actions).
+    child.on("close", (code) => resolve({ code, stdout: stripVTControlCharacters(stdout), stderr: stripVTControlCharacters(stderr) }));
   });
 }
 
