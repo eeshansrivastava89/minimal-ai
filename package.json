@@ -42,7 +42,7 @@
     "pretest": "npm run lint"
   },
   "dependencies": {
-    "@eeshans/cli-kit": "file:../eeshans-cli-kit",
+    "@eeshans/cli-kit": "^0.1.0",
     "commander": "^15.0.0",
     "picocolors": "^1.1.0"
   },
