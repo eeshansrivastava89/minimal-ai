@@ -1,5 +1,11 @@
 # Agent Instructions for offgrid-ai
 
+## Project Context
+
+- **offgrid-ai is being renamed to `minimal-ai`.** Umbrella brand: Minimal Intelligence (eeshans.com, "a Minimal Intelligence tool" byline). Sibling tools (goalbot, sidequests) carry their own plain names — no shared prefix.
+- **@eeshans/cli-kit** (`~/dev/eeshans-cli-kit`) is the shared CLI design system (Clack-based) used by this repo. It is currently a local `file:` dependency, being published to GitHub (`eeshansrivastava89/cli-kit`) and npm as v0.1.0 with the same tag-triggered CI release workflow as this repo.
+- After the kit is published, this repo depends on `@eeshans/cli-kit: ^0.1.0` — the `file:` dep cannot ship. For local co-development across the two repos, use `npm link`.
+
 ## Release Workflow
 
 - **Never run `npm publish` locally.** Pushing a `v*` tag triggers `.github/workflows/ci.yml`, which runs tests and publishes to npm with provenance. Publishing manually causes CI to fail with npm 403.
