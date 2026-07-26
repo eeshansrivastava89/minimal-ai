@@ -142,7 +142,10 @@ class PtySession:
         return self.seen(final_pattern)
 
     def send(self, data, settle=0.3):
-        os.write(self.master, data.encode())
+        try:
+            os.write(self.master, data.encode())
+        except OSError:
+            pass  # child exited between the last read and this write
         time.sleep(settle)
 
     def down(self, n=1):
@@ -150,18 +153,22 @@ class PtySession:
             self.send(DOWN, settle=0.15)
 
     def option_lines(self):
-        """Option lines (with Clack's filled/hollow circle markers) from the LAST rendered frame.
+        """Option lines (Clack's filled/hollow circle markers) from the CURRENT frame.
 
         The buffer accumulates every re-render, so earlier frames contain
-        stale copies of the same options. The active frame starts after the
-        last diamond prompt symbol in the buffer.
+        stale copies of the same options. Clack begins each re-render by
+        moving the cursor and emitting ESC[J (erase to end of screen), so
+        everything after the last ESC[J is the live frame.
         """
-        text = self.text()
-        last = max(text.rfind("\u25c6"), text.rfind("\u25c7"))
-        frame = text[last:] if last >= 0 else text
-        return [ln for ln in frame.splitlines() if "\u25cf" in ln or "\u25cb" in ln]
+        with self.lock:
+            raw = bytes(self.buf)
+        last = raw.rfind(b"\x1b[J")
+        if last >= 0:
+            raw = raw[last:]
+        text = ANSI_RE.sub("", raw.decode("utf-8", errors="replace"))
+        return [ln for ln in text.splitlines() if "\u25cf" in ln or "\u25cb" in ln]
 
-    def select_option(self, pattern, timeout=20):
+    def select_option(self, pattern, timeout=20, require_highlight=False):
         """Move the highlight to the option whose label matches `pattern` and press Enter.
 
         Never assume a fixed item position: live oMLX/Ollama servers on the
@@ -179,6 +186,14 @@ class PtySession:
         key = DOWN if delta > 0 else "\x1b[A"
         for _ in range(abs(delta)):
             self.send(key, settle=0.15)
+        if require_highlight:
+            # Defense-in-depth for destructive flows: verify the highlight
+            # actually landed on the target before committing.
+            time.sleep(0.3)
+            lines = self.option_lines()
+            highlighted = next((ln for ln in lines if "\u25cf" in ln), "")
+            if not re.search(pattern, highlighted):
+                return False
         self.send(ENTER)
         return True
 
@@ -254,9 +269,12 @@ def session(args, env, name=""):
 
 def run_plain(args, env, timeout=60):
     """Non-interactive run (no pty): stdin is a pipe, output captured."""
-    proc = subprocess.run([NODE, BIN, *args], env=env, cwd=REPO_ROOT,
-                          capture_output=True, text=True, timeout=timeout,
-                          stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.run([NODE, BIN, *args], env=env, cwd=REPO_ROOT,
+                              capture_output=True, text=True, timeout=timeout,
+                              stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return 124, "(timed out)"
     return proc.returncode, ANSI_RE.sub("", proc.stdout + proc.stderr)
 
 
@@ -311,7 +329,7 @@ def checks_cli_basics(env):
     s.close()
 
 
-def checks_empty_picker(env):
+def checks_empty_picker(env, skip_network=False):
     group("Empty-state picker")
 
     # Always enter via `models` — bare `minimal-ai` fronts update prompts.
@@ -327,9 +345,13 @@ def checks_empty_picker(env):
     check("download options listed", s.seen(r"GGUF from HuggingFace"))
     check("manage options listed", s.seen(r"Runtime status"))
 
-    ok = s.select_option(r"GGUF from HuggingFace.*llama")
+    ok = s.select_option(r"GGUF from HuggingFace \(for llama\.cpp\)")
     check("download flow prompts for repo", ok and s.wait_for(r"HuggingFace repo ID", timeout=15), s.text()[-300:])
 
+    if skip_network:
+        skip("bad repo shows actionable error", "--skip-network")
+        s.close()
+        return
     s.send("definitely-not/a-real-repo-zzz")
     s.send(ENTER)
     ok = s.wait_for(r"Could not fetch repo info", timeout=60)
@@ -345,7 +367,7 @@ def checks_download(env, model_repo):
     if not check("picker loads", s.wait_for(r"Select a model", timeout=30), s.text()[-400:]):
         s.close()
         return None
-    if not check("repo prompt", s.select_option(r"GGUF from HuggingFace.*llama") and s.wait_for(r"HuggingFace repo ID", timeout=15)):
+    if not check("repo prompt", s.select_option(r"GGUF from HuggingFace \(for llama\.cpp\)") and s.wait_for(r"HuggingFace repo ID", timeout=15)):
         s.close()
         return None
     s.send(model_repo)
@@ -421,6 +443,17 @@ def checks_setup(env, model_repo):
 def checks_run(env, profile_id):
     group("Live server run")
 
+    # Profiles always bind 127.0.0.1:8080 — a real minimal-ai server (or a
+    # leaked sandbox server from a crashed run) would collide.
+    import socket
+    with socket.socket() as sock:
+        if sock.connect_ex(("127.0.0.1", 8080)) == 0:
+            for label in ["server becomes ready", "preflight generates a token",
+                          "server endpoint printed", "status shows running",
+                          "stop --all", "status after stop"]:
+                skip(label, "port 8080 already in use on host")
+            return
+
     s = session(["run", profile_id, "--with", "server"], env)
     ok = s.wait_for(r"\[ready\]", timeout=180)
     check("server becomes ready", ok, s.text()[-500:])
@@ -492,7 +525,9 @@ def checks_uninstall_cancel(env):
     if not check("uninstall picker appears", ok, s.text()[-400:]):
         s.close()
         return
-    ok = s.select_option(r"Cancel")
+    # require_highlight: never let a misparse land on an uninstall option —
+    # those run `npm uninstall -g minimal-ai` against the real global install.
+    ok = s.select_option(r"Cancel", require_highlight=True)
     ok = ok and s.wait_for(r"Cancelled", timeout=15)
     check("cancel exits cleanly", ok, s.text()[-300:])
     s.finish()
@@ -514,10 +549,17 @@ def main():
     sandbox, env = make_sandbox()
     print(f"minimal-ai E2E — sandbox: {sandbox}")
 
+    if not args.skip_network and not shutil.which("hf"):
+        # Without this guard the CLI's download flow would offer to install
+        # the HF CLI via brew/pip — which modifies the REAL system.
+        print("ERROR: hf CLI not found. Install it first: brew install hf")
+        shutil.rmtree(sandbox, ignore_errors=True)
+        return 1
+
     started = time.time()
     try:
         checks_cli_basics(env)
-        checks_empty_picker(env)
+        checks_empty_picker(env, skip_network=args.skip_network)
         if args.skip_network:
             for label in ["download", "setup", "live run", "delete"]:
                 skip(label, "--skip-network")
@@ -536,6 +578,12 @@ def main():
                     skip(label, "download failed")
         checks_uninstall_cancel(env)
     finally:
+        # Best-effort: don't leave a sandbox llama-server running after a crash.
+        try:
+            subprocess.run([NODE, BIN, "stop", "--all"], env=env, cwd=REPO_ROOT,
+                           capture_output=True, stdin=subprocess.DEVNULL, timeout=30)
+        except Exception:
+            pass
         if args.keep_sandbox:
             print(f"\nSandbox kept at: {sandbox}")
         else:

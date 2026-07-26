@@ -26,7 +26,7 @@ for arg in "$@"; do
     --skip-e2e) SKIP_E2E=1 ;;
     --help|-h)
       cat <<'EOF'
-Usage: scripts/release-check.sh [--skip-install] [--skip-manual]
+Usage: scripts/release-check.sh [--skip-install] [--skip-manual] [--skip-e2e]
 
 Options:
   --skip-install   Skip `npm ci`
