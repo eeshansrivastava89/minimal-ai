@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { existsSync, renameSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
@@ -9,25 +9,14 @@ import { resolvedPathAllowMissingSync as resolvedDataDirPath } from "./paths.mjs
 
 // ── Base directories ──────────────────────────────────────────────────────
 
-const LEGACY_DATA_DIR = join(homedir(), ".offgrid-ai");
-const DEFAULT_DATA_DIR = join(homedir(), ".minimal-ai");
-
-// One-time migration: existing installs keep their data under the new name.
-if (!process.env.MINIMAL_DIR && !existsSync(DEFAULT_DATA_DIR) && existsSync(LEGACY_DATA_DIR)) {
-  renameSync(LEGACY_DATA_DIR, DEFAULT_DATA_DIR);
-  console.log(`Moved your data from ${LEGACY_DATA_DIR} to ${DEFAULT_DATA_DIR}`);
-}
-
-export const DATA_DIR = process.env.MINIMAL_DIR || DEFAULT_DATA_DIR;
+export const DATA_DIR = process.env.MINIMAL_DIR || join(homedir(), ".minimal-ai");
 export const PROFILE_DIR = join(DATA_DIR, "profiles");
 export const LOG_DIR = join(DATA_DIR, "logs");
 export const RUN_DIR = join(DATA_DIR, "run");
 export const RUNTIME_DIR = join(DATA_DIR, "runtime");
 export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
-// Marker name/content are the stable on-disk format — existing data dirs
-// (including migrated ~/.offgrid-ai installs) carry these exact values.
-export const DATA_DIR_MARKER = join(DATA_DIR, ".offgrid-ai-data");
-export const DATA_DIR_MARKER_CONTENT = "offgrid-ai-data-v1\n";
+export const DATA_DIR_MARKER = join(DATA_DIR, ".minimal-ai-data");
+export const DATA_DIR_MARKER_CONTENT = "minimal-ai-data-v1\n";
 
 /** Return true only for a dedicated absolute data-directory path. */
 export function isSafeDataDirPath(target, { homeDir = homedir(), cwd = process.cwd() } = {}) {

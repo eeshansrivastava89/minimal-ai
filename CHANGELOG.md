@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.1] - 2026-07-26
+
+### Changed
+- Removed the one-time `~/.offgrid-ai` → `~/.minimal-ai` data migration. No installs predate the rename, so the shim had no remaining audience. The on-disk data-dir marker is now `.minimal-ai-data`.
+
 ## [2.0.0] - 2026-07-26
 
 ### Changed

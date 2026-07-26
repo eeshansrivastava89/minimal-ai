@@ -72,7 +72,7 @@ export { isSafeDataDirPath } from "../config.mjs";
 
 function isRecognizableDataDir(dir) {
   try {
-    if (readFileSync(dir === DATA_DIR ? DATA_DIR_MARKER : join(dir, ".offgrid-ai-data"), "utf8") === DATA_DIR_MARKER_CONTENT) return true;
+    if (readFileSync(dir === DATA_DIR ? DATA_DIR_MARKER : join(dir, ".minimal-ai-data"), "utf8") === DATA_DIR_MARKER_CONTENT) return true;
   } catch { /* marker absent or unreadable */ }
   return existsSync(join(dir, "config.json"))
     && ["profiles", "logs", "run"].every((name) => existsSync(join(dir, name)));
