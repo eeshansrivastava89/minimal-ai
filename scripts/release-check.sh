@@ -7,6 +7,7 @@ set -euo pipefail
 
 SKIP_INSTALL=0
 SKIP_MANUAL=0
+SKIP_E2E=0
 start_ts="$(date +%s)"
 
 if [[ -t 1 ]]; then
@@ -22,6 +23,7 @@ for arg in "$@"; do
   case "$arg" in
     --skip-install) SKIP_INSTALL=1 ;;
     --skip-manual|--no-manual) SKIP_MANUAL=1 ;;
+    --skip-e2e) SKIP_E2E=1 ;;
     --help|-h)
       cat <<'EOF'
 Usage: scripts/release-check.sh [--skip-install] [--skip-manual]
@@ -29,6 +31,7 @@ Usage: scripts/release-check.sh [--skip-install] [--skip-manual]
 Options:
   --skip-install   Skip `npm ci`
   --skip-manual    Skip interactive manual checklist
+  --skip-e2e       Skip the pty E2E harness (scripts/e2e.py)
   --help, -h       Show this help
 EOF
       exit 0
@@ -183,6 +186,14 @@ run_check "npm test" npm test
 run_check "minimal-ai --help" env MINIMAL_NO_UPDATE_CHECK=1 node bin/minimal-ai.mjs --help
 run_check "minimal-ai --version" env MINIMAL_NO_UPDATE_CHECK=1 node bin/minimal-ai.mjs --version
 run_check "minimal-ai status" env MINIMAL_NO_UPDATE_CHECK=1 MINIMAL_DIR="$(mktemp -d)" node bin/minimal-ai.mjs status
+
+print_step "Interactive E2E (pty harness)"
+if [[ "$SKIP_E2E" -eq 0 ]]; then
+  run_check "E2E harness" python3 scripts/e2e.py
+else
+  add_summary "E2E harness" "SKIP" "--skip-e2e"
+  print_warn "Skipping E2E harness (--skip-e2e)"
+fi
 
 # ── 6. Auth & version checks ─────────────────────────────────────────
 

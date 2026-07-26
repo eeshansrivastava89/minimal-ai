@@ -34,10 +34,11 @@
     "start": "node bin/minimal-ai.mjs",
     "test": "node scripts/verify-imports.mjs && node --test test/*.mjs",
     "test:integration": "MINIMAL_INTEGRATION=1 node --test test/integration/*.mjs",
+    "test:e2e": "python3 scripts/e2e.py",
     "lint": "eslint src/*.mjs src/commands/*.mjs scripts/*.mjs bin/*.mjs test/*.mjs",
     "check:privacy": "node scripts/privacy-gate.mjs",
     "release:check": "bash scripts/release-check.sh",
-    "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual",
+    "release:check:fast": "bash scripts/release-check.sh --skip-install --skip-manual --skip-e2e",
     "prepack": "npm run check:privacy",
     "pretest": "npm run lint"
   },

@@ -8,3 +8,4 @@ internal-docs/
 reports/
 report/
 .DS_Store
+__pycache__/
