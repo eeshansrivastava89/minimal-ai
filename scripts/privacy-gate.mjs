@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Privacy & Artifact Gate for offgrid-ai.
+ * Privacy & Artifact Gate for minimal-ai.
  *
  * Verifies:
  * 1. No forbidden files tracked in git
@@ -22,11 +22,11 @@ const RESET = "\x1b[0m";
 
 // Guard against recursive invocation: if we're already inside npm pack's prepack hook,
 // skip the privacy gate to avoid infinite recursion.
-if (process.env.npm_lifecycle_event === "prepack" && process.env.OFFGRID_PRIVACY_GATE_RUNNING === "1") {
+if (process.env.npm_lifecycle_event === "prepack" && process.env.MINIMAL_PRIVACY_GATE_RUNNING === "1") {
   console.log("Skipping privacy gate: already running inside npm pack lifecycle.");
   process.exit(0);
 }
-process.env.OFFGRID_PRIVACY_GATE_RUNNING = "1";
+process.env.MINIMAL_PRIVACY_GATE_RUNNING = "1";
 
 let failures = 0;
 let warnings = 0;
@@ -231,7 +231,7 @@ try {
   _tarball = packJson[0].filename;
   const tmpBase = join(homedir(), ".tmp");
   if (!existsSync(tmpBase)) mkdirSync(tmpBase, { recursive: true });
-  _tmpDir = mkdtempSync(join(tmpBase, "offgrid-scan-"));
+  _tmpDir = mkdtempSync(join(tmpBase, "minimal-scan-"));
   execSync(`tar -C "${_tmpDir}" -xzf "${_tarball}"`, { encoding: "utf-8" });
 
   const allFiles = walkFiles(_tmpDir);

@@ -1,8 +1,8 @@
-# Agent Instructions for offgrid-ai
+# Agent Instructions for minimal-ai
 
 ## Project Context
 
-- **offgrid-ai is being renamed to `minimal-ai`.** Umbrella brand: Minimal Intelligence (eeshans.com, "a Minimal Intelligence tool" byline). Sibling tools (goalbot, sidequests) carry their own plain names — no shared prefix.
+- **Renamed from offgrid-ai to minimal-ai** (v2.0.0). Umbrella brand: Minimal Intelligence (eeshans.com, "a Minimal Intelligence tool" byline). Sibling tools (goalbot, sidequests) carry their own plain names — no shared prefix. Data migrates `~/.offgrid-ai` → `~/.minimal-ai` on first run; the on-disk marker (`.offgrid-ai-data`) is a stable legacy format — do not rename it.
 - **@eeshans/cli-kit** (`~/dev/eeshans-cli-kit`) is the shared CLI design system (Clack-based) used by this repo. It is currently a local `file:` dependency, being published to GitHub (`eeshansrivastava89/cli-kit`) and npm as v0.1.0 with the same tag-triggered CI release workflow as this repo.
 - After the kit is published, this repo depends on `@eeshans/cli-kit: ^0.1.0` — the `file:` dep cannot ship. For local co-development across the two repos, use `npm link`.
 
@@ -29,7 +29,7 @@ The version follows `MAJOR.MINOR.PATCH` (semver). Bump rules:
 
 - Unfinished features ship behind a `config.json` dev flag (e.g. `enable_benchmarking`), default off and undocumented. Flags are dev scaffolding, not user settings.
 - A flag enters with an unfinished feature and is removed in the release that ships it — delete the flag, make the code unconditional. Don't let them accumulate.
-- For pre-release soak testing use npm dist-tags (`offgrid-ai@next`) rather than in-app flags. Rollback = revert + patch release.
+- For pre-release soak testing use npm dist-tags (`minimal-ai@next`) rather than in-app flags. Rollback = revert + patch release.
 
 ### Changelog
 
@@ -55,7 +55,7 @@ The version follows `MAJOR.MINOR.PATCH` (semver). Bump rules:
 - **Document consolidation.** Completed plans go to `internal-docs/archive/`. Living runbooks go to `internal-docs/reference/`. Active strategy stays in `internal-docs/active/`. Keep the README simple; detailed internals live in `internal-docs/`.
 - **Protect user data and live runs.** Never overwrite, move, delete, or truncate files that belong to active user sessions, run directories, logs, or model data. If you need to inspect or reproduce against live data, copy it to a temporary or test location first.
 - **Codebase is the source of truth.** Verify assumptions against current files and tests, not memory or old docs.
-- **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which offgrid-ai`, etc.).
+- **Distinguish repo state from user environment.** The local repo version may differ from what the user has installed globally. Check installed state when relevant (`npm list -g`, `which minimal-ai`, etc.).
 - **Test and lint before committing.** Run `npm test` and `npm run lint`. Keep the change focused.
 
 ## TODO Tracking

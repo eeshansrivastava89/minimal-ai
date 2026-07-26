@@ -26,7 +26,7 @@ export async function modelsCommand(argv) {
     return;
   }
 
-  if (process.stdin.isTTY) startInteractive("offgrid-ai");
+  if (process.stdin.isTTY) startInteractive("minimal-ai");
   return await modelCommandCenter(catalog);
 }
 

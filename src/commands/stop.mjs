@@ -12,17 +12,17 @@ export async function stopCommand(argv) {
 
   const running = await runningProfiles();
   if (running.length === 0) {
-    console.log(theme.subtle("No offgrid-ai servers are running."));
+    console.log(theme.subtle("No minimal-ai servers are running."));
     return;
   }
 
   if (!process.stdin.isTTY) {
     for (const { profile, status: s } of running) console.log(`  ${status({ kind: "success", message: "" })} ${theme.bold(profile.label)} · pid ${s.pid}`);
-    console.log(theme.subtle("Stop with: offgrid-ai stop <id>"));
+    console.log(theme.subtle("Stop with: minimal-ai stop <id>"));
     return;
   }
 
-  startInteractive("offgrid-ai stop");
+  startInteractive("minimal-ai stop");
   const choices = running.map(({ profile, status: s }) => ({ value: profile.id, label: profile.label, hint: `pid ${s.pid} · ${profile.baseUrl}` }));
   if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
   choices.push({ value: "__cancel", label: "Cancel" });
@@ -42,7 +42,7 @@ async function stopOne(id) {
 async function stopAll() {
   const running = await runningProfiles();
   if (running.length === 0) {
-    console.log(theme.subtle("No offgrid-ai servers are running."));
+    console.log(theme.subtle("No minimal-ai servers are running."));
     return;
   }
   for (const { profile } of running) await printStopResult(profile);

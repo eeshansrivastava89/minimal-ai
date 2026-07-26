@@ -2,10 +2,10 @@ import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const PACKAGE_NAME = "offgrid-ai";
+const PACKAGE_NAME = "minimal-ai";
 
 export async function checkForUpdate({ fetchImpl = globalThis.fetch } = {}) {
-  if (process.env.OFFGRID_NO_UPDATE_CHECK) return null;
+  if (process.env.MINIMAL_NO_UPDATE_CHECK) return null;
 
   const currentVersion = currentPackageVersion();
 
@@ -53,7 +53,7 @@ export function detectInvocation(env = process.env) {
 }
 
 export function updateCommand(invocation = detectInvocation(), argv = []) {
-  // `npx offgrid-ai update` would re-invoke `offgrid-ai update` under npx,
+  // `npx minimal-ai update` would re-invoke `minimal-ai update` under npx,
   // detect npx again, and recurse forever. Fall back to a global install
   // so the user gets the latest version installed globally instead.
   const isUpdate = argv[0] === "update";

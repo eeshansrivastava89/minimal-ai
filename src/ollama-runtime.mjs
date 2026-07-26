@@ -99,7 +99,7 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
     if (await hasOllama()) {
       console.log(status({ kind: "success", message: `Ollama ${upgrade ? "updated" : "installed"}.` }));
       await startAndWaitForServer();
-      if (!upgrade) console.log(theme.subtle("  Run offgrid-ai again to see Ollama models in the picker."));
+      if (!upgrade) console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
       return true;
     }
   } catch { /* fall through to Homebrew */ }
@@ -122,7 +122,7 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
         await startAndWaitForServer();
         const version = await installedOllamaVersion();
         if (version) console.log(theme.subtle(`  Version: ${version}`));
-        if (!upgrade) console.log(theme.subtle("  Run offgrid-ai again to see Ollama models in the picker."));
+        if (!upgrade) console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
         return true;
       }
     } catch (err) {
@@ -133,7 +133,7 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
   }
 
   console.log(status({ kind: "error", message: `Ollama was ${upgrade ? "updated" : "installed"} but not found on PATH.` }));
-  console.log(theme.subtle("Restart your terminal and run offgrid-ai again."));
+  console.log(theme.subtle("Restart your terminal and run minimal-ai again."));
   return false;
 }
 
@@ -166,7 +166,7 @@ async function startAndWaitForServer() {
     console.log(status({ kind: "success", message: "Ollama server is running." }));
   } else {
     console.log(status({ kind: "warning", message: "Ollama server is starting up — it may take a few more seconds." }));
-    console.log(theme.subtle("  Run offgrid-ai again in a moment to see Ollama models."));
+    console.log(theme.subtle("  Run minimal-ai again in a moment to see Ollama models."));
   }
 }
 

@@ -129,7 +129,7 @@ async function _downloadHfGguf(repo, filename) {
 
   try {
     await downloadModel(plan, { extraFiles });
-    console.log(status({ kind: "success", message: "Download complete. Run offgrid-ai again to see the model in the picker." }));
+    console.log(status({ kind: "success", message: "Download complete. Run minimal-ai again to see the model in the picker." }));
     return true;
   } catch (err) {
     console.log(status({ kind: "error", message: "Download failed: " + err.message }));
@@ -171,7 +171,7 @@ async function downloadViaOllama(modelRef) {
 
   const ok = await pullOllamaModel(modelRef);
   if (ok) {
-    console.log(status({ kind: "success", message: "Run offgrid-ai again to see the model in the picker." }));
+    console.log(status({ kind: "success", message: "Run minimal-ai again to see the model in the picker." }));
   }
   return ok;
 }

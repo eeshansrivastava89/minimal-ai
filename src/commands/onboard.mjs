@@ -7,9 +7,9 @@ import { startInteractive, promptConfirm, status, theme, screenHeader, card, wit
 
 export async function onboardFlow() {
   await ensureDirs();
-  startInteractive("offgrid-ai setup");
+  startInteractive("minimal-ai setup");
 
-  console.log(screenHeader({ title: "Welcome to offgrid-ai!", subtitle: "Let's set up everything you need to run local models." }));
+  console.log(screenHeader({ title: "Welcome to minimal-ai!", subtitle: "Let's set up everything you need to run local models." }));
 
   const llamaBinary = await findLlamaServer();
   const piInstalled = await hasPi();
@@ -29,7 +29,7 @@ export async function onboardFlow() {
 
   const proceed = await promptConfirm({ message: "Proceed?", initialValue: true });
   if (!proceed) {
-    console.log(theme.subtle("You can install these manually later. Run offgrid-ai to get started."));
+    console.log(theme.subtle("You can install these manually later. Run minimal-ai to get started."));
     return "declined";
   }
 
@@ -79,7 +79,7 @@ export async function onboardFlow() {
   console.log();
   if (failures.length > 0) {
     console.log(status({ kind: "error", message: `Setup incomplete — failed: ${failures.join(", ")}.` }));
-    console.log(theme.subtle("Run offgrid-ai again to retry."));
+    console.log(theme.subtle("Run minimal-ai again to retry."));
     return "failed";
   }
   console.log(status({ kind: "success", message: "Setup complete!" }));

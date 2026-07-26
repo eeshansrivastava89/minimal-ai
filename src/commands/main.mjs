@@ -29,31 +29,31 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   if (needsLlama && !llamaBinary) missingDeps.push("llama-server");
   if (!piInstalled) missingDeps.push("Pi");
   if (missingDeps.length > 0) {
-    if (!process.stdin.isTTY) throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run offgrid-ai interactively to install.`);
+    if (!process.stdin.isTTY) throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run minimal-ai interactively to install.`);
     console.log(status({ kind: "warning", message: `Missing: ${missingDeps.join(", ")}` }));
-    console.log(theme.subtle("offgrid-ai needs these to run. Let's finish setup.\n"));
+    console.log(theme.subtle("minimal-ai needs these to run. Let's finish setup.\n"));
     const result = await onboardFlow();
     if (result === "success") return mainFlow();
     return;
   }
 
   if (!hasAnyBackend && !hasAnyModels && profiles.length === 0) {
-    if (!process.stdin.isTTY) throw new Error("No local LLM backends found. Run offgrid-ai interactively to set up.");
+    if (!process.stdin.isTTY) throw new Error("No local LLM backends found. Run minimal-ai interactively to set up.");
     const result = await onboardFlow();
     if (result === "success") return mainFlow();
     return;
   }
 
   if (!process.stdin.isTTY) {
-    if (!hasAnyModels && profiles.length === 0) throw new Error("No models found. Download a model, then run offgrid-ai.");
+    if (!hasAnyModels && profiles.length === 0) throw new Error("No models found. Download a model, then run minimal-ai.");
     return await statusCommand();
   }
 
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  startInteractive("offgrid-ai");
+  startInteractive("minimal-ai");
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
 
-  console.log(appHeader({ name: "offgrid-ai", version: currentPackageVersion() }));
+  console.log(appHeader({ name: "minimal-ai", version: currentPackageVersion() }));
   printStatusHeader({
     llamaBinary,
     managedModels,
@@ -103,6 +103,6 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
     const total = `${profiles.length} model${profiles.length === 1 ? "" : "s"}`;
     parts.push(`${theme.bold(total)} ${theme.subtle("→")} ${breakdown}`);
   }
-  console.log(card({ title: "offgrid-ai", body: parts.join("  \n") }));
+  console.log(card({ title: "minimal-ai", body: parts.join("  \n") }));
 }
 

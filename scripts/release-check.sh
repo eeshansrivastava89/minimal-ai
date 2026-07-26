@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# offgrid-ai release check
+# minimal-ai release check
 # Validates the package is ready for npm publish.
 # Usage: scripts/release-check.sh [--skip-install] [--skip-manual]
 
@@ -49,7 +49,7 @@ add_summary() {
 }
 
 print_header() {
-  printf '\n%s%s%s\n' "$C_BOLD" "offgrid-ai Release Check" "$C_RESET"
+  printf '\n%s%s%s\n' "$C_BOLD" "minimal-ai Release Check" "$C_RESET"
   printf '%s\n' "------------------------------------------------------------------"
 }
 
@@ -180,9 +180,9 @@ print_ok "Package file audit passed"
 print_step "CLI smoke test"
 
 run_check "npm test" npm test
-run_check "offgrid-ai --help" env OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --help
-run_check "offgrid-ai --version" env OFFGRID_NO_UPDATE_CHECK=1 node bin/offgrid-ai.mjs --version
-run_check "offgrid-ai status" env OFFGRID_NO_UPDATE_CHECK=1 OFFGRID_DIR="$(mktemp -d)" node bin/offgrid-ai.mjs status
+run_check "minimal-ai --help" env MINIMAL_NO_UPDATE_CHECK=1 node bin/minimal-ai.mjs --help
+run_check "minimal-ai --version" env MINIMAL_NO_UPDATE_CHECK=1 node bin/minimal-ai.mjs --version
+run_check "minimal-ai status" env MINIMAL_NO_UPDATE_CHECK=1 MINIMAL_DIR="$(mktemp -d)" node bin/minimal-ai.mjs status
 
 # ── 6. Auth & version checks ─────────────────────────────────────────
 
@@ -202,7 +202,7 @@ add_summary "package.json version" "INFO" "v${current_version}"
 print_ok "Package version: v${current_version}"
 
 # Check if this version already exists on npm
-if npm view "offgrid-ai@$current_version" version 2>/dev/null; then
+if npm view "minimal-ai@$current_version" version 2>/dev/null; then
   add_summary "Version collision" "FAIL" "v${current_version} already published"
   FAILED_STEP="Version collision"
   print_fail "Version v${current_version} already exists on npm. Bump the version first."
@@ -219,11 +219,11 @@ if [[ "$SKIP_MANUAL" -eq 0 ]] && [[ -t 0 ]]; then
   cat <<'EOF'
 
 Manual checks:
-  [ ] Run `node bin/offgrid-ai.mjs` — launches onboarding
-  [ ] Run `node bin/offgrid-ai.mjs status` — shows status
-  [ ] Run `node bin/offgrid-ai.mjs stop --all` — no crash when nothing is running
-  [ ] Run `node bin/offgrid-ai.mjs --help` — shows help
-  [ ] Run `node bin/offgrid-ai.mjs --version` — shows version
+  [ ] Run `node bin/minimal-ai.mjs` — launches onboarding
+  [ ] Run `node bin/minimal-ai.mjs status` — shows status
+  [ ] Run `node bin/minimal-ai.mjs stop --all` — no crash when nothing is running
+  [ ] Run `node bin/minimal-ai.mjs --help` — shows help
+  [ ] Run `node bin/minimal-ai.mjs --version` — shows version
   [ ] Verify README.md matches package.json description
   [ ] Verify install.sh raw URL matches current GitHub commit
 

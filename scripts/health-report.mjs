@@ -121,7 +121,7 @@ const row = (label, value) => console.log(`  ${pc.dim(label.padEnd(12))} ${value
 
 async function main() {
   await mkdir(REPORTS_DIR, { recursive: true });
-  console.log(pc.bold(`Codebase health — offgrid-ai (${new Date().toISOString().slice(0, 10)})`));
+  console.log(pc.bold(`Codebase health — minimal-ai (${new Date().toISOString().slice(0, 10)})`));
 
   const scc = await sccReport();
   console.log(`\n${pc.bold("Size")}`);

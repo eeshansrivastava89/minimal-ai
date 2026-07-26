@@ -31,7 +31,7 @@ describe("regressions", () => {
     const input = [
       "export PATH=\"/usr/local/bin:$PATH\"",
       "",
-      "# Added by offgrid-ai installer",
+      "# Added by minimal-ai installer",
       "export PATH=\"/old/npm/bin:$PATH\"",
       "alias ll=ls",
       "",
@@ -66,14 +66,14 @@ describe("regressions", () => {
     const invocation = detectInvocation({ npm_command: "exec" });
     const plan = updateCommand(invocation, ["status"]);
     assert.equal(plan.mode, "run-latest");
-    assert.deepEqual(plan.args, ["exec", "--yes", "--", "offgrid-ai@latest", "status"]);
+    assert.deepEqual(plan.args, ["exec", "--yes", "--", "minimal-ai@latest", "status"]);
   });
 
   it("falls back to global install for npx update to avoid recursion", () => {
     const invocation = detectInvocation({ npm_command: "exec" });
     const plan = updateCommand(invocation, ["update"]);
     assert.equal(plan.mode, "install-global");
-    assert.deepEqual(plan.args, ["install", "-g", "offgrid-ai@latest"]);
+    assert.deepEqual(plan.args, ["install", "-g", "minimal-ai@latest"]);
   });
 
   it("detects MTP from LM Studio parent directory names", async () => {
@@ -131,7 +131,7 @@ describe("regressions", () => {
   });
 
   it("treats corrupt .gguf files as unknown metadata instead of crashing", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-regression-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-regression-"));
     const file = join(dir, "broken-Q4_K_M.gguf");
     await writeFile(file, "GGUF\0");
     const caps = detectCapabilities(file, null);
@@ -267,9 +267,9 @@ describe("regressions", () => {
   });
 
   it("loadConfig returns defaults for missing config (ENOENT)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-no-config-"));
-    process.env.OFFGRID_DIR = dir;
-    // Fresh import to pick up OFFGRID_DIR.
+    const dir = await mkdtemp(join(tmpdir(), "minimal-no-config-"));
+    process.env.MINIMAL_DIR = dir;
+    // Fresh import to pick up MINIMAL_DIR.
     const mod = await freshConfigImport();
     const config = await mod.loadConfig();
     assert.equal(config.modelScanDirs.length, 0);
@@ -277,8 +277,8 @@ describe("regressions", () => {
   });
 
   it("loadConfig throws on corrupt config instead of silently defaulting", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-corrupt-config-"));
-    process.env.OFFGRID_DIR = dir;
+    const dir = await mkdtemp(join(tmpdir(), "minimal-corrupt-config-"));
+    process.env.MINIMAL_DIR = dir;
     const configPath = join(dir, "config.json");
     const { mkdir } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });

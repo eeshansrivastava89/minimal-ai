@@ -11,7 +11,7 @@ import { estimateMemory } from "../../src/estimate.mjs";
 import { backendFor } from "../../src/backends.mjs";
 
 const MODEL_DIR = join(homedir(), ".lmstudio", "models");
-const runIntegration = process.env.OFFGRID_INTEGRATION === "1" && existsSync(MODEL_DIR);
+const runIntegration = process.env.MINIMAL_INTEGRATION === "1" && existsSync(MODEL_DIR);
 
 describe("GGUF model pipeline", { skip: !runIntegration }, () => {
   let models;

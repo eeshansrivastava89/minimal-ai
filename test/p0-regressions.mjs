@@ -30,7 +30,7 @@ describe("P0 safety predicates", () => {
     assert.equal(isSafeDataDirPath("/", { homeDir: home, cwd }), false);
     assert.equal(isSafeDataDirPath(home, { homeDir: home, cwd }), false);
     assert.equal(isSafeDataDirPath("/tmp", { homeDir: home, cwd }), false);
-    assert.equal(isSafeDataDirPath("/tmp/offgrid-data", { homeDir: home, cwd }), true);
+    assert.equal(isSafeDataDirPath("/tmp/minimal-data", { homeDir: home, cwd }), true);
   });
 
   it("requires a strict oMLX model descendant, not the models root", () => {
@@ -42,14 +42,14 @@ describe("P0 safety predicates", () => {
   });
 
   it("allows a safely scoped but already-absent oMLX model path", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "offgrid-omlx-absent-"));
+    const root = await mkdtemp(join(tmpdir(), "minimal-omlx-absent-"));
     t.after(() => rm(root, { recursive: true, force: true }));
     assert.equal(await isSafeOmlxDeletionTarget(join(root, "org", "model"), root), true);
   });
 
   it("rejects an oMLX directory symlink that escapes the canonical root", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "offgrid-omlx-root-"));
-    const outside = await mkdtemp(join(tmpdir(), "offgrid-omlx-outside-"));
+    const root = await mkdtemp(join(tmpdir(), "minimal-omlx-root-"));
+    const outside = await mkdtemp(join(tmpdir(), "minimal-omlx-outside-"));
     t.after(async () => Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]));
     const target = join(root, "model");
     try {
@@ -78,7 +78,7 @@ describe("P0 safety predicates", () => {
 
 describe("P0 scanner and GGUF bounds", () => {
   it("returns empty metadata for an oversized array count", async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-gguf-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-gguf-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const path = join(dir, "oversized.gguf");
     const buffer = Buffer.alloc(64);
@@ -96,7 +96,7 @@ describe("P0 scanner and GGUF bounds", () => {
   });
 
   it("preserves valid scalar metadata and rejects truncated metadata", async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-gguf-valid-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-gguf-valid-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const valid = Buffer.alloc(43);
     valid.write("GGUF", 0, "ascii");
@@ -116,8 +116,8 @@ describe("P0 scanner and GGUF bounds", () => {
   });
 
   it("follows regular symlinked GGUF files without following cycles or outside directories", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "offgrid-symlink-root-"));
-    const outside = await mkdtemp(join(tmpdir(), "offgrid-symlink-outside-"));
+    const root = await mkdtemp(join(tmpdir(), "minimal-symlink-root-"));
+    const outside = await mkdtemp(join(tmpdir(), "minimal-symlink-outside-"));
     t.after(async () => Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]));
     sparseFile(join(outside, "linked.gguf"));
     sparseFile(join(outside, "outside.gguf"));
@@ -138,7 +138,7 @@ describe("P0 scanner and GGUF bounds", () => {
 
 describe("P0 deletion transaction gating", () => {
   it("returns confirmed:false when the source file cannot be deleted, so profile cleanup is skipped", async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-delete-fail-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-delete-fail-"));
     t.after(async () => { await chmod(dir, 0o755).catch(() => {}); await rm(dir, { recursive: true, force: true }); });
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
@@ -149,7 +149,7 @@ describe("P0 deletion transaction gating", () => {
   });
 
   it("returns confirmed:true when the source file is deleted successfully", async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-delete-ok-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-delete-ok-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
@@ -158,7 +158,7 @@ describe("P0 deletion transaction gating", () => {
   });
 
   it("returns confirmed:false when the user declines the prompt", async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "offgrid-decline-"));
+    const dir = await mkdtemp(join(tmpdir(), "minimal-decline-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");

@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { openSync, closeSync, ftruncateSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
-const dataDir = await mkdtemp(join(tmpdir(), "offgrid-presenters-"));
-process.env.OFFGRID_DIR = dataDir;
+const dataDir = await mkdtemp(join(tmpdir(), "minimal-presenters-"));
+process.env.MINIMAL_DIR = dataDir;
 
 const { modelSelectOption } = await import("../src/model-presenters.mjs");
 

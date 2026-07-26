@@ -14,8 +14,8 @@ function createSparseFile(path, size) {
   });
 }
 
-const dataDir = await mkdtemp(join(tmpdir(), "offgrid-scan-"));
-process.env.OFFGRID_DIR = dataDir;
+const dataDir = await mkdtemp(join(tmpdir(), "minimal-scan-"));
+process.env.MINIMAL_DIR = dataDir;
 
 const { scanGgufModels, isEmbeddingArchitecture } = await import("../src/scan.mjs");
 

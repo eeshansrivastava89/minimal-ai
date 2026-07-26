@@ -5,7 +5,7 @@ import { compareVersions, currentPackageVersion } from "./updates.mjs";
 import { loadConfig, saveConfig } from "./config.mjs";
 
 const CHANGELOG_PATH = fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
-const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai";
+const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/eeshansrivastava89/minimal-ai";
 
 export function parseChangelog(content) {
   const lines = content.split("\n");

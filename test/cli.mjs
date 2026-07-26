@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const BIN = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "offgrid-ai.mjs");
+const BIN = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "minimal-ai.mjs");
 
 function run(args) {
   return new Promise((resolve, reject) => {
@@ -21,7 +21,7 @@ function run(args) {
 test("--help shows Fang-style help", async () => {
   const { code, stdout, stderr } = await run(["--help"]);
   assert.strictEqual(code, 0, `stderr: ${stderr}`);
-  assert(stdout.includes("offgrid-ai"), "should include app name");
+  assert(stdout.includes("minimal-ai"), "should include app name");
   assert(stdout.includes("USAGE"), "should include USAGE section");
   assert(stdout.includes("COMMANDS"), "should include COMMANDS section");
   assert(stdout.includes("FLAGS"), "should include FLAGS section");
@@ -30,7 +30,7 @@ test("--help shows Fang-style help", async () => {
 test("version command shows version", async () => {
   const { code, stdout, stderr } = await run(["version"]);
   assert.strictEqual(code, 0, `stderr: ${stderr}`);
-  assert.match(stdout, /offgrid-ai v\d+\.\d+\.\d+/);
+  assert.match(stdout, /minimal-ai v\d+\.\d+\.\d+/);
 });
 
 test("unknown command prints friendly error", async () => {

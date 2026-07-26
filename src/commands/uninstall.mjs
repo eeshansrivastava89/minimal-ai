@@ -21,8 +21,8 @@ export async function uninstallCommand(argv) {
     return;
   }
 
-  startInteractive("offgrid-ai uninstall");
-  console.log(screenHeader({ title: "offgrid-ai uninstall" }));
+  startInteractive("minimal-ai uninstall");
+  console.log(screenHeader({ title: "minimal-ai uninstall" }));
   const running = await runningProfiles();
   if (running.length > 0) {
     console.log(status({ kind: "warning", message: `${running.length} server(s) still running. Stopping...` }));
@@ -81,13 +81,13 @@ function isRecognizableDataDir(dir) {
 async function removeDataDir() {
   const resolved = resolvedDataDirPath(DATA_DIR);
   if (!isSafeDataDirPath(DATA_DIR) || !isSafeDataDirPath(resolved)) {
-    console.log(status({ kind: "error", message: `Refusing to remove unsafe OFFGRID_DIR: ${DATA_DIR}` }));
-    console.log(theme.subtle("Choose a dedicated absolute data directory (for example ~/.offgrid-ai or /tmp/offgrid-ai)."));
+    console.log(status({ kind: "error", message: `Refusing to remove unsafe MINIMAL_DIR: ${DATA_DIR}` }));
+    console.log(theme.subtle("Choose a dedicated absolute data directory (for example ~/.minimal-ai or /tmp/minimal-ai)."));
     return false;
   }
   if (existsSync(DATA_DIR) && !isRecognizableDataDir(DATA_DIR)) {
     console.log(status({ kind: "error", message: `Refusing to remove unrecognized data directory: ${DATA_DIR}` }));
-    console.log(theme.subtle("Run offgrid-ai once first, or remove this directory manually after checking its contents."));
+    console.log(theme.subtle("Run minimal-ai once first, or remove this directory manually after checking its contents."));
     return false;
   }
   if (existsSync(DATA_DIR)) {
@@ -108,20 +108,20 @@ async function removeDataDir() {
 async function removeShellPath() {
   const cleaned = await removeInstallerPathEntries();
   if (cleaned.length === 0) {
-    console.log(theme.subtle("No offgrid-ai PATH entries found in shell configs."));
+    console.log(theme.subtle("No minimal-ai PATH entries found in shell configs."));
     return;
   }
   for (const rcFile of cleaned) console.log(status({ kind: "success", message: `Cleaned PATH from ${rcFile}` }));
 }
 
 async function removeSelf() {
-  console.log(status({ kind: "info", message: "Uninstalling offgrid-ai..." }));
+  console.log(status({ kind: "info", message: "Uninstalling minimal-ai..." }));
   try {
-    await execCommand("npm", ["uninstall", "-g", "offgrid-ai"], { label: "npm uninstall", verbose: process.argv.includes("--verbose") });
-    console.log(status({ kind: "success", message: "offgrid-ai has been uninstalled." }));
-    console.log(theme.subtle("Reinstall anytime with: npm install -g offgrid-ai@latest --prefer-online"));
+    await execCommand("npm", ["uninstall", "-g", "minimal-ai"], { label: "npm uninstall", verbose: process.argv.includes("--verbose") });
+    console.log(status({ kind: "success", message: "minimal-ai has been uninstalled." }));
+    console.log(theme.subtle("Reinstall anytime with: npm install -g minimal-ai@latest --prefer-online"));
   } catch (err) {
     console.log(status({ kind: "error", message: `Could not auto-uninstall: ${err.message}` }));
-    console.log(theme.bold("  npm uninstall -g offgrid-ai"));
+    console.log(theme.bold("  npm uninstall -g minimal-ai"));
   }
 }

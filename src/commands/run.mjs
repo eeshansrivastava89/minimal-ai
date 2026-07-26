@@ -12,7 +12,7 @@ import { renderMemoryEstimate, parseOptions, status, theme } from "../ui.mjs";
 export async function runCommand(argv) {
   await ensureDirs();
   const { positional, options } = parseOptions(argv);
-  if (!positional[0]) throw new Error("Specify a model name: offgrid-ai run <model>");
+  if (!positional[0]) throw new Error("Specify a model name: minimal-ai run <model>");
   return await runProfile(await readProfile(positional[0]), options);
 }
 
@@ -73,7 +73,7 @@ async function ensureLocalServer(profile, backend, options) {
   if (await serverReady(profile.baseUrl)) {
     const match = await serverMatchesProfile(profile);
     if (!match.matches) {
-      throw new Error(`A different server is already responding at ${profile.baseUrl}. ${match.reason}. Stop it with offgrid-ai stop --all, or choose a different port.`);
+      throw new Error(`A different server is already responding at ${profile.baseUrl}. ${match.reason}. Stop it with minimal-ai stop --all, or choose a different port.`);
     }
     console.log(status({ kind: "success", message: `[ready] Reusing server at ${profile.baseUrl}` }));
     return;
@@ -119,9 +119,9 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
   if (withHarness !== "pi") {
     if (!isManaged) {
       console.log(theme.subtle(`Server running at ${profile.baseUrl}`));
-      console.log(theme.subtle(`Stop with: offgrid-ai stop ${profile.id}`));
+      console.log(theme.subtle(`Stop with: minimal-ai stop ${profile.id}`));
     } else {
-      console.log(theme.subtle(`${backend.label} is a managed service — offgrid-ai does not stop it.`));
+      console.log(theme.subtle(`${backend.label} is a managed service — minimal-ai does not stop it.`));
     }
     return;
   }

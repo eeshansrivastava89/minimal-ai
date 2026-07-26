@@ -1,11 +1,11 @@
 {
-  "name": "offgrid-ai",
+  "name": "minimal-ai",
   "version": "1.0.13",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, and chat",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",
   "bin": {
-    "offgrid-ai": "bin/offgrid-ai.mjs"
+    "minimal-ai": "bin/minimal-ai.mjs"
   },
   "files": [
     "bin/*.mjs",
@@ -21,19 +21,19 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eeshansrivastava89/offgrid-ai.git"
+    "url": "git+https://github.com/eeshansrivastava89/minimal-ai.git"
   },
-  "homepage": "https://github.com/eeshansrivastava89/offgrid-ai#readme",
+  "homepage": "https://github.com/eeshansrivastava89/minimal-ai#readme",
   "bugs": {
-    "url": "https://github.com/eeshansrivastava89/offgrid-ai/issues"
+    "url": "https://github.com/eeshansrivastava89/minimal-ai/issues"
   },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node bin/offgrid-ai.mjs",
+    "start": "node bin/minimal-ai.mjs",
     "test": "node scripts/verify-imports.mjs && node --test test/*.mjs",
-    "test:integration": "OFFGRID_INTEGRATION=1 node --test test/integration/*.mjs",
+    "test:integration": "MINIMAL_INTEGRATION=1 node --test test/integration/*.mjs",
     "lint": "eslint src/*.mjs src/commands/*.mjs scripts/*.mjs bin/*.mjs test/*.mjs",
     "check:privacy": "node scripts/privacy-gate.mjs",
     "release:check": "bash scripts/release-check.sh",

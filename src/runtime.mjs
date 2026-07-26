@@ -24,7 +24,7 @@ export async function latestLlamaRelease(fetchImpl = globalThis.fetch) {
 }
 
 export async function installLlamaRelease(release, { fetchImpl = globalThis.fetch } = {}) {
-  const tmp = await mkdtemp(join(tmpdir(), "offgrid-llama-"));
+  const tmp = await mkdtemp(join(tmpdir(), "minimal-llama-"));
   const archive = join(tmp, release.asset.name);
   const releaseDir = join(RUNTIME_DIR, "llama.cpp", "releases", release.tag);
   const binDir = join(RUNTIME_DIR, "bin");

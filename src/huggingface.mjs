@@ -199,7 +199,7 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
 
 /**
  * Download a resolved model using the `hf` CLI.
- * GGUF: downloads single file to HF cache (offgrid-ai scanner finds it there).
+ * GGUF: downloads single file to HF cache (minimal-ai scanner finds it there).
  * MLX: downloads full repo to a local directory (oMLX scans ~/.omlx/models).
  * Progress bars are handled natively by the CLI (stdio inherited).
  * @param {object} model - from resolveHfDownload
@@ -247,7 +247,7 @@ export async function downloadModel(model, options = {}) {
     // Forward Ctrl+C (SIGINT) to hf. The hf CLI catches SIGINT and may not
     // exit on its own — escalate to SIGKILL after 2 seconds so the user
     // can always cancel a download. No process.exit — let the download
-    // fail gracefully so offgrid-ai exits via normal error handling.
+    // fail gracefully so minimal-ai exits via normal error handling.
     const onSigInt = () => {
       child.kill("SIGINT");
       const killTimer = setTimeout(() => {
@@ -322,7 +322,7 @@ export async function installHfCli() {
   // Verify it's now available
   if (!(await hasHfCli())) {
     console.log(status({ kind: "warning", message: "HuggingFace CLI was installed but not found on PATH." }));
-    console.log(theme.subtle("Restart your terminal and run offgrid-ai again."));
+    console.log(theme.subtle("Restart your terminal and run minimal-ai again."));
     return false;
   }
   console.log(status({ kind: "success", message: "HuggingFace CLI installed." }));

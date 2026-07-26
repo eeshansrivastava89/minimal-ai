@@ -19,7 +19,7 @@ async function offerUpdate() {
   if (!update) return false;
 
   console.log();
-  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: offgrid-ai update`));
+  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: minimal-ai update`));
 
   const remoteEntries = await fetchRemoteChangelog(`v${update.latest}`);
   const notes = entriesBetween(remoteEntries, update.current, update.latest);
@@ -81,49 +81,49 @@ async function runUpdate() {
   }
 
   if (installed && installed !== before) {
-    console.log(status({ kind: "success", message: "Updated. Run offgrid-ai again to use the new version." }));
+    console.log(status({ kind: "success", message: "Updated. Run minimal-ai again to use the new version." }));
   } else if (installed && installed === before) {
-    console.log(status({ kind: "error", message: `Update failed — still v${installed}. Try manually:\n  npm cache clean --force && npm install -g offgrid-ai@latest` }));
+    console.log(status({ kind: "error", message: `Update failed — still v${installed}. Try manually:\n  npm cache clean --force && npm install -g minimal-ai@latest` }));
   } else {
-    console.log(status({ kind: "success", message: "Updated. Run offgrid-ai again to use the new version." }));
+    console.log(status({ kind: "success", message: "Updated. Run minimal-ai again to use the new version." }));
   }
 }
 
 async function printVersion() {
   const version = currentPackageVersion();
-  console.log(appHeader({ name: "offgrid-ai", version }));
+  console.log(appHeader({ name: "minimal-ai", version }));
   const update = await checkForUpdate();
   if (update) {
-    console.log(status({ kind: "warning", message: `Update available: v${update.latest}. Run: offgrid-ai update` }));
+    console.log(status({ kind: "warning", message: `Update available: v${update.latest}. Run: minimal-ai update` }));
   }
 }
 
 function buildProgram() {
   return createCli({
-    name: "offgrid-ai",
+    name: "minimal-ai",
     description: "A privacy-first local AI runner",
     usage: "[command] [--flags]",
     examples: [
-      "offgrid-ai",
-      "offgrid-ai run <profile-id>",
-      "offgrid-ai status",
-      "offgrid-ai update",
+      "minimal-ai",
+      "minimal-ai run <profile-id>",
+      "minimal-ai status",
+      "minimal-ai update",
     ],
     globalOptions: [
       { flags: "-v, --version", description: "Show version" },
       { flags: "--verbose", description: "Run in verbose mode (interactive flow only)" },
-      { flags: "--uninstall", description: "Remove offgrid-ai" },
+      { flags: "--uninstall", description: "Remove minimal-ai" },
     ],
     rootAction: async (options, thisCommand) => {
       if (options.uninstall) return await uninstallCommand(thisCommand.args);
       if (options.version) return await printVersion();
       if (options.verbose) return await mainFlow();
       if (thisCommand.args.length > 0) {
-        throw new Error(`Unknown command: ${thisCommand.args[0]}. Run offgrid-ai help`);
+        throw new Error(`Unknown command: ${thisCommand.args[0]}. Run minimal-ai help`);
       }
 
       if (process.platform === "win32") {
-        console.log(formatError("offgrid-ai supports macOS and Linux only."));
+        console.log(formatError("minimal-ai supports macOS and Linux only."));
         console.log(theme.subtle("Windows is not yet supported. Use WSL or a native macOS/Linux machine."));
         return;
       }
@@ -163,14 +163,14 @@ function buildProgram() {
       },
       {
         name: "uninstall",
-        description: "Remove offgrid-ai",
+        description: "Remove minimal-ai",
         allowUnknownOption: true,
         allowExcessArguments: true,
         action: ({ args }) => uninstallCommand(args),
       },
       {
         name: "update",
-        description: "Update offgrid-ai to the latest version",
+        description: "Update minimal-ai to the latest version",
         action: runUpdate,
       },
       {

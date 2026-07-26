@@ -65,7 +65,7 @@ export async function profileRuntimeStatus(profile) {
 export async function serverMatchesProfile(profile) {
   const state = await readState(profile.id);
   if (state?.pid && pidAlive(state.pid) && state.baseUrl === profile.baseUrl) {
-    return { matches: true, reason: "tracked offgrid-ai server" };
+    return { matches: true, reason: "tracked minimal-ai server" };
   }
 
   const ids = await serverModelIds(profile.baseUrl);

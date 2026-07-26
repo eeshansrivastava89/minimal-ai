@@ -38,7 +38,7 @@ async function startLocalServer(profile) {
   await writeFile(scriptPath, buildStartScript(profile, command), "utf8");
   await chmod(scriptPath, 0o755);
 
-  await writeFile(rawLogPath, `[offgrid-ai] ${new Date().toISOString()}\n[binary] ${binary}\n[argv]\n${argv.join(" ")}\n`, "utf8");
+  await writeFile(rawLogPath, `[minimal-ai] ${new Date().toISOString()}\n[binary] ${binary}\n[argv]\n${argv.join(" ")}\n`, "utf8");
   await writeFile(friendlyLogPath, `[launch] starting ${backendFor(profile.backend).label} for ${profile.label}\n`, "utf8");
 
   const env = { ...process.env, ...extraEnv };
@@ -95,7 +95,7 @@ async function startManagedServer(profile, backend) {
     try {
       await startOmlxServer();
     } catch (err) {
-      if (err.message.includes("not installed")) throw new Error(`${backend.label} is not installed. Run offgrid-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`, { cause: err });
+      if (err.message.includes("not installed")) throw new Error(`${backend.label} is not installed. Run minimal-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`, { cause: err });
       throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });
     }
   }
@@ -189,7 +189,7 @@ async function writeManagedState(profile, backend) {
 export async function stopProfile(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
-    return { stopped: false, message: `${backend.label} is a managed service — offgrid-ai does not stop it.` };
+    return { stopped: false, message: `${backend.label} is a managed service — minimal-ai does not stop it.` };
   }
   const state = await readState(profile.id);
   if (!state?.pid) return { stopped: false, message: `No tracked pid for ${profile.id}.` };

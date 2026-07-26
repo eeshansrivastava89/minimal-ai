@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# offgrid-ai installer
+# minimal-ai installer
 #
 # Install:
-#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/minimal-ai/main/install.sh | bash
 #
 # Or review first:
-#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | less
+#   curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/minimal-ai/main/install.sh | less
 #
 # What this does:
 #   1. Checks for Node.js
 #   2. If not found, installs it via nvm (no sudo needed)
-#   3. Installs offgrid-ai globally via npm
+#   3. Installs minimal-ai globally via npm
 #   4. Ensures everything is on PATH (nvm + ~/.local/bin in .zprofile)
-#   5. Launches offgrid-ai (chained: onboarding → model picker in one flow)
+#   5. Launches minimal-ai (chained: onboarding → model picker in one flow)
 #
 # Flags:
 #   --dry-run    Show what would happen without making changes
@@ -71,10 +71,10 @@ fail()   { printf "${RED}✗${RESET} %s\n" "$*"; exit 1; }
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
-printf "\n${BOLD}${CYAN}offgrid-ai${RESET} ${DIM}— A privacy-first local AI runner${RESET}\n\n"
+printf "\n${BOLD}${CYAN}minimal-ai${RESET} ${DIM}— A privacy-first local AI runner${RESET}\n\n"
 
 printf "  ${DIM}Install:${RESET}\n"
-codeblock "curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/offgrid-ai/main/install.sh | bash"
+codeblock "curl -fsSL https://raw.githubusercontent.com/eeshansrivastava89/minimal-ai/main/install.sh | bash"
 printf "\n"
 
 # ── Detect OS ───────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ ARCH="$(uname -m)"
 case "$OS" in
   Darwin) OS="macos" ;;
   Linux)  OS="linux" ;;
-  *)      fail "Unsupported OS: $OS. offgrid-ai requires macOS or Linux." ;;
+  *)      fail "Unsupported OS: $OS. minimal-ai requires macOS or Linux." ;;
 esac
 case "$ARCH" in
   x86_64|amd64) ARCH="x64" ;;
@@ -105,14 +105,14 @@ if command -v node &>/dev/null; then
   if [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then
     ok "Node.js ${NODE_VERSION} found at $(command -v node)"
   else
-    warn "Node.js ${NODE_VERSION} found, but offgrid-ai requires Node >=20."
+    warn "Node.js ${NODE_VERSION} found, but minimal-ai requires Node >=20."
     echo "  Install Node.js 20+ via nvm: nvm install --lts"
     echo "  Or download from https://nodejs.org/"
     exit 1
   fi
 else
   echo ""
-  printf "${BOLD}offgrid-ai needs Node.js.${RESET}\n"
+  printf "${BOLD}minimal-ai needs Node.js.${RESET}\n"
   printf "It will be installed now via nvm (Node Version Manager).\n"
   printf "This installs to your home directory — no sudo needed.\n"
   echo ""
@@ -160,29 +160,29 @@ if ! $DRY_RUN; then
   [[ "$OSTYPE" != darwin* ]] && PROFILE_FILE="$HOME/.bashrc"
   if ! grep -qF '.local/bin' "$PROFILE_FILE" 2>/dev/null; then
     echo '' >> "$PROFILE_FILE"
-    echo '# Added by offgrid-ai installer (HuggingFace CLI)' >> "$PROFILE_FILE"
+    echo '# Added by minimal-ai installer (HuggingFace CLI)' >> "$PROFILE_FILE"
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$PROFILE_FILE"
   fi
 fi
 ok "~/.local/bin is on PATH"
 
-# ── Install offgrid-ai ──────────────────────────────────────────────────────
+# ── Install minimal-ai ──────────────────────────────────────────────────────
 
 section "INSTALL"
 
-info "Installing offgrid-ai via npm..."
-dry npm install -g offgrid-ai@latest --prefer-online
+info "Installing minimal-ai via npm..."
+dry npm install -g minimal-ai@latest --prefer-online
 
 # ── Dry-run early exit ──────────────────────────────────────────────────────
 
 if $DRY_RUN; then
-  ok "offgrid-ai installed (dry-run)"
+  ok "minimal-ai installed (dry-run)"
   echo ""
   printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
-  printf "${BOLD}${GREEN}  offgrid-ai is ready! (dry-run)${RESET}\n"
+  printf "${BOLD}${GREEN}  minimal-ai is ready! (dry-run)${RESET}\n"
   printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
   echo ""
-  echo "  Run: offgrid-ai"
+  echo "  Run: minimal-ai"
   echo ""
   exit 0
 fi
@@ -192,13 +192,13 @@ fi
 INSTALLED_VERSION=""
 NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
 NPM_BIN="${NPM_PREFIX%/}/bin"
-if [[ -x "$NPM_BIN/offgrid-ai" ]]; then
-  INSTALLED_VERSION="$(OFFGRID_NO_UPDATE_CHECK=1 "$NPM_BIN/offgrid-ai" version 2>/dev/null | sed -E 's/^offgrid-ai v//' || echo "")"
-  ok "offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed"
+if [[ -x "$NPM_BIN/minimal-ai" ]]; then
+  INSTALLED_VERSION="$(MINIMAL_NO_UPDATE_CHECK=1 "$NPM_BIN/minimal-ai" version 2>/dev/null | sed -E 's/^minimal-ai v//' || echo "")"
+  ok "minimal-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }installed"
 else
-  warn "offgrid-ai was installed but could not be found at $NPM_BIN"
-  echo "  Restart your terminal and run: offgrid-ai"
-  echo "  Or run: npx offgrid-ai"
+  warn "minimal-ai was installed but could not be found at $NPM_BIN"
+  echo "  Restart your terminal and run: minimal-ai"
+  echo "  Or run: npx minimal-ai"
 fi
 
 # ── Done ────────────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ fi
 section "READY"
 
 printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
-printf "${BOLD}${GREEN}  offgrid-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }is ready!${RESET}\n"
+printf "${BOLD}${GREEN}  minimal-ai ${INSTALLED_VERSION:+v${INSTALLED_VERSION} }is ready!${RESET}\n"
 printf "${BOLD}${GREEN}────────────────────────────────────────────────${RESET}\n"
 
 cat << 'EOF'
@@ -216,27 +216,27 @@ cat << 'EOF'
 
 EOF
 
-# ── Launch offgrid-ai ──────────────────────────────────────────────────────
+# ── Launch minimal-ai ──────────────────────────────────────────────────────
 #
-# Chain the flow: install.sh → offgrid-ai onboarding → model picker.
-# When nvm was used, node/npm/offgrid-ai are in nvm's bin directory, only on
+# Chain the flow: install.sh → minimal-ai onboarding → model picker.
+# When nvm was used, node/npm/minimal-ai are in nvm's bin directory, only on
 # PATH when nvm is sourced (.zprofile). We start a new login shell that
-# sources .zprofile and immediately runs offgrid-ai — one continuous flow.
-# When nvm wasn't needed (Node already present), offgrid-ai is already on
+# sources .zprofile and immediately runs minimal-ai — one continuous flow.
+# When nvm wasn't needed (Node already present), minimal-ai is already on
 # PATH, so just run it directly.
 
 if [[ -c /dev/tty ]]; then
-  printf "${BOLD}Launching offgrid-ai...${RESET}\n\n"
+  printf "${BOLD}Launching minimal-ai...${RESET}\n\n"
   if $NVM_INSTALLED; then
     SHELL="${SHELL:-/bin/zsh}"
-    # Login shell sources .zprofile (nvm → PATH), runs offgrid-ai,
+    # Login shell sources .zprofile (nvm → PATH), runs minimal-ai,
     # then execs into an interactive login shell so the user stays in
-    # a shell with everything on PATH after offgrid-ai exits.
+    # a shell with everything on PATH after minimal-ai exits.
     # trap ":" INT keeps the shell alive if the user presses Ctrl+C
-    # inside offgrid-ai (e.g. cancelling a download) — without it, SIGINT
+    # inside minimal-ai (e.g. cancelling a download) — without it, SIGINT
     # kills the shell too, skipping exec "$SHELL" -il and dropping PATH.
-    exec "$SHELL" -l -c 'trap ":" INT; offgrid-ai; exec "$SHELL" -il' < /dev/tty
+    exec "$SHELL" -l -c 'trap ":" INT; minimal-ai; exec "$SHELL" -il' < /dev/tty
   else
-    exec offgrid-ai < /dev/tty
+    exec minimal-ai < /dev/tty
   fi
 fi

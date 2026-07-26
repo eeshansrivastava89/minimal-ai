@@ -38,7 +38,7 @@ export async function statusCommand() {
     summaryRows.push(["Server up, model not loaded", status({ kind: "warning", message: String(managedUpNotLoaded.length) })]);
   }
 
-  summaryRows.push(["Next step", profiles.length > 0 ? "Run offgrid-ai to start chatting" : status({ kind: "warning", message: "Run offgrid-ai to set up a model" })]);
+  summaryRows.push(["Next step", profiles.length > 0 ? "Run minimal-ai to start chatting" : status({ kind: "warning", message: "Run minimal-ai to set up a model" })]);
 
   console.log(card({ title: "Status", body: renderList(summaryRows) }));
 
@@ -75,7 +75,7 @@ export async function statusCommand() {
   if (running.length === 0) return;
 
   console.log("");
-  console.log(card({ title: "Running", body: renderList([["Stop", "offgrid-ai stop"]]) }));
+  console.log(card({ title: "Running", body: renderList([["Stop", "minimal-ai stop"]]) }));
   for (const { profile, status: s } of running) {
     const backend = backendFor(profile.backend);
     console.log("");

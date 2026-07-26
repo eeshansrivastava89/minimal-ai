@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 
-const INSTALLER_PATH_MARKER = "# Added by offgrid-ai installer";
+const INSTALLER_PATH_MARKER = "# Added by minimal-ai installer";
 
 function defaultShellConfigFiles(home = homedir()) {
   return [`${home}/.zshrc`, `${home}/.zprofile`, `${home}/.bashrc`, `${home}/.bash_profile`];

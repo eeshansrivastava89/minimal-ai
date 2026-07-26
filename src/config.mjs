@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
@@ -9,12 +9,23 @@ import { resolvedPathAllowMissingSync as resolvedDataDirPath } from "./paths.mjs
 
 // ── Base directories ──────────────────────────────────────────────────────
 
-export const DATA_DIR = process.env.OFFGRID_DIR || join(homedir(), ".offgrid-ai");
+const LEGACY_DATA_DIR = join(homedir(), ".offgrid-ai");
+const DEFAULT_DATA_DIR = join(homedir(), ".minimal-ai");
+
+// One-time migration: existing installs keep their data under the new name.
+if (!process.env.MINIMAL_DIR && !existsSync(DEFAULT_DATA_DIR) && existsSync(LEGACY_DATA_DIR)) {
+  renameSync(LEGACY_DATA_DIR, DEFAULT_DATA_DIR);
+  console.log(`Moved your data from ${LEGACY_DATA_DIR} to ${DEFAULT_DATA_DIR}`);
+}
+
+export const DATA_DIR = process.env.MINIMAL_DIR || DEFAULT_DATA_DIR;
 export const PROFILE_DIR = join(DATA_DIR, "profiles");
 export const LOG_DIR = join(DATA_DIR, "logs");
 export const RUN_DIR = join(DATA_DIR, "run");
 export const RUNTIME_DIR = join(DATA_DIR, "runtime");
 export const MANAGED_LLAMA_SERVER = join(RUNTIME_DIR, "bin", "llama-server");
+// Marker name/content are the stable on-disk format — existing data dirs
+// (including migrated ~/.offgrid-ai installs) carry these exact values.
 export const DATA_DIR_MARKER = join(DATA_DIR, ".offgrid-ai-data");
 export const DATA_DIR_MARKER_CONTENT = "offgrid-ai-data-v1\n";
 
@@ -38,7 +49,7 @@ export { resolvedDataDirPath };
 
 // HuggingFace hub cache: $HF_HUB_CACHE, else $HF_HOME/hub, else
 // ~/.cache/huggingface/hub. This is where huggingface_hub stores
-// models--org--name/... and where offgrid-ai scans + downloads. Pointing at the
+// models--org--name/... and where minimal-ai scans + downloads. Pointing at the
 // hub (not the HF root) keeps the GGUF scanner and the downloader on the
 // same layout.
 export const HF_HUB_DIR = process.env.HF_HUB_CACHE
@@ -58,7 +69,7 @@ export const PI_CONFIG = join(homedir(), ".pi", "agent", "models.json");
 
 export async function ensureDirs() {
   if (!isSafeDataDirPath(DATA_DIR) || !isSafeDataDirPath(resolvedDataDirPath(DATA_DIR))) {
-    throw new Error(`Refusing unsafe OFFGRID_DIR: ${DATA_DIR}. Choose a dedicated absolute data directory.`);
+    throw new Error(`Refusing unsafe MINIMAL_DIR: ${DATA_DIR}. Choose a dedicated absolute data directory.`);
   }
   await mkdir(PROFILE_DIR, { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
@@ -165,7 +176,7 @@ export async function findLlamaServer() {
   const configured = config.binaryOverrides?.llamaServer ?? config.binaryOverrides?.["llama-server"];
   if (configured && existsSync(configured)) return configured;
 
-  // 3. offgrid-ai managed runtime
+  // 3. minimal-ai managed runtime
   if (existsSync(MANAGED_LLAMA_SERVER)) return MANAGED_LLAMA_SERVER;
 
   // 4. PATH

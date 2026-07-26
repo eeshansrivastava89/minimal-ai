@@ -1,10 +1,13 @@
 # Changelog
 
-All notable changes to offgrid-ai are documented here. The format is based on
+All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
-## [1.1.0] - 2026-07-19
+## [2.0.0] - Unreleased
+
+### Changed
+- **Renamed from offgrid-ai to minimal-ai.** The npm package, command, and GitHub repo are all `minimal-ai` now. Your data migrates automatically on first run (`~/.offgrid-ai` → `~/.minimal-ai`). To update: `npm install -g minimal-ai`. The `OFFGRID_*` environment variables are now `MINIMAL_*`.
 
 ### Added
 - Unified terminal UI on @eeshans/cli-kit. Every prompt runs on Clack now, so Escape cancels cleanly on every surface.

@@ -11,9 +11,9 @@ COPY . .
 
 # Default: run as brand new user
 ENV HOME=/tmp/test-home
-ENV OFFGRID_DIR=/tmp/test-offgrid
+ENV MINIMAL_DIR=/tmp/test-minimal
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN mkdir -p /tmp/test-home /tmp/test-offgrid
+RUN mkdir -p /tmp/test-home /tmp/test-minimal
 
-ENTRYPOINT ["node", "bin/offgrid-ai.mjs"]
+ENTRYPOINT ["node", "bin/minimal-ai.mjs"]

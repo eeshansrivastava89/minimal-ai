@@ -119,7 +119,7 @@ export async function installOmlx() {
   console.log(screenHeader({ title: "oMLX", subtitle: "local LLM server for Apple Silicon" }));
   console.log(card({
     title: "About",
-    body: "Source: https://github.com/jundot/omlx (by jundot)\nRuns MLX models with continuous batching and tiered KV caching.\nAfter installation, the oMLX app will open — you can manage the server from its menubar icon. Once the server is running, close the app window and come back to offgrid-ai to use your model.",
+    body: "Source: https://github.com/jundot/omlx (by jundot)\nRuns MLX models with continuous batching and tiered KV caching.\nAfter installation, the oMLX app will open — you can manage the server from its menubar icon. Once the server is running, close the app window and come back to minimal-ai to use your model.",
   }));
 
   let release;
@@ -145,7 +145,7 @@ export async function installOmlx() {
     return false;
   }
 
-  const tmpDir = await mkdtemp(join(tmpdir(), "offgrid-omlx-"));
+  const tmpDir = await mkdtemp(join(tmpdir(), "minimal-omlx-"));
   const tmpDmg = join(tmpDir, dmg.name);
   console.log(status({ kind: "info", message: `Downloading oMLX ${release.tag_name} (${formatBytes(dmg.size)})...` }));
   console.log(theme.subtle("  This is a large download — it may take a few minutes.\n"));
@@ -206,7 +206,7 @@ export async function installOmlx() {
   const appCli = "/Applications/oMLX.app/Contents/MacOS/omlx-cli";
   if (!existsSync(appCli)) {
     console.log(status({ kind: "warning", message: "oMLX app installed to /Applications." }));
-    console.log(theme.subtle("Open oMLX from Applications once to set up the CLI, then run offgrid-ai again."));
+    console.log(theme.subtle("Open oMLX from Applications once to set up the CLI, then run minimal-ai again."));
     return false;
   }
 
@@ -232,7 +232,7 @@ export async function installOmlx() {
   const version = await installedOmlxVersion();
   console.log(status({ kind: "success", message: `oMLX ${version ? `v${version} ` : ""}installed` }));
   console.log(theme.subtle("  The oMLX app is running in your menubar — you can close the app window."));
-  console.log(theme.subtle("  Come back to offgrid-ai to download and run MLX models."));
+  console.log(theme.subtle("  Come back to minimal-ai to download and run MLX models."));
 
   return true;
 }

@@ -1,6 +1,6 @@
 // ── Single path for parsing and formatting model names ─────────────────────
 //
-// Every model display name in offgrid-ai goes through parseModelName().
+// Every model display name in minimal-ai goes through parseModelName().
 // No other function should format, title-case, or dissect a model name.
 //
 // The returned `id` is always the raw identifier (untouched) and is used for

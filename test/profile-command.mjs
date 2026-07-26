@@ -4,8 +4,8 @@ import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const dataDir = await mkdtemp(join(tmpdir(), "offgrid-profile-command-"));
-process.env.OFFGRID_DIR = dataDir;
+const dataDir = await mkdtemp(join(tmpdir(), "minimal-profile-command-"));
+process.env.MINIMAL_DIR = dataDir;
 
 const { piApiModelId } = await import("../src/harness-pi.mjs");
 
