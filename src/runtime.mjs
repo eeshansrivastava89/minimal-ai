@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { MANAGED_LLAMA_SERVER, RUNTIME_DIR, findLlamaServer } from "./config.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { status, theme } from "./ui.mjs";
@@ -47,7 +47,9 @@ export async function installLlamaRelease(release, { fetchImpl = globalThis.fetc
 
     await mkdir(binDir, { recursive: true });
     await unlink(MANAGED_LLAMA_SERVER).catch(() => {});
-    await symlink(llamaServer, MANAGED_LLAMA_SERVER);
+    // Relative target: an absolute link silently breaks when the data dir
+    // moves or is renamed (findLlamaServer then falls through to PATH/brew).
+    await symlink(relative(binDir, llamaServer), MANAGED_LLAMA_SERVER);
 
     await mkdir(join(RUNTIME_DIR, "llama.cpp"), { recursive: true });
     await writeFile(VERSION_PATH, JSON.stringify({

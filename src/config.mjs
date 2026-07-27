@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
@@ -167,6 +167,11 @@ export async function findLlamaServer() {
 
   // 3. minimal-ai managed runtime
   if (existsSync(MANAGED_LLAMA_SERVER)) return MANAGED_LLAMA_SERVER;
+  // A dangling managed link (e.g. data dir was moved/renamed) must not
+  // silently fall through to PATH/brew — say so before continuing.
+  if (isDanglingSymlink(MANAGED_LLAMA_SERVER)) {
+    console.warn(theme.subtle(`Warning: managed llama-server link is broken (${MANAGED_LLAMA_SERVER}). Run minimal-ai to reinstall the runtime; falling back to PATH/Homebrew for now.`));
+  }
 
   // 4. PATH
   try {
@@ -185,6 +190,15 @@ export async function findLlamaServer() {
 
   // No llama-server found — caller must present actionable error or onboarding.
   return null;
+}
+
+export function isDanglingSymlink(path) {
+  try {
+    // lstat sees the link itself even when its target is gone.
+    return lstatSync(path).isSymbolicLink() && !existsSync(path);
+  } catch {
+    return false;
+  }
 }
 
 export async function hasHomebrew() {
