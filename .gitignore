@@ -9,3 +9,4 @@ reports/
 report/
 .DS_Store
 __pycache__/
+.pi-subagents/
