@@ -78,8 +78,13 @@ function estimateKvBytes(input) {
 
   if (Array.isArray(input.headKv) || Array.isArray(input.keyLength) || Array.isArray(input.valueLength) || input.slidingWindowPattern?.length) {
     let total = 0;
+    let counted = 0;
     for (let i = 0; i < layers; i++) {
       const headKv = valueForLayer(input.headKv, i);
+      // gemma4 GGUFs store attention arrays shorter than block_count (e.g.
+      // 32 attention layers in 48 blocks) — layers past the array have no
+      // KV cache. Skip them like layers with headKv = 0.
+      if (headKv == null) continue;
       let keyLength = valueForLayer(input.keyLength, i);
       let valueLength = valueForLayer(input.valueLength, i);
       let layerCtx = ctxSize;
@@ -88,13 +93,17 @@ function estimateKvBytes(input) {
         keyLength = input.keyLengthSwa ?? keyLength;
         valueLength = input.valueLengthSwa ?? valueLength;
       }
-      if (headKv == null || keyLength == null || valueLength == null) {
+      if (keyLength == null || valueLength == null) {
         return { bytes: 0, note: "KV estimate unavailable: incomplete layer-specific GGUF metadata.", mode: "unknown" };
       }
       // Layers with headKv = 0 have no KV cache — skip them
       if (headKv && keyLength && valueLength) {
         total += layerCtx * parallel * headKv * ((keyLength * bytesK) + (valueLength * bytesV));
+        counted++;
       }
+    }
+    if (counted === 0) {
+      return { bytes: 0, note: "KV estimate unavailable: incomplete layer-specific GGUF metadata.", mode: "unknown" };
     }
     return { bytes: total, note: "", mode: input.slidingWindowPattern?.length ? "layered-swa" : "layered" };
   }

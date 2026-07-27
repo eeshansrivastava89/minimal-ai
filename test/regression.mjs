@@ -13,9 +13,44 @@ import { detectCapabilities } from "../src/autodetect.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-flags.mjs";
+import { computeMemoryTotal } from "../src/estimate.mjs";
 import { parseOptions, renderList } from "../src/ui.mjs";
 
 describe("regressions", () => {
+  it("KV estimate skips layers past gemma4's short attention arrays", () => {
+    // gemma4 GGUFs: block_count 48 but only 32 attention layers carry
+    // head_count_kv / sliding_window_pattern entries. Layers past the array
+    // have no KV cache — they must be skipped, not zero the whole estimate.
+    const headKv = Array.from({ length: 32 }, (_, i) => (i % 6 === 5 ? 1 : 8));
+    const slidingWindowPattern = Array.from({ length: 32 }, (_, i) => i % 6 !== 5);
+    const prepared = {
+      modelBytes: 7 * 1024 ** 3,
+      mmprojBytes: 0,
+      draftBytes: 0,
+      overheadBytes: 256 * 1024 ** 2,
+      kvParams: {
+        layers: 48,
+        headKv,
+        keyLength: 512,
+        valueLength: 512,
+        slidingWindow: 1024,
+        slidingWindowPattern,
+        keyLengthSwa: 256,
+        valueLengthSwa: 256,
+      },
+    };
+    const small = computeMemoryTotal(prepared, { ctxSize: 4096, cacheTypeK: "bf16", cacheTypeV: "bf16", parallel: 1 });
+    const large = computeMemoryTotal(prepared, { ctxSize: 131072, cacheTypeK: "bf16", cacheTypeV: "bf16", parallel: 1 });
+    assert.ok(small.kvBytes > 0, "small ctx should produce a nonzero KV estimate");
+    assert.ok(large.kvBytes > small.kvBytes, "KV must grow with context (only global-attention layers grow past SWA)");
+    // Exact check, 4k bf16: 27 SWA layers: 1024 ctx * 8 kv-heads * (256*2 + 256*2)
+    //                      + 5 global layers: 4096 ctx * 1 kv-head * (512*2 + 512*2)
+    const expected = 27 * (1024 * 8 * (512 + 512)) + 5 * (4096 * 1 * (1024 + 1024));
+    assert.equal(small.kvBytes, expected);
+    const quant = computeMemoryTotal(prepared, { ctxSize: 4096, cacheTypeK: "q4_0", cacheTypeV: "q4_0", parallel: 1 });
+    assert.ok(quant.kvBytes < small.kvBytes, "KV must shrink with quantized cache types");
+  });
+
   it("parseOptions handles short booleans and --key=value", () => {
     assert.deepEqual(parseOptions(["uninstall", "-f", "--name=value", "--", "--literal"]), {
       positional: ["uninstall", "--literal"],
