@@ -4,6 +4,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.2] - 2026-07-27
+
+### Fixed
+- The managed `llama-server` symlink is now created with a relative target, so it survives moving or renaming the data directory. Previously, moving `~/.minimal-ai` left a dangling link and minimal-ai silently fell back to an older `llama-server` from PATH/Homebrew while reporting itself up to date. A dangling managed link now prints a warning before falling back.
+- Deleting an oMLX model no longer offers a guessed path (`~/.omlx/models/<id>`) when the model directory can't be discovered. The delete flow now says the directory wasn't found and points you at manual deletion instead.
+
 ## [2.0.1] - 2026-07-26
 
 ### Changed
