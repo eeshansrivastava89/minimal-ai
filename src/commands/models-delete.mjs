@@ -17,23 +17,16 @@ import { hfRepoFromPath } from "../huggingface.mjs";
 
 const OMLX_MODELS_ROOT = join(homedir(), ".omlx", "models");
 
-function fallbackOmlxModelDir(modelId) {
-  const raw = String(modelId ?? "");
-  if (!raw || isAbsolute(raw) || raw.startsWith("/") || raw.startsWith("\\")) return null;
-  const parts = raw.replace(/--/g, "/").split("/").filter(Boolean);
-  if (parts.length === 0 || parts.some((part) => part === "." || part === "..")) return null;
-  return join(OMLX_MODELS_ROOT, ...parts);
-}
-
 export async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     if (backend.type === "managed-server") {
       const modelId = effectiveModelId(item.profile);
       if (backend.id === "ollama") return { kind: "ollama", modelId };
+      // Never guess a delete path — discovery failure means we don't know
+      // where the model lives; report unknown and let the user delete manually.
       const dir = await findOmlxModelDir(modelId);
-      const fallback = fallbackOmlxModelDir(modelId);
-      return dir ? { kind: "mlx", dir, modelId } : fallback ? { kind: "mlx", dir: fallback, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
+      return dir ? { kind: "mlx", dir, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
     }
     const modelPath = item.profile.modelPath;
     if (!modelPath) return { kind: "unknown" };
@@ -51,8 +44,7 @@ export async function modelLocationForItem(item) {
     if (!modelId) return { kind: "unknown" };
     if (item.backendId === "ollama") return { kind: "ollama", modelId };
     const dir = await findOmlxModelDir(modelId);
-    const fallback = fallbackOmlxModelDir(modelId);
-    return dir ? { kind: "mlx", dir, modelId } : fallback ? { kind: "mlx", dir: fallback, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
+    return dir ? { kind: "mlx", dir, modelId } : { kind: "unknown", reason: "oMLX model directory was not discovered" };
   }
   return { kind: "unknown" };
 }
