@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.3] - 2026-07-27
+
+### Fixed
+- The context & KV cache heatmap showed the same value in every cell for Gemma 4 models. Gemma 4 GGUFs store fewer attention layers than `block_count` (e.g. 32 attention layers in 48 blocks); the estimator treated the layers without attention metadata as an error and zeroed the whole KV estimate. Those layers have no KV cache and are now skipped, so the heatmap shows a real memory gradient again.
+
 ## [2.0.2] - 2026-07-27
 
 ### Fixed
