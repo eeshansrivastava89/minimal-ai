@@ -4,6 +4,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.4] - 2026-07-28
+
+### Changed
+- Cards no longer render body text in magenta. The accent color now applies to card borders and titles only, so card contents use your terminal's default text color. (Via @eeshans/cli-kit 0.1.1.)
+- The "Update available" card and the runtime-updates header are now yellow, so cards that ask for an action stand out from informational ones.
+
 ## [2.0.3] - 2026-07-27
 
 ### Fixed

@@ -19,7 +19,7 @@ async function offerUpdate() {
   if (!update) return false;
 
   console.log();
-  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: minimal-ai update`));
+  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: minimal-ai update`, { tone: "warning" }));
 
   const remoteEntries = await fetchRemoteChangelog(`v${update.latest}`);
   const notes = entriesBetween(remoteEntries, update.current, update.latest);
@@ -45,7 +45,7 @@ async function offerRuntimeUpdates() {
 
   const rows = updates.map((u) => [u.kind, `${u.latest} available (you have ${u.installed})`]);
   console.log();
-  console.log(section("Runtime updates available"));
+  console.log(theme.bold(theme.warning(section("Runtime updates available"))));
   console.log(renderList(rows));
 
   const shouldUpdate = await promptConfirm({ message: "Update runtimes now?", initialValue: true });
