@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.5] - 2026-08-08
+
+### Removed
+- Removed the unreleased benchmark feature (the `enable_benchmarking` dev flag and the model-picker Benchmark action). It depended on the external, unpinned `llama-benchy` Python tool, which we don't manage. The flag key in existing `config.json` files is now ignored and can be deleted.
+
 ## [2.0.4] - 2026-07-28
 
 ### Changed
