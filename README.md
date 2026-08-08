@@ -12,7 +12,7 @@
 
 ## What is minimal-ai?
 
-minimal-ai is a simple utility that stitches together local LLM inference backends, with an agentic harness, and simplifies the complexity of configuring models to run on your personal hardware. 
+minimal-ai is a simple utility that stitches together local LLM inference backends (llama.cpp, oMLX, ollama), with one of the best coding harnesses (Pi), and simplifies the complexity of configuring models to run on your personal hardware. 
 
 I built this as a utility for myself since I like exploring local models on my personal laptop (M4 Pro Mac 48 GB). I haven't tested this on Linux or Windows, or for NVIDIA GPUs. Open for contributions. 
 
@@ -25,13 +25,11 @@ Recommended workflow:
 
 - **Download models** from HuggingFace with a quant picker and RAM fit indicators
 - **Auto-detects** models from LM Studio, oMLX, Ollama, and HuggingFace cache
-- **Guided setup** — every setting gets a plain-language hint as you configure, with memory and context tradeoffs shown before you save
+- **Guided model config** — every setting gets a plain-language hint as you configure, with memory and context tradeoffs shown before you save
 - **Model management** — delete models from disk, remove configurations, reconfigure settings
 - **Auto-detects MTP** (multi-token prediction) and **QAT** (quantization-aware training) models, applies the correct flags
 - **Three backends**: llama.cpp (GGUF), oMLX (MLX on Apple Silicon), Ollama (GGUF + MLX)
 - **Start / stop servers** automatically for chat sessions
-- **oMLX integration** — auto-start, MTP enable via admin API, restart after download/deletion
-- **Ollama integration** — respects `OLLAMA_HOST` env var, auto-start server, model scanning
 
 ## Quick start
 
