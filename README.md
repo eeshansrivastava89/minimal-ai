@@ -55,21 +55,16 @@ The curl installer is recommended for first-time setup because it also verifies 
 
 The first time you run minimal-ai, it looks for models already on your machine. If it doesn't find any, you can download one directly from HuggingFace — pick "↓ GGUF from HuggingFace" and enter a repo ID (e.g. `unsloth/Qwen3.5-4B-GGUF`).
 
-<img width="808" height="274" alt="image" src="https://github.com/user-attachments/assets/6e1583ab-65db-423c-b0eb-b627586fbf86" />
+<img width="966" height="543" alt="image" src="https://github.com/user-attachments/assets/a96396e4-f1a4-481a-a32c-fdaa82c03e67" />
+
 
 
 ### 3. Start chatting
-
-```bash
-minimal-ai
-```
-
-<img width="786" height="281" alt="image" src="https://github.com/user-attachments/assets/03cb1e06-d461-4bdf-ad82-f0692e5ba5c6" />
-
-
 Pick a model from the list and press Enter. minimal-ai configures the rest and opens the Pi coding agent.
 
-<img width="786" height="499" alt="image" src="https://github.com/user-attachments/assets/223e1455-c69c-4405-a91c-5bac1b9fc9bd" />
+<img width="641" height="235" alt="image" src="https://github.com/user-attachments/assets/9d148463-1dd8-4a9e-a982-0bbdfa17671d" />
+
+<img width="1469" height="909" alt="image" src="https://github.com/user-attachments/assets/33d41c74-fcf9-4ad4-83a8-115d92ca8295" />
 
 
 ## Everyday commands
