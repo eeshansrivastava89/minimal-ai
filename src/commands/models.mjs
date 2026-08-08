@@ -1,4 +1,4 @@
-import { ensureDirs, benchmarkingEnabled } from "../config.mjs";
+import { ensureDirs } from "../config.mjs";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
@@ -13,7 +13,6 @@ import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, d
 import { runProfile } from "./run.mjs";
 import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
-import { resolveBenchyModel, benchmarkItem } from "./models-benchmark.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { runtimeStatusFlow, discoveryPathsFlow } from "./models-settings.mjs";
 
@@ -192,11 +191,10 @@ async function showModelPicker(catalog) {
   const item = allItems.find((candidate) => itemKey(candidate) === selected);
   if (!item) return;
 
-  const benchOn = await benchmarkingEnabled();
-  const actions = actionsForItem(item, { runningProfilesNow, benchOn });
+  const actions = actionsForItem(item, { runningProfilesNow });
   const action = await promptChoice({ message: item.label, choices: actions });
   if (!action) return;
-  await performAction(action, item, { benchOn });
+  await performAction(action, item);
   console.log("");
 }
 
@@ -211,7 +209,7 @@ function formatActions(rawActions) {
   });
 }
 
-function actionsForItem(item, { runningProfilesNow = [], benchOn = false } = {}) {
+function actionsForItem(item, { runningProfilesNow = [] } = {}) {
   const missing = item.type === "profile" && item.missing;
   if (item.type === "profile") {
     const available = [
@@ -219,8 +217,6 @@ function actionsForItem(item, { runningProfilesNow = [], benchOn = false } = {})
     ];
     if (!missing) {
       const profile = item.profile;
-      const isManaged = backendFor(profile.backend).type === "managed-server";
-      const benchySupported = benchOn && Boolean(resolveBenchyModel(profile, isManaged));
       const isRunning = runningProfilesNow.some((p) => p.id === profile.id);
       const serverActions = isRunning
         ? [
@@ -234,11 +230,6 @@ function actionsForItem(item, { runningProfilesNow = [], benchOn = false } = {})
         { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
         ...serverActions,
       );
-      if (benchOn) {
-        available.push(
-          { value: "benchmark", name: "Benchmark", desc: benchySupported ? "Quick · Standard · Thorough" : "Needs HF model for tokenizer", dimmed: !benchySupported, dimmedDesc: "Needs HF model for tokenizer" },
-        );
-      }
       available.push(
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
@@ -267,23 +258,13 @@ function actionsForItem(item, { runningProfilesNow = [], benchOn = false } = {})
   ]);
 }
 
-async function performAction(action, item, { benchOn = false } = {}) {
+async function performAction(action, item) {
   const missing = item.type === "profile" && item.missing;
   if (missing && ["run", "reconfigure"].includes(action)) {
     const backend = item.type === "profile" ? backendFor(item.profile.backend) : null;
     const reason = backend?.type === "managed-server" ? "model is no longer available on the server" : "model file is no longer on disk";
     console.log(status({ kind: "error", message: `This model's ${reason}. Remove the setup or restore the model.` }));
     return;
-  }
-  if (action === "benchmark" && item.type === "profile") {
-    if (!benchOn) return;
-    const profile = item.profile;
-    const isManaged = backendFor(profile.backend).type === "managed-server";
-    if (!resolveBenchyModel(profile, isManaged)) {
-      console.log(status({ kind: "warning", message: "Benchmarking is not supported for this model." }));
-      console.log(theme.subtle("llama-benchy needs a HuggingFace model name for the tokenizer. Only models from HuggingFace can be benchmarked."));
-      return;
-    }
   }
   if (action === "inspect") {
     if (item.type === "profile") return await printProfileDetails(await readProfile(item.profile.id));
@@ -293,7 +274,6 @@ async function performAction(action, item, { benchOn = false } = {}) {
   if (action === "run") return await runItem(item);
   if (action === "server") return await startServerItem(item);
   if (action === "stop") return await stopServerItem(item);
-  if (action === "benchmark") return await benchmarkItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(item);
   if (action === "remove_config" && item.type === "profile") return await removeProfileInteractive(item.profile.id);
   if (action === "delete_model") return await deleteModelFromSource(item);

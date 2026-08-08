@@ -75,7 +75,6 @@ const CONFIG_PATH = join(DATA_DIR, "config.json");
 const DEFAULT_CONFIG = {
   modelScanDirs: [],
   binaryOverrides: {},
-  enable_benchmarking: false,
   lastSeenVersion: null,
 };
 
@@ -91,7 +90,6 @@ export async function loadConfig() {
     if (config.binaryOverrides != null && typeof config.binaryOverrides !== "object") {
       config.binaryOverrides = {};
     }
-    if (typeof config.enable_benchmarking !== "boolean") config.enable_benchmarking = DEFAULT_CONFIG.enable_benchmarking;
     return config;
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -112,19 +110,6 @@ export async function loadConfig() {
 
 export async function saveConfig(config) {
   await writeJson(CONFIG_PATH, config);
-}
-
-// ── Feature flags ──────────────────────────────────────────────────────────
-
-/**
- * Dev flag for the unreleased benchmark feature.
- * Off by default — enable via config.json ("enable_benchmarking": true).
- * Flags are dev scaffolding: remove this once the feature ships.
- * @param {object} [config] - pre-loaded config (avoids redundant read)
- */
-export async function benchmarkingEnabled(config) {
-  const cfg = config ?? await loadConfig();
-  return cfg.enable_benchmarking === true;
 }
 
 // ── Model scan directories ────────────────────────────────────────────────
