@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.6] - 2026-08-14
+
+### Fixed
+- Memory estimates for hybrid linear-attention GGUF models (Qwen3.5/Qwen3.8 dense, e.g. Qwen3.8-27B) no longer charge every layer as full attention. Only the periodic full-attention layers (`full_attention_interval`) carry a KV cache; the Gated DeltaNet layers' small fixed recurrent state is now counted as fixed overhead instead. Previously, context/KV totals were inflated ~4x and grew wrongly with context, making usable context windows look impossible on machines where they fit.
+
 ## [2.0.5] - 2026-08-08
 
 ### Removed
