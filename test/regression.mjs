@@ -51,6 +51,48 @@ describe("regressions", () => {
     assert.ok(quant.kvBytes < small.kvBytes, "KV must shrink with quantized cache types");
   });
 
+  it("KV estimate counts only full-attention layers on qwen35 hybrid models", async () => {
+    // qwen35 GGUFs (Qwen3.5/3.8 dense hybrids) report scalar attention dims
+    // for all blocks plus full_attention_interval: only every interval-th
+    // layer has a KV cache; the rest are Gated DeltaNet layers with a small
+    // fixed recurrent state. Mirrors unsloth/Qwen3.8-27B-GGUF metadata.
+    const dir = await mkdtemp(join(tmpdir(), "minimal-qwen35-"));
+    const file = join(dir, "Qwen3.8-27B-IQ4_XS.gguf");
+    await writeFile(file, buildGguf({
+      "general.architecture": "qwen35",
+      "qwen35.block_count": 65,
+      "qwen35.context_length": 262144,
+      "qwen35.embedding_length": 5120,
+      "qwen35.feed_forward_length": 17408,
+      "qwen35.attention.head_count": 24,
+      "qwen35.attention.head_count_kv": 4,
+      "qwen35.attention.key_length": 256,
+      "qwen35.attention.value_length": 256,
+      "qwen35.full_attention_interval": 4,
+      "qwen35.ssm.state_size": 128,
+      "qwen35.ssm.inner_size": 6144,
+      "qwen35.ssm.conv_kernel": 4,
+      "qwen35.ssm.time_step_rank": 48,
+      "qwen35.nextn_predict_layers": 1,
+    }));
+
+    const { prepareMemoryEstimate } = await import("../src/estimate.mjs");
+    const prepared = prepareMemoryEstimate(file, null, null);
+    assert.equal(prepared.kvParams.layers, 16, "only every 4th of 65 blocks carries KV cache");
+
+    const flags = { ctxSize: 262144, cacheTypeK: "bf16", cacheTypeV: "bf16", parallel: 1 };
+    const est = computeMemoryTotal(prepared, flags);
+    // 16 layers * 262144 ctx * 4 kv-heads * (256*2 + 256*2) = 16 GiB, not 65x that.
+    assert.equal(est.kvBytes, 16 * 1024 ** 3);
+    // Fixed recurrent state is folded into overhead: 49 linear layers *
+    // (128*6144 f32 state + 3*6144 f32 conv) on top of the size-scaled base.
+    const stateBytes = 49 * (128 * 6144 * 4 + 3 * 6144 * 4);
+    assert.equal(est.overheadBytes, Math.max(256 * 1024 ** 2, Math.round(prepared.modelBytes * 0.05)) + stateBytes);
+
+    const q4 = computeMemoryTotal(prepared, { ...flags, cacheTypeK: "q4_0", cacheTypeV: "q4_0" });
+    assert.ok(q4.kvBytes < est.kvBytes, "quantized cache types still shrink hybrid KV");
+  });
+
   it("parseOptions handles short booleans and --key=value", () => {
     assert.deepEqual(parseOptions(["uninstall", "-f", "--name=value", "--", "--literal"]), {
       positional: ["uninstall", "--literal"],
@@ -325,6 +367,37 @@ describe("regressions", () => {
     );
   });
 });
+
+/** Write a minimal valid GGUF file (header + metadata only) for reader tests. */
+function buildGguf(meta) {
+  const entries = Object.entries(meta);
+  const parts = [];
+  const header = Buffer.alloc(24);
+  header.write("GGUF", 0, "utf8");
+  header.writeUInt32LE(3, 4); // version
+  header.writeBigUInt64LE(0n, 8); // tensor count
+  header.writeBigUInt64LE(BigInt(entries.length), 16);
+  parts.push(header);
+  for (const [key, value] of entries) {
+    const keyBuf = Buffer.alloc(8 + Buffer.byteLength(key));
+    keyBuf.writeBigUInt64LE(BigInt(Buffer.byteLength(key)), 0);
+    keyBuf.write(key, 8, "utf8");
+    parts.push(keyBuf);
+    if (typeof value === "string") {
+      const valBuf = Buffer.alloc(4 + 8 + Buffer.byteLength(value));
+      valBuf.writeUInt32LE(8, 0); // string type
+      valBuf.writeBigUInt64LE(BigInt(Buffer.byteLength(value)), 4);
+      valBuf.write(value, 12, "utf8");
+      parts.push(valBuf);
+    } else {
+      const valBuf = Buffer.alloc(4 + 4);
+      valBuf.writeUInt32LE(4, 0); // uint32 type
+      valBuf.writeUInt32LE(value, 4);
+      parts.push(valBuf);
+    }
+  }
+  return Buffer.concat(parts);
+}
 
 function managedProfile(backend, modelId, baseUrl) {
   return {

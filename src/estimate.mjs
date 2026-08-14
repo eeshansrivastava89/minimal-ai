@@ -26,16 +26,37 @@ export function prepareMemoryEstimate(modelPath, mmprojPath, draftModelPath) {
   const slidingWindowPattern = booleanArrayMeta(metadata, prefix && `${prefix}.attention.sliding_window_pattern`);
   const keyLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.key_length_swa`);
   const valueLengthSwa = numberMeta(metadata, prefix && `${prefix}.attention.value_length_swa`);
+  const fullAttentionInterval = numberMeta(metadata, prefix && `${prefix}.full_attention_interval`);
+  const ssmStateSize = numberMeta(metadata, prefix && `${prefix}.ssm.state_size`);
+  const ssmInnerSize = numberMeta(metadata, prefix && `${prefix}.ssm.inner_size`);
+  const ssmConvKernel = numberMeta(metadata, prefix && `${prefix}.ssm.conv_kernel`);
+  // Hybrid linear-attention models (e.g. qwen35: Gated DeltaNet layers with a
+  // periodic full-attention layer) only allocate KV cache on the full-attention
+  // layers; the rest keep a small fixed recurrent state that does not grow with
+  // context. Metadata reports scalar attention dims for the full-attention
+  // layers plus full_attention_interval marking their period, so count only
+  // every interval-th layer and fold the constant recurrent state into the
+  // fixed overhead bucket instead of the KV estimate.
+  let kvLayers = layers;
+  let hybridStateBytes = 0;
+  if (layers && fullAttentionInterval > 0 && fullAttentionInterval <= layers && !Array.isArray(headKv)) {
+    kvLayers = Math.floor(layers / fullAttentionInterval);
+    if (ssmStateSize && ssmInnerSize) {
+      const recurrent = ssmStateSize * ssmInnerSize * 4; // f32 recurrent state
+      const conv = ssmConvKernel ? (ssmConvKernel - 1) * ssmInnerSize * 4 : 0;
+      hybridStateBytes = (layers - kvLayers) * (recurrent + conv);
+    }
+  }
   // Scale overhead with model size: llama.cpp's compute buffers, graph,
   // and runtime overhead grow with model dimensions. 5% of model size,
   // with a floor of 256MB (small models still have fixed runtime costs).
-  const overheadBytes = Math.max(256 * 1024 ** 2, Math.round(modelBytes * 0.05));
+  const overheadBytes = Math.max(256 * 1024 ** 2, Math.round(modelBytes * 0.05)) + hybridStateBytes;
   return {
     modelBytes,
     mmprojBytes,
     draftBytes,
     overheadBytes,
-    kvParams: { layers, headKv, keyLength, valueLength, slidingWindow, slidingWindowPattern, keyLengthSwa, valueLengthSwa },
+    kvParams: { layers: kvLayers, headKv, keyLength, valueLength, slidingWindow, slidingWindowPattern, keyLengthSwa, valueLengthSwa },
   };
 }
 
