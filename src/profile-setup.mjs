@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
-import { availableRamBytes } from "./hardware.mjs";
+import { availableRamBytes, installedRamGB } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
 import { formatBytes, formatCtxLabel, renderList, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
@@ -37,7 +37,7 @@ async function ask(promise) {
   return value;
 }
 
-function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) {
+function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, availableRam) {
   const presets = [...CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx)];
   const currentCtx = baseFlags.ctxSize;
   if (!presets.includes(currentCtx) && currentCtx >= 1024 && currentCtx <= maxCtx) {
@@ -75,7 +75,7 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) 
 
   const lines = [];
   const fixedBytes = prepared.modelBytes + prepared.mmprojBytes + prepared.draftBytes + prepared.overheadBytes;
-  lines.push(theme.subtle(`System RAM: ${formatBytes(systemRamBytes)}  ·  Fixed (model+overhead): ${formatBytes(fixedBytes)}  ·  Parallel: ${parallel} slot(s)`));
+  lines.push(theme.subtle(`RAM: ${installedRamGB()} GB installed · ${formatBytes(availableRam)} available now  ·  Fixed (model+overhead): ${formatBytes(fixedBytes)}  ·  Parallel: ${parallel} slot(s)`));
   lines.push(theme.subtle(`Legend: ${status({ kind: "success", message: "fits" })} · ${status({ kind: "warning", message: "tight" })} · ${status({ kind: "error", message: "won't fit" })}`));
   lines.push("");
   lines.push(theme.bold(padEndVisible("Context", col0Width)) + cacheLabels.map((label, i) => theme.subtle(padEndVisible(label, colWidths[i]))).join(""));
@@ -84,7 +84,7 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, systemRamBytes) 
     const ctxCell = (row.ctx === currentCtx ? theme.brand : theme.subtle)(padEndVisible(label, col0Width));
     const memCells = row.cells.map((est, colIdx) => {
       if (!est.totalBytes) return theme.subtle(padEndVisible("—", colWidths[colIdx]));
-      const color = fitColor(est.totalBytes, systemRamBytes);
+      const color = fitColor(est.totalBytes, availableRam);
       return padEndVisible(color(`~${formatBytes(est.totalBytes)}`), colWidths[colIdx]);
     });
     lines.push(ctxCell + memCells.join(""));
@@ -173,13 +173,13 @@ async function configureLocalProfileInner(profile) {
   configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
   const maxCtx = caps.metaCtx ?? caps.ctxSize;
-  const systemRamBytes = availableRamBytes();
+  const availableRam = availableRamBytes();
   const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, drafterPath);
   const hasKvParams = Boolean(prepared.kvParams.layers);
 
   if (hasKvParams) {
     console.log("");
-    console.log(card({ title: "Context & KV cache", body: renderContextCacheHeatmap(prepared, configured.flags, maxCtx, systemRamBytes) }));
+    console.log(card({ title: "Context & KV cache", body: renderContextCacheHeatmap(prepared, configured.flags, maxCtx, availableRam) }));
 
     const ctxPresets = CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx);
     const currentCtx = configured.flags.ctxSize;
@@ -202,7 +202,7 @@ async function configureLocalProfileInner(profile) {
       const flags = { ...configured.flags, ctxSize, cacheTypeK: c.value, cacheTypeV: c.value };
       try {
         const est = computeMemoryTotal(prepared, flags);
-        const color = fitColor(est.totalBytes, systemRamBytes);
+        const color = fitColor(est.totalBytes, availableRam);
         return {
           value: c.value,
           label: `${c.label.padEnd(6)} ${color(`~${formatBytes(est.totalBytes)}`)}`,
