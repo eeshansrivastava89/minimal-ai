@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { checkForUpdate, currentPackageVersion, detectInvocation, updateCommand, installedGlobalVersion, forceReinstall } from "./updates.mjs";
 import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./changelog.mjs";
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
-import { checkOmlxUpdate, installOmlx } from "./omlx-runtime.mjs";
-import { checkOllamaUpdate, updateOllama } from "./ollama-runtime.mjs";
+import { checkOmlxUpdate } from "./omlx-runtime.mjs";
+import { checkOllamaUpdate } from "./ollama-runtime.mjs";
 import { createCli, runCli, appHeader, section, infoCard, renderList, status, formatError, theme, promptConfirm } from "./ui.mjs";
 
 import { mainFlow } from "./commands/main.mjs";
@@ -30,36 +30,39 @@ async function offerUpdate() {
   return true;
 }
 
+// External apps (oMLX, Ollama) manage their own updates and channels — we
+// only notify. llama.cpp is our managed runtime, so we update it ourselves.
+const EXTERNAL_UPDATE_HINTS = {
+  "oMLX": "update from the oMLX menubar app",
+  "Ollama": "brew upgrade ollama  ·  ollama.com/download",
+};
+
 async function offerRuntimeUpdates() {
   if (!process.stdin.isTTY) return;
-  const updates = [];
   const llamaUpdate = await checkLlamaUpdate();
-  if (llamaUpdate) updates.push({ kind: "llama.cpp", ...llamaUpdate });
+  const externalUpdates = [];
   if (process.platform === "darwin" && process.arch === "arm64") {
     const omlxUpdate = await checkOmlxUpdate();
-    if (omlxUpdate) updates.push({ kind: "oMLX", ...omlxUpdate });
+    if (omlxUpdate) externalUpdates.push({ kind: "oMLX", ...omlxUpdate });
   }
   const ollamaUpdate = await checkOllamaUpdate();
-  if (ollamaUpdate) updates.push({ kind: "Ollama", ...ollamaUpdate });
-  if (updates.length === 0) return;
+  if (ollamaUpdate) externalUpdates.push({ kind: "Ollama", ...ollamaUpdate });
+  if (!llamaUpdate && externalUpdates.length === 0) return;
 
-  const rows = updates.map((u) => [u.kind, `${u.latest} available (you have ${u.installed})`]);
+  const rows = [];
+  if (llamaUpdate) rows.push(["llama.cpp", `${llamaUpdate.latest} available (you have ${llamaUpdate.installed})`]);
+  for (const u of externalUpdates) {
+    rows.push([u.kind, `${u.latest} available (you have ${u.installed}) — ${EXTERNAL_UPDATE_HINTS[u.kind]}`]);
+  }
   console.log();
   console.log(theme.bold(theme.warning(section("Runtime updates available"))));
   console.log(renderList(rows));
 
-  const shouldUpdate = await promptConfirm({ message: "Update runtimes now?", initialValue: true });
+  if (!llamaUpdate) return;
+  const shouldUpdate = await promptConfirm({ message: "Update llama.cpp now?", initialValue: true });
   if (!shouldUpdate) return;
-  for (const u of updates) {
-    if (u.kind === "llama.cpp") {
-      await installLlamaRelease(u.release);
-      console.log(status({ kind: "success", message: "llama.cpp updated." }));
-    } else if (u.kind === "oMLX") {
-      await installOmlx();
-    } else if (u.kind === "Ollama") {
-      await updateOllama();
-    }
-  }
+  await installLlamaRelease(llamaUpdate.release);
+  console.log(status({ kind: "success", message: "llama.cpp updated." }));
 }
 
 async function runUpdate() {

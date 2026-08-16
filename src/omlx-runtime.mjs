@@ -3,10 +3,11 @@ import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { execCommand, execFileAsync } from "./exec.mjs";
+import { isNewerVersion } from "./updates.mjs";
 import { formatBytes, status, theme, promptConfirm, screenHeader, card } from "./ui.mjs";
 
 const OMLX_CLI_SHIM = join(homedir(), ".omlx", "bin", "omlx");
-const RELEASE_API = "https://api.github.com/repos/jundot/omlx/releases/latest";
+const RELEASES_API = "https://api.github.com/repos/jundot/omlx/releases";
 
 export async function findOmlx() {
   if (existsSync(OMLX_CLI_SHIM)) return OMLX_CLI_SHIM;
@@ -34,15 +35,27 @@ async function installedOmlxVersion() {
   }
 }
 
+/**
+ * Newest stable oMLX release. oMLX publishes rc/dev builds as full GitHub
+ * releases, so /releases/latest points at the dev channel — filter to strict
+ * semver tags instead. The oMLX app updates itself on its own channel;
+ * minimal-ai only ever notifies.
+ */
+async function latestStableOmlxRelease() {
+  const response = await fetch(`${RELEASES_API}?per_page=20`, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) return null;
+  const releases = await response.json();
+  if (!Array.isArray(releases)) return null;
+  return releases.find((r) => !r.prerelease && !r.draft && /^v?\d+\.\d+\.\d+$/u.test(r.tag_name ?? "")) ?? null;
+}
+
 export async function checkOmlxUpdate() {
   const installed = await installedOmlxVersion();
   if (!installed) return null;
   try {
-    const response = await fetch(RELEASE_API, { signal: AbortSignal.timeout(10000) });
-    if (!response.ok) return null;
-    const release = await response.json();
-    const latest = release.tag_name?.replace(/^v/u, "");
-    if (!latest || installed === latest) return null;
+    const release = await latestStableOmlxRelease();
+    const latest = release?.tag_name?.replace(/^v/u, "");
+    if (!latest || !isNewerVersion(latest, installed)) return null;
     return { installed, latest };
   } catch {
     return null;
@@ -122,12 +135,8 @@ export async function installOmlx() {
     body: "Source: https://github.com/jundot/omlx (by jundot)\nRuns MLX models with continuous batching and tiered KV caching.\nAfter installation, the oMLX app will open — you can manage the server from its menubar icon. Once the server is running, close the app window and come back to minimal-ai to use your model.",
   }));
 
-  let release;
-  try {
-    const response = await fetch(RELEASE_API, { signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    release = await response.json();
-  } catch {
+  const release = await latestStableOmlxRelease();
+  if (!release) {
     console.log(status({ kind: "error", message: "Could not fetch oMLX release info. Try again later." }));
     return false;
   }

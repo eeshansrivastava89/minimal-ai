@@ -83,32 +83,29 @@ export async function ensureOllamaServer() {
   return false;
 }
 
-async function installOrUpdateOllama({ upgrade = false } = {}) {
-  if (!upgrade && await hasOllama()) {
+async function installOllamaFlow() {
+  if (await hasOllama()) {
     console.log(status({ kind: "success", message: "Ollama is already installed." }));
     await startAndWaitForServer();
     return true;
   }
 
-  const verb = upgrade ? "Updating" : "Installing";
-  const brewCmd = upgrade ? "upgrade" : "install";
-
   try {
-    console.log(theme.subtle(`${verb} Ollama via official installer...`));
+    console.log(theme.subtle("Installing Ollama via official installer..."));
     await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
     if (await hasOllama()) {
-      console.log(status({ kind: "success", message: `Ollama ${upgrade ? "updated" : "installed"}.` }));
+      console.log(status({ kind: "success", message: "Ollama installed." }));
       await startAndWaitForServer();
-      if (!upgrade) console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
+      console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
       return true;
     }
   } catch { /* fall through to Homebrew */ }
 
   if (await commandExists("brew")) {
     try {
-      console.log(theme.subtle(`${verb} Ollama via Homebrew...`));
+      console.log(theme.subtle("Installing Ollama via Homebrew..."));
       try {
-        await execCommand("brew", [brewCmd, "ollama"], { label: "ollama", verbose: true });
+        await execCommand("brew", ["install", "ollama"], { label: "ollama", verbose: true });
       } catch (brewErr) {
         if (await hasOllama()) {
           console.log(status({ kind: "warning", message: "Homebrew completed with warnings (link conflicts)." }));
@@ -118,27 +115,23 @@ async function installOrUpdateOllama({ upgrade = false } = {}) {
         }
       }
       if (await hasOllama()) {
-        console.log(status({ kind: "success", message: `Ollama ${upgrade ? "updated" : "installed"} via Homebrew.` }));
+        console.log(status({ kind: "success", message: "Ollama installed via Homebrew." }));
         await startAndWaitForServer();
         const version = await installedOllamaVersion();
         if (version) console.log(theme.subtle(`  Version: ${version}`));
-        if (!upgrade) console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
+        console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
         return true;
       }
     } catch (err) {
-      console.log(status({ kind: "error", message: `${verb} failed: ${err.message}` }));
-      console.log(theme.subtle(`Do manually: curl -fsSL https://ollama.com/install.sh | sh  —  or  brew ${brewCmd} ollama`));
+      console.log(status({ kind: "error", message: `Install failed: ${err.message}` }));
+      console.log(theme.subtle("Do manually: curl -fsSL https://ollama.com/install.sh | sh  —  or  brew install ollama"));
       return false;
     }
   }
 
-  console.log(status({ kind: "error", message: `Ollama was ${upgrade ? "updated" : "installed"} but not found on PATH.` }));
+  console.log(status({ kind: "error", message: "Ollama was installed but not found on PATH." }));
   console.log(theme.subtle("Restart your terminal and run minimal-ai again."));
   return false;
-}
-
-export async function updateOllama() {
-  return await installOrUpdateOllama({ upgrade: true });
 }
 
 export async function installOllama() {
@@ -147,7 +140,7 @@ export async function installOllama() {
     title: "About",
     body: "Source: https://github.com/ollama/ollama\nManages model downloads, loading, and unloading automatically.\nOn Apple Silicon, uses MLX backend for MLX models and llama.cpp for GGUF.",
   }));
-  return await installOrUpdateOllama({ upgrade: false });
+  return await installOllamaFlow();
 }
 
 async function startAndWaitForServer() {
