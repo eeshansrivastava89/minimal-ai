@@ -4,6 +4,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.7] - 2026-08-16
+
+### Fixed
+- Deleting a profile whose model was already removed outside minimal-ai (deleted from the oMLX app or via `ollama rm`) no longer dead-ends. oMLX profiles with undiscoverable files now offer config-only removal, and an Ollama 404 is treated as already gone.
+- oMLX and Ollama runtime updates are now notification-only with manual update instructions, instead of minimal-ai attempting the update itself. The oMLX check no longer points at the dev channel (oMLX publishes rc/dev builds as full GitHub releases, which caused a re-prompt loop for stable-channel users); it now tracks the newest stable tag. llama.cpp updates are unchanged — minimal-ai manages that runtime itself.
+
 ## [2.0.6] - 2026-08-14
 
 ### Fixed
