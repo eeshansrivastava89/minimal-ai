@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.0.8] - 2026-08-16
+
+### Fixed
+- The context/KV-cache heatmap header no longer labels momentary free memory as "System RAM". It now shows both installed RAM and currently-available RAM (e.g. "RAM: 48 GB installed · 20.5 GB available now"), since fit decisions are based on what's actually available.
+
 ## [2.0.7] - 2026-08-16
 
 ### Fixed
