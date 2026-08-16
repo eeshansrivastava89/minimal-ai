@@ -251,7 +251,9 @@ export async function deleteOllamaModel(modelName) {
     body: JSON.stringify({ model: modelName }),
     signal: AbortSignal.timeout(10000),
   });
-  return response.ok;
+  if (response.ok) return "deleted";
+  if (response.status === 404) return "missing";
+  return "failed";
 }
 
 export async function unloadOllamaModel(modelName) {

@@ -1,9 +1,16 @@
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openSync, closeSync, ftruncateSync } from "node:fs";
+
+// Sandbox before importing modules that resolve homedir()/MINIMAL_DIR at load
+// time — profile and Pi-config deletion must never touch the real HOME.
+const sandboxHome = await mkdtemp(join(tmpdir(), "minimal-p0-home-"));
+process.env.HOME = sandboxHome;
+process.env.MINIMAL_DIR = join(sandboxHome, "minimal-data");
+after(() => rm(sandboxHome, { recursive: true, force: true }));
 
 const { isSafeDataDirPath } = await import("../src/commands/uninstall.mjs");
 const { isSafeOmlxModelPath, isSafeOmlxDeletionTarget, deleteModelFromSource } = await import("../src/commands/models-delete.mjs");
@@ -163,6 +170,22 @@ describe("P0 deletion transaction gating", () => {
     const file = join(dir, "model.gguf");
     await writeFile(file, "not a real model");
     const result = await deleteModelFromSource({ type: "new", model: { path: file } }, makePrompt(false));
+    assert.equal(result.confirmed, false);
+    assert.equal(result.cancelled, true);
+  });
+
+  it("removes the configuration when a managed-server model is already gone", async () => {
+    // Model deleted directly from the oMLX app: discovery finds no directory,
+    // so location is unknown — the config must still be removable.
+    const profile = { id: "p0-omlx-gone", backend: "omlx", omlxModel: "org--gone-model", providerId: "p0-omlx-gone", modelAlias: "gone-model" };
+    const result = await deleteModelFromSource({ type: "profile", profile }, makePrompt(true));
+    assert.equal(result.confirmed, true);
+    assert.equal(result.alreadyAbsent, true);
+  });
+
+  it("keeps the configuration when config-only removal is declined", async () => {
+    const profile = { id: "p0-omlx-keep", backend: "omlx", omlxModel: "org--gone-model", providerId: "p0-omlx-keep", modelAlias: "gone-model" };
+    const result = await deleteModelFromSource({ type: "profile", profile }, makePrompt(false));
     assert.equal(result.confirmed, false);
     assert.equal(result.cancelled, true);
   });

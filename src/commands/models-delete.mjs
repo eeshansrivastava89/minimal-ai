@@ -77,8 +77,21 @@ export async function isSafeOmlxDeletionTarget(target, root = OMLX_MODELS_ROOT) 
 export async function deleteModelFromSource(item, confirm = promptConfirm) {
   const loc = await modelLocationForItem(item);
   if (loc.kind === "unknown") {
-    console.log(status({ kind: "warning", message: "Could not determine where this model's files are located." }));
-    return { confirmed: false, reason: loc.reason ?? "unknown location" };
+    console.log(status({ kind: "warning", message: "Could not locate this model's files — it may already have been deleted outside minimal-ai." }));
+    if (item.type !== "profile") {
+      return { confirmed: false, reason: loc.reason ?? "unknown location" };
+    }
+    // Nothing to delete from disk, but the configuration must not dead-end here.
+    console.log(theme.subtle("If the model still exists in its app (e.g. oMLX), delete it there instead."));
+    const confirmed = await confirm({ message: "Remove just the minimal-ai configuration?", initialValue: true });
+    if (!confirmed) {
+      console.log(theme.subtle("Cancelled."));
+      return { confirmed: false, cancelled: true };
+    }
+    await removeFromPiConfig(item.profile);
+    await deleteProfile(item.profile.id);
+    console.log(theme.subtle(`Removed configuration: ${item.profile.id}`));
+    return { confirmed: true, alreadyAbsent: true };
   }
 
   const locationLabel = loc.kind === "hf-cache" ? (loc.path ?? loc.repoId)
@@ -113,9 +126,13 @@ export async function deleteModelFromSource(item, confirm = promptConfirm) {
   let sourceDeletion = { confirmed: false };
   if (loc.kind === "ollama") {
     try {
-      if (await deleteOllamaModel(loc.modelId)) {
+      const result = await deleteOllamaModel(loc.modelId);
+      if (result === "deleted") {
         console.log(status({ kind: "success", message: `Deleted ${loc.modelId} from Ollama` }));
         sourceDeletion = { confirmed: true };
+      } else if (result === "missing") {
+        console.log(status({ kind: "warning", message: `${loc.modelId} is already gone from Ollama` }));
+        sourceDeletion = { confirmed: true, alreadyAbsent: true };
       } else {
         console.log(status({ kind: "error", message: `Ollama did not confirm deletion of ${loc.modelId}` }));
         console.log(theme.subtle(`Delete manually: ollama rm ${loc.modelId}`));
