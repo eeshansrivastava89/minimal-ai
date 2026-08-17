@@ -129,7 +129,7 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
   if (!(await hasPiModel(profile))) await syncPiConfig(profile);
 
   try {
-    await launchPi(profile);
+    await launchPi(profile, { cwd: options.cwd, message: options.message });
   } finally {
     if (!options["keep-server"]) {
       if (!isManaged) {

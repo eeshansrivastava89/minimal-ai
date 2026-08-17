@@ -231,6 +231,7 @@ function actionsForItem(item, { runningProfilesNow = [] } = {}) {
         ...serverActions,
       );
       available.push(
+        { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
       );
     }
@@ -239,6 +240,7 @@ function actionsForItem(item, { runningProfilesNow = [] } = {}) {
     if (missing) {
       available.unshift(
         { value: "run", name: "Start chatting", desc: "Launch and open Pi", dimmed: true },
+        { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt", dimmed: true },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", dimmed: true },
       );
     }
@@ -260,7 +262,7 @@ function actionsForItem(item, { runningProfilesNow = [] } = {}) {
 
 async function performAction(action, item) {
   const missing = item.type === "profile" && item.missing;
-  if (missing && ["run", "reconfigure"].includes(action)) {
+  if (missing && ["run", "reconfigure", "benchmark"].includes(action)) {
     const backend = item.type === "profile" ? backendFor(item.profile.backend) : null;
     const reason = backend?.type === "managed-server" ? "model is no longer available on the server" : "model file is no longer on disk";
     console.log(status({ kind: "error", message: `This model's ${reason}. Remove the setup or restore the model.` }));
@@ -272,6 +274,7 @@ async function performAction(action, item) {
     return printGgufModelDetails(item.model, item.drafter);
   }
   if (action === "run") return await runItem(item);
+  if (action === "benchmark") return await benchmarkItem(item);
   if (action === "server") return await startServerItem(item);
   if (action === "stop") return await stopServerItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(item);
@@ -281,6 +284,11 @@ async function performAction(action, item) {
 
 async function runItem(item) {
   return await runProfile(await readProfile(item.profile.id));
+}
+
+async function benchmarkItem(item) {
+  const { benchmarkForProfile } = await import("../benchmark.mjs");
+  return await benchmarkForProfile(await readProfile(item.profile.id));
 }
 
 async function startServerItem(item) {

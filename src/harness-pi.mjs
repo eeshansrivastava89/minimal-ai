@@ -63,10 +63,12 @@ export async function hasPiModel(profile) {
   return Boolean(config?.providers?.[profile.providerId]?.models?.some?.((m) => m.id === piApiModelId(profile)));
 }
 
-export async function launchPi(profile) {
+export async function launchPi(profile, { cwd, message } = {}) {
   const model = `${profile.providerId}/${piApiModelId(profile)}`;
+  const args = ["--model", model];
+  if (message) args.push(message);
   console.log(theme.bold(`[pi] pi --model ${model}`));
-  await runForeground("pi", ["--model", model]);
+  await runForeground("pi", args, { cwd });
 }
 
 export async function hasPi() {
@@ -192,9 +194,9 @@ function providerCompat() {
   return { supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: "max_tokens" };
 }
 
-function runForeground(cmd, argv) {
+function runForeground(cmd, argv, { cwd } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, argv, { stdio: "inherit" });
+    const child = spawn(cmd, argv, { stdio: "inherit", ...(cwd ? { cwd } : {}) });
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${cmd} exited with code ${code}`)));
   });
