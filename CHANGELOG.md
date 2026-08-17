@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.1.0] - 2026-08-16
+
+### Added
+- Benchmark prepare flow: pick a configured model in `minimal-ai models`, choose **Benchmark**, pick a visual or data-science prompt, and minimal-ai creates a run slot in the local-llm-visual-benchmark gallery and launches Pi in that directory with the prompt ready to go. The gallery repo is auto-detected (or cloned/linked on first use) and remembered in `config.json`. Review results and capture preview media with `npm run dev` in the gallery repo.
+
 ## [2.0.8] - 2026-08-16
 
 ### Fixed
