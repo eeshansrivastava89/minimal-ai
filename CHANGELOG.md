@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.3.0] - 2026-08-18
+
+### Added
+- Vision detection for managed models. Ollama profiles now store the model's vision capability (from Ollama's own `/api/show` — previously it was displayed at setup but never saved, so Pi was told the model was text-only), and oMLX profiles detect vision from the model's `config.json` (`vision_config`). Vision-capable managed models now get image input in Pi. Note: stripped builds like MTPLX speed variants have no vision weights and correctly stay text-only. Reconfigure a profile once (models → Reconfigure) to pick this up for an existing setup.
+
 ## [2.2.1] - 2026-08-18
 
 ### Fixed
