@@ -1,6 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -13,6 +13,7 @@ process.env.MINIMAL_DIR = join(sandboxHome, "minimal-data");
 after(() => rm(sandboxHome, { recursive: true, force: true }));
 
 const { syncPiConfig } = await import("../src/harness-pi.mjs");
+const { detectOmlxVision } = await import("../src/mlx-discovery.mjs");
 
 function omlxProfile(overrides = {}) {
   return {
@@ -97,5 +98,36 @@ describe("syncPiConfig thinking levels", () => {
     const model = config.providers.omlx.models[0];
     assert.equal(model.reasoning, undefined);
     assert.equal(model.thinkingLevelMap, undefined);
+  });
+
+  it("marks vision-capable managed models as image input", async () => {
+    await syncPiConfig(omlxProfile({ capabilities: { thinking: true, vision: true } }));
+    const config = await readPiConfig();
+    const model = config.providers.omlx.models[0];
+    assert.deepEqual(model.input, ["text", "image"]);
+  });
+
+  it("defaults managed models to text-only input", async () => {
+    await syncPiConfig(omlxProfile());
+    const config = await readPiConfig();
+    const model = config.providers.omlx.models[0];
+    assert.deepEqual(model.input, ["text"]);
+  });
+});
+
+describe("detectOmlxVision", () => {
+  it("detects vision_config in the model's config.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "minimal-mlx-vision-"));
+    after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, "config.json"), JSON.stringify({ model_type: "qwen3_5", vision_config: { depth: 24 } }));
+    assert.equal(await detectOmlxVision(dir), true);
+  });
+
+  it("returns false for text-only models and missing config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "minimal-mlx-novision-"));
+    after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, "config.json"), JSON.stringify({ model_type: "qwen3_5" }));
+    assert.equal(await detectOmlxVision(dir), false);
+    assert.equal(await detectOmlxVision(join(dir, "does-not-exist")), false);
   });
 });

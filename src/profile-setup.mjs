@@ -10,7 +10,7 @@ import { detectCapabilities } from "./autodetect.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { effectiveModelId } from "./profiles.mjs";
-import { detectOmlxMtpCapability, findOmlxModelDir } from "./mlx-discovery.mjs";
+import { detectOmlxMtpCapability, detectOmlxVision, findOmlxModelDir } from "./mlx-discovery.mjs";
 import { ollamaModelInfo } from "./ollama-runtime.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults, applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults } from "./profile-flags.mjs";
 
@@ -346,6 +346,9 @@ async function configureOmlxProfile(profile) {
       console.log("");
       hint(`MTP not available — ${mtpResult.reason}`);
     }
+
+    const hasVision = await detectOmlxVision(modelDir);
+    configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: hasVision } };
   }
 
   console.log("");
@@ -353,6 +356,7 @@ async function configureOmlxProfile(profile) {
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
     ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
+    ...(configured.capabilities?.vision ? [["Vision", "yes"]] : []),
   ]) }));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
@@ -366,7 +370,10 @@ async function configureOllamaProfile(profile) {
   try {
     const info = await ollamaModelInfo(modelId);
     const caps = info.capabilities ?? [];
-    if (caps.includes("vision")) capabilities.push("Vision");
+    if (caps.includes("vision")) {
+      capabilities.push("Vision");
+      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: true } };
+    }
     if (caps.includes("tools")) capabilities.push("Tool calling");
     if (info.model_info) {
       const keys = Object.keys(info.model_info);

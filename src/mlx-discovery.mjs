@@ -45,6 +45,20 @@ async function getMlxModelType(dir) {
 }
 
 /**
+ * Check if an oMLX model directory is vision-capable.
+ * MLX-VLM models declare a vision_config section in config.json.
+ */
+export async function detectOmlxVision(modelDir) {
+  try {
+    const raw = await readFile(join(modelDir, "config.json"), "utf8");
+    const config = JSON.parse(raw);
+    return config.vision_config != null && typeof config.vision_config === "object";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Scan ~/.omlx/models/ for MLX model directories and return a Map of
  * basename → { sizeBytes, publisher, modelType }.
  */
