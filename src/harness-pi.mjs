@@ -182,7 +182,20 @@ function modelCompat(profile) {
   if (profile.compat) return profile.compat;
   const family = modelFamily(profile);
   if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) {
-    return { thinkingFormat: "qwen-chat-template" };
+    // Generic chat-template kwargs carry BOTH the on/off toggle and the
+    // effort level. Pi's "qwen-chat-template" format only sends the toggle
+    // and silently drops the level — leaving models like Qwen3.8 stuck at
+    // their template default (xhigh) no matter what the user picks.
+    // oMLX reads chat_template_kwargs natively; llama.cpp passes them
+    // through to the template; Ollama ignores them (unchanged behavior).
+    return {
+      thinkingFormat: "chat-template",
+      chatTemplateKwargs: {
+        enable_thinking: { $var: "thinking.enabled" },
+        reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
+        preserve_thinking: true,
+      },
+    };
   }
   return null;
 }

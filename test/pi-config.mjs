@@ -52,6 +52,17 @@ describe("syncPiConfig thinking levels", () => {
       xhigh: "xhigh",
       max: null,
     });
+    // Qwen-family models must carry the level through chat_template_kwargs —
+    // the "qwen-chat-template" format drops it (regression: oMLX model stuck
+    // at its xhigh template default regardless of the chosen level).
+    assert.deepEqual(model.compat, {
+      thinkingFormat: "chat-template",
+      chatTemplateKwargs: {
+        enable_thinking: { $var: "thinking.enabled" },
+        reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
+        preserve_thinking: true,
+      },
+    });
   });
 
   it("detects thinking by name for managed models without capabilities", async () => {
