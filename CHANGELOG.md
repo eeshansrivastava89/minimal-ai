@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.2.1] - 2026-08-18
+
+### Fixed
+- Thinking levels actually reach oMLX models now. v2.2.0 wrote Pi configs using the `qwen-chat-template` thinking format, which sends only the on/off toggle and silently drops the level — so a Qwen3.8 model stayed at its template default (`xhigh`, i.e. thinks for minutes on simple prompts) no matter what level was picked. Qwen/Gemma-4 models now use the generic `chat-template` format, which passes both `enable_thinking` and `reasoning_effort` through `chat_template_kwargs`. `/think off` also fully disables thinking now. Reconfigure a profile once (models → Reconfigure) to refresh an existing Pi config.
+
 ## [2.2.0] - 2026-08-16
 
 ### Added
