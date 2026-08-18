@@ -5,6 +5,12 @@ import { defaultFlagsForBackend } from "./backends.mjs";
 
 // ── Detect model capabilities from GGUF metadata ──────────────────────────
 
+// Name-based thinking detection for models without readable GGUF metadata
+// (managed oMLX/Ollama models). Same hints as the GGUF path.
+export function nameHintsThinking(hints) {
+  return /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(String(hints).toLowerCase());
+}
+
 export function detectCapabilities(modelPath, mmprojPath) {
   const meta = readGgufMetadataSafe(modelPath);
   const mmprojMeta = mmprojPath ? readGgufMetadataSafe(mmprojPath) : {};
@@ -15,8 +21,7 @@ export function detectCapabilities(modelPath, mmprojPath) {
 
   // Thinking / reasoning mode
   const hasThinkingKwargs = meta["chat_template_kwargs"] !== undefined;
-  const nameHintsThinking = /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(pathHints);
-  const thinking = hasThinkingKwargs || nameHintsThinking;
+  const thinking = hasThinkingKwargs || nameHintsThinking(pathHints);
 
   // QAT is explicit quantization-aware training lineage, mainly seen in
   // Gemma QAT releases. imatrix is common GGUF quantization metadata and is

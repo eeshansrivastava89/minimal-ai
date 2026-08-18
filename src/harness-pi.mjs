@@ -8,6 +8,7 @@ import { PI_CONFIG } from "./config.mjs";
 import { loadProfiles } from "./profiles.mjs";
 import { readJson, writeJson } from "./json.mjs";
 import { execCommand, commandExists } from "./exec.mjs";
+import { nameHintsThinking } from "./autodetect.mjs";
 import { status, theme } from "./ui.mjs";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
@@ -148,6 +149,14 @@ async function activeProviderProfiles(currentProfile) {
   return Array.from(byAlias.values()).sort((a, b) => a.modelAlias.localeCompare(b.modelAlias));
 }
 
+// Pi thinking levels → reasoning_effort values sent to the server. Every
+// backend tolerates this: oMLX normalizes aliases and falls back to the
+// model template's default on unknown values; llama.cpp and Ollama ignore
+// unknown request fields. minimal/max stay hidden — local templates
+// generally accept only low/medium/high (harmony) or low/medium/xhigh
+// (Qwen3.x), and oMLX remaps across the two families automatically.
+const THINKING_LEVEL_MAP = { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null };
+
 function piModelConfig(profile) {
   const compat = modelCompat(profile);
   const reasoning = modelReasoning(profile);
@@ -156,7 +165,7 @@ function piModelConfig(profile) {
     name: profile.label,
     input: modelInput(profile),
     maxTokens: profile.flags?.ctxSize ?? 16384,
-    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(reasoning === undefined ? {} : { reasoning, thinkingLevelMap: THINKING_LEVEL_MAP }),
     ...(compat ? { compat } : {}),
     ...(profile.flags?.ctxSize ? { contextWindow: profile.flags.ctxSize } : {}),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -179,7 +188,11 @@ function modelCompat(profile) {
 }
 
 function modelReasoning(profile) {
-  return profile.capabilities?.thinking === true ? true : undefined;
+  // GGUF profiles get thinking detection from metadata at setup time.
+  // Managed models (oMLX/Ollama) have no readable metadata — fall back to
+  // the same name hints autodetect uses.
+  if (profile.capabilities?.thinking !== undefined) return profile.capabilities.thinking || undefined;
+  return nameHintsThinking(modelFamily(profile)) || undefined;
 }
 
 function modelFamily(profile) {
@@ -191,7 +204,7 @@ function piApiKey() {
 }
 
 function providerCompat() {
-  return { supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: "max_tokens" };
+  return { supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: "max_tokens" };
 }
 
 function runForeground(cmd, argv, { cwd } = {}) {
