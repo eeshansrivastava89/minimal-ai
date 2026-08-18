@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.2.0] - 2026-08-16
+
+### Added
+- Thinking levels for local models in Pi. minimal-ai now tells Pi that local servers accept `reasoning_effort`, so thinking-capable models get Pi's level controls (`/think low` in a session, or `pi --model <provider>/<model>:low`). Managed oMLX/Ollama models — which have no readable GGUF metadata — are detected by name (Qwen3, Gemma 4, DeepSeek-R families). No level is ever set by default; if you don't pick one, the model's own template default applies. Reconfigure a profile once (models → Reconfigure) to refresh an existing Pi config.
+
 ## [2.1.0] - 2026-08-16
 
 ### Added
