@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.3.1] - 2026-08-18
+
+### Fixed
+- Ollama models no longer show thinking-level controls in Pi. Ollama's OpenAI-compatible `/v1` endpoint ignores every thinking field (`chat_template_kwargs`, `reasoning_effort`, `reasoning`, even Ollama's own `think` — curl-verified on 0.32.14), so the Shift+Tab thinking knob did nothing for Ollama models. minimal-ai no longer advertises reasoning for Ollama profiles; oMLX and llama.cpp profiles are unchanged. Reconfigure an Ollama profile (models → Reconfigure) to apply.
+
 ## [2.3.0] - 2026-08-18
 
 ### Added

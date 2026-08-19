@@ -66,6 +66,26 @@ describe("syncPiConfig thinking levels", () => {
     });
   });
 
+  it("suppresses thinking controls for Ollama models", async () => {
+    // Ollama's /v1 endpoint ignores every thinking field (curl-verified) —
+    // advertising reasoning would show knobs that provably do nothing.
+    await syncPiConfig({
+      id: "qwen38-ollama",
+      label: "Qwen3.8 27B (Ollama)",
+      providerId: "ollama",
+      backend: "ollama",
+      modelAlias: "qwen3.8:27b-mlx",
+      ollamaModel: "qwen3.8:27b-mlx",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      flags: { ctxSize: 32768 },
+    });
+    const config = await readPiConfig();
+    const model = config.providers.ollama.models[0];
+    assert.equal(model.reasoning, undefined);
+    assert.equal(model.thinkingLevelMap, undefined);
+    assert.equal(model.compat, undefined);
+  });
+
   it("detects thinking by name for managed models without capabilities", async () => {
     // oMLX/Ollama profiles never get GGUF capability detection — the name
     // hint fallback must flag them so Pi shows thinking levels.

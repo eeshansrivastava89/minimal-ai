@@ -149,12 +149,14 @@ async function activeProviderProfiles(currentProfile) {
   return Array.from(byAlias.values()).sort((a, b) => a.modelAlias.localeCompare(b.modelAlias));
 }
 
-// Pi thinking levels → reasoning_effort values sent to the server. Every
-// backend tolerates this: oMLX normalizes aliases and falls back to the
-// model template's default on unknown values; llama.cpp and Ollama ignore
-// unknown request fields. minimal/max stay hidden — local templates
-// generally accept only low/medium/high (harmony) or low/medium/xhigh
-// (Qwen3.x), and oMLX remaps across the two families automatically.
+// Pi thinking levels → reasoning_effort values sent to the server. oMLX
+// normalizes aliases and falls back to the model template's default on
+// unknown values; llama.cpp passes them through to the template (levels
+// land only if the template reads reasoning_effort). Ollama models never
+// see this map — see modelReasoning. minimal/max stay hidden — local
+// templates generally accept only low/medium/high (harmony) or
+// low/medium/xhigh (Qwen3.x), and oMLX remaps across the two families
+// automatically.
 const THINKING_LEVEL_MAP = { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null };
 
 function piModelConfig(profile) {
@@ -180,6 +182,7 @@ function modelInput(profile) {
 
 function modelCompat(profile) {
   if (profile.compat) return profile.compat;
+  if (profile.backend === "ollama") return null; // no thinking controls — see modelReasoning
   const family = modelFamily(profile);
   if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) {
     // Generic chat-template kwargs carry BOTH the on/off toggle and the
@@ -187,7 +190,8 @@ function modelCompat(profile) {
     // and silently drops the level — leaving models like Qwen3.8 stuck at
     // their template default (xhigh) no matter what the user picks.
     // oMLX reads chat_template_kwargs natively; llama.cpp passes them
-    // through to the template; Ollama ignores them (unchanged behavior).
+    // through to the template. Ollama models never reach this branch —
+    // see modelReasoning.
     return {
       thinkingFormat: "chat-template",
       chatTemplateKwargs: {
@@ -201,8 +205,14 @@ function modelCompat(profile) {
 }
 
 function modelReasoning(profile) {
+  // Ollama's OpenAI-compatible /v1 endpoint ignores every thinking field
+  // (curl-verified: chat_template_kwargs, reasoning_effort, reasoning, and
+  // Ollama's own think field) — only native /api/chat honors them, and Pi
+  // doesn't speak it. Advertising reasoning here would show thinking
+  // controls that provably do nothing, so don't.
+  if (profile.backend === "ollama") return undefined;
   // GGUF profiles get thinking detection from metadata at setup time.
-  // Managed models (oMLX/Ollama) have no readable metadata — fall back to
+  // Managed models (oMLX) have no readable metadata — fall back to
   // the same name hints autodetect uses.
   if (profile.capabilities?.thinking !== undefined) return profile.capabilities.thinking || undefined;
   return nameHintsThinking(modelFamily(profile)) || undefined;
