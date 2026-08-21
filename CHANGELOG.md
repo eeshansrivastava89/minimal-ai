@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.4.1] - 2026-08-18
+
+### Fixed
+- Benchmark flow now uses the configured harness name in the launch prompt (was hardcoded to "Pi"), and run-slot metadata records the actual harness (`intendedRunner`/`tool`) instead of always saying Pi — important when comparing benchmark results across harnesses.
+
 ## [2.4.0] - 2026-08-18
 
 ### Added

@@ -1,7 +1,8 @@
 // ── Visual benchmark prepare flow ───────────────────────────────────────────
 // Connects minimal-ai to the local-llm-visual-benchmark gallery repo: pick a
 // prompt, create a run slot (runs/<benchmark>/<model-slug>/<run-id>/), then
-// launch the model with Pi in that directory. The gallery dev server captures
+// launch the model with the configured chat harness in that directory. The
+// gallery dev server captures
 // screenshots/video afterwards. Run-slot files must stay schema-compatible
 // with the gallery (schemaVersion 1).
 
@@ -18,6 +19,8 @@ import { effectiveModelId } from "./profiles.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { promptChoice, promptConfirm, promptText, card, status, theme } from "./ui.mjs";
 import { runProfile } from "./commands/run.mjs";
+import { configuredHarness } from "./harnesses.mjs";
+import { piHarness } from "./harness-pi.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -146,7 +149,7 @@ function modelSourceFor(profile) {
   return profile.backend;
 }
 
-export async function prepareBenchmarkRun({ repoPath, benchmark, profile, now = new Date() }) {
+export async function prepareBenchmarkRun({ repoPath, benchmark, profile, harness = piHarness, now = new Date() }) {
   const modelId = effectiveModelId(profile);
   const modelSource = modelSourceFor(profile);
   const backendLabel = backendFor(profile.backend).label;
@@ -183,8 +186,8 @@ export async function prepareBenchmarkRun({ repoPath, benchmark, profile, now = 
       : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm" },
     runner: {
       mode: "external",
-      intendedRunner: "Pi",
-      tool: "pi",
+      intendedRunner: harness.label,
+      tool: harness.id,
       modelSource,
       backendLabel,
       baseUrl: profile.baseUrl,
@@ -258,10 +261,11 @@ export async function benchmarkForProfile(profile) {
   const benchmark = await selectBenchmark(repoPath);
   if (!benchmark) return;
 
-  const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark, profile });
+  const harness = await configuredHarness();
+  const runDirectory = await prepareBenchmarkRun({ repoPath, benchmark, profile, harness });
 
   const launch = await promptConfirm({
-    message: "Launch now? Pi opens in the run directory with the benchmark prompt.",
+    message: `Launch now? ${harness.label} opens in the run directory with the benchmark prompt.`,
     initialValue: true,
   });
   if (!launch) {
