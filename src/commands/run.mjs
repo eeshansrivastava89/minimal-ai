@@ -5,6 +5,7 @@ import { normalizeProfile, readProfile, saveProfile, effectiveModelId } from "..
 import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
 import { configuredHarness, harnessFor, listHarnesses } from "../harnesses.mjs";
+import { ollamaServedContext } from "../ollama-runtime.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
 import { renderMemoryEstimate, parseOptions, status, theme } from "../ui.mjs";
@@ -66,6 +67,10 @@ export async function runProfile(profile, options = {}) {
   }
   console.log(status({ kind: "success", message: "[preflight] Model loaded and generated a test token." }));
 
+  if (profile.backend === "ollama") {
+    profile = await refreshOllamaServedContext(profile);
+  }
+
   await launchHarness(profile, options, isManaged, harnessId, backend);
   console.log("");
 }
@@ -106,6 +111,19 @@ async function ensureLocalServer(profile, backend, options) {
   }
 }
 
+// Ollama loads models with a VRAM-fit context that can be far smaller than
+// the model's metadata max (and even smaller than OLLAMA_CONTEXT_LENGTH).
+// After preflight the model is loaded, so /api/ps knows the served context —
+// persist it on the profile so harness configs carry the real window.
+async function refreshOllamaServedContext(profile) {
+  const served = await ollamaServedContext(profile.ollamaModel ?? profile.modelAlias);
+  if (!served || profile.flags?.ctxSize === served) return profile;
+  const updated = { ...profile, flags: { ...(profile.flags ?? {}), ctxSize: served } };
+  await saveProfile(updated);
+  console.log(theme.subtle(`Ollama serves this model with a ${served}-token context (VRAM auto-fit) — profile updated so the harness sees the real window.`));
+  return updated;
+}
+
 function printMemoryEstimate(profile, isManaged) {
   if (isManaged || !profile.modelPath || !existsSync(profile.modelPath)) return;
   try {
@@ -128,7 +146,7 @@ async function launchHarness(profile, options, isManaged, harnessId, backend) {
   }
 
   const harness = harnessFor(harnessId);
-  if (!(await harness.hasModel(profile))) await harness.syncConfig(profile);
+  await harness.syncConfig(profile);
 
   try {
     await harness.launch(profile, { cwd: options.cwd, message: options.message });

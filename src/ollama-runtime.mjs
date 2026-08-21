@@ -270,3 +270,27 @@ export async function ollamaLoadedModels() {
     return [];
   }
 }
+
+/**
+ * The context window Ollama actually loaded the model with (live /api/ps).
+ * This is NOT the model's metadata maximum: Ollama 0.15.5+ applies a
+ * VRAM-based tiered default and llama.cpp fit can shrink even an explicit
+ * OLLAMA_CONTEXT_LENGTH — e.g. configured 262144, served 32768. Harness
+ * configs must carry the served value or they'll assume the metadata max
+ * and overflow the real window (observed: omp assuming 262K, server full
+ * at 32K → "model returned no content").
+ * Returns null when the model isn't currently loaded.
+ */
+export async function ollamaServedContext(modelName, { fetchImpl = globalThis.fetch } = {}) {
+  if (!modelName) return null;
+  try {
+    const response = await fetchImpl(`${OLLAMA_API_BASE}/ps`, { signal: AbortSignal.timeout(2000) });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const match = (body?.models ?? []).find((m) => (m.name ?? m.model) === modelName);
+    const ctx = match?.context_length;
+    return Number.isFinite(ctx) && ctx > 0 ? ctx : null;
+  } catch {
+    return null;
+  }
+}

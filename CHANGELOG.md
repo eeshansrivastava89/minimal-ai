@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.4.2] - 2026-08-18
+
+### Fixed
+- Ollama profiles now learn the context window Ollama actually serves. Ollama 0.15.5+ applies a VRAM-based fit at load time that can shrink even an explicit `OLLAMA_CONTEXT_LENGTH` (e.g. configured 262144, served 32768), and harnesses were assuming the model's metadata maximum — causing silent prompt overflows in omp/Pi ("model returned no content"). After the preflight load, minimal-ai probes `/api/ps`, saves the served context to the profile, and writes it into harness configs so the UI shows the real window. Also: harness config now re-syncs on every run instead of only when the model is missing, so profile corrections propagate immediately.
+
 ## [2.4.1] - 2026-08-18
 
 ### Fixed
