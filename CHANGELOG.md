@@ -4,6 +4,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.4.0] - 2026-08-18
+
+### Added
+- Pluggable chat harnesses. minimal-ai can now launch chats in **oh-my-pi (omp)** in addition to Pi — choose once under models → 💬 Chat harness and it stays until you change it, or override per run with `--with omp`. Switching harnesses syncs your existing model setups into the new harness's config automatically (`~/.omp/agent/models.yml`). Harness support is built as a small adapter interface (`src/harnesses.mjs` + `src/harness-shared.mjs`) so more harnesses (opencode, etc.) can be added later.
+- Thinking-control honesty per harness: omp gets thinking controls only for oMLX models (its top-level `reasoning_effort` works there); llama.cpp and Ollama models are marked non-reasoning in omp config because those servers ignore the field (wire-verified).
+
 ## [2.3.1] - 2026-08-18
 
 ### Fixed

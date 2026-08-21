@@ -3,7 +3,7 @@ import { currentPackageVersion } from "../updates.mjs";
 import { backendFor } from "../backends.mjs";
 import { scanGgufModels } from "../scan.mjs";
 import { loadProfiles } from "../profiles.mjs";
-import { hasPi } from "../harness-pi.mjs";
+import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
@@ -23,11 +23,12 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   const hasAnyBackend = llamaBinary || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
   const hasAnyModels = ggufModels.length > 0 || managedModels.some((item) => item.status === "ok" && item.models.length > 0);
 
-  const piInstalled = await hasPi();
+  const harness = await configuredHarness();
+  const harnessInstalled = await harness.detect();
   const needsLlama = ggufModels.length > 0 || profiles.some((profile) => backendFor(profile.backend).type === "local-server");
   const missingDeps = [];
   if (needsLlama && !llamaBinary) missingDeps.push("llama-server");
-  if (!piInstalled) missingDeps.push("Pi");
+  if (!harnessInstalled) missingDeps.push(harness.label);
   if (missingDeps.length > 0) {
     if (!process.stdin.isTTY) throw new Error(`Missing dependencies: ${missingDeps.join(", ")}. Run minimal-ai interactively to install.`);
     console.log(status({ kind: "warning", message: `Missing: ${missingDeps.join(", ")}` }));
@@ -57,7 +58,8 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   printStatusHeader({
     llamaBinary,
     managedModels,
-    piInstalled,
+    harness,
+    harnessInstalled,
     omlxInstalled: isAppleSilicon ? await hasOmlx() : false,
     showOmlx: isAppleSilicon,
     ollamaInstalled: await hasOllama(),
@@ -69,7 +71,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   return await modelCommandCenter({ profiles, ggufModels, managedModels, drafters });
 }
 
-function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, profiles }) {
+function printStatusHeader({ llamaBinary, managedModels, harness, harnessInstalled, omlxInstalled, showOmlx, ollamaInstalled, ollamaServerUp, profiles }) {
   const parts = [
     llamaBinary ? status({ kind: "success", message: "llama.cpp" }) : status({ kind: "error", message: "llama.cpp" }),
   ];
@@ -86,7 +88,7 @@ function printStatusHeader({ llamaBinary, managedModels, piInstalled, omlxInstal
   } else {
     parts.push(status({ kind: "error", message: "Ollama" }));
   }
-  parts.push(piInstalled ? status({ kind: "success", message: "Pi" }) : status({ kind: "error", message: "Pi" }));
+  parts.push(harnessInstalled ? status({ kind: "success", message: harness.label }) : status({ kind: "error", message: harness.label }));
   if (profiles.length > 0) {
     const counts = new Map();
     for (const profile of profiles) {

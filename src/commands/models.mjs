@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
 import { isProfileRunning, modelAvailableOnServer, stopProfile, unloadModelFromServer } from "../process.mjs";
-import { syncPiConfig, removeFromPiConfig } from "../harness-pi.mjs";
+import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
@@ -14,7 +14,7 @@ import { runProfile } from "./run.mjs";
 import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
-import { runtimeStatusFlow, discoveryPathsFlow } from "./models-settings.mjs";
+import { runtimeStatusFlow, discoveryPathsFlow, harnessFlow } from "./models-settings.mjs";
 
 export async function modelsCommand(argv) {
   await ensureDirs();
@@ -133,8 +133,10 @@ async function showModelPicker(catalog) {
   if (!ollamaInstalled) {
     manageItems.push({ value: "__install_ollama__", label: `${theme.warning("↓ Install Ollama")} ${theme.subtle("(managed model runner)")}` });
   }
+  const harness = await configuredHarness();
   manageItems.push({ value: "__runtime_status__", label: theme.brand("⚡ Runtime status & running models") });
   manageItems.push({ value: "__discovery_paths__", label: theme.brand("📁 Discovery paths") });
+  manageItems.push({ value: "__harness__", label: theme.brand(`💬 Chat harness: ${harness.label}`) });
   groups.push({ separator: theme.bold("Manage"), items: manageItems });
 
   if (runningProfilesNow.length > 0) {
@@ -176,6 +178,12 @@ async function showModelPicker(catalog) {
     return;
   }
 
+  if (selected === "__harness__") {
+    await harnessFlow();
+    console.log("");
+    return;
+  }
+
   if (selected === "__install_omlx__") {
     await installOmlx();
     console.log("");
@@ -191,7 +199,7 @@ async function showModelPicker(catalog) {
   const item = allItems.find((candidate) => itemKey(candidate) === selected);
   if (!item) return;
 
-  const actions = actionsForItem(item, { runningProfilesNow });
+  const actions = actionsForItem(item, { runningProfilesNow, harnessLabel: (await configuredHarness()).label });
   const action = await promptChoice({ message: item.label, choices: actions });
   if (!action) return;
   await performAction(action, item);
@@ -209,7 +217,7 @@ function formatActions(rawActions) {
   });
 }
 
-function actionsForItem(item, { runningProfilesNow = [] } = {}) {
+function actionsForItem(item, { runningProfilesNow = [], harnessLabel = "Pi" } = {}) {
   const missing = item.type === "profile" && item.missing;
   if (item.type === "profile") {
     const available = [
@@ -224,10 +232,10 @@ function actionsForItem(item, { runningProfilesNow = [] } = {}) {
             { value: "server", name: "Start server", desc: "Already running", dimmed: true, dimmedDesc: "Already running" },
           ]
         : [
-            { value: "server", name: "Start server", desc: "API only, no Pi" },
+            { value: "server", name: "Start server", desc: `API only, no ${harnessLabel}` },
           ];
       available.unshift(
-        { value: "run", name: "Start chatting", desc: "Launch and open Pi" },
+        { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}` },
         ...serverActions,
       );
       available.push(
@@ -239,7 +247,7 @@ function actionsForItem(item, { runningProfilesNow = [] } = {}) {
     available.push({ value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" });
     if (missing) {
       available.unshift(
-        { value: "run", name: "Start chatting", desc: "Launch and open Pi", dimmed: true },
+        { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}`, dimmed: true },
         { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt", dimmed: true },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", dimmed: true },
       );
@@ -326,7 +334,7 @@ async function setupItem(item) {
       : await configureLocalProfile(profile);
     if (!configured) return;
     await saveProfile(configured);
-    await syncPiConfig(configured);
+    await (await configuredHarness()).syncConfig(configured);
     printProfileSaved(configured.id);
     return;
   }
@@ -335,7 +343,7 @@ async function setupItem(item) {
     const configured = await configureManagedProfile(profile);
     if (!configured) return;
     await saveProfile(configured);
-    await syncPiConfig(configured);
+    await (await configuredHarness()).syncConfig(configured);
     printProfileSaved(configured.id);
     return;
   }
@@ -348,7 +356,7 @@ async function setupItem(item) {
   const configured = await configureLocalProfile(profile);
   if (!configured) return;
   await saveProfile(configured);
-  await syncPiConfig(configured);
+  await (await configuredHarness()).syncConfig(configured);
   printProfileSaved(configured.id);
 }
 
@@ -367,7 +375,7 @@ async function removeProfileInteractive(id) {
     console.log(status({ kind: "warning", message: "Stopping running server..." }));
     await stopProfile(profile);
   }
-  await removeFromPiConfig(profile);
+  await (await configuredHarness()).removeModel(profile);
   await deleteProfile(id);
   console.log(status({ kind: "success", message: `Removed ${profile.label} (${profile.id})` }));
 }

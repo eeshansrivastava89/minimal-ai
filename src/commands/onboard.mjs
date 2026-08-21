@@ -1,5 +1,5 @@
 import { ensureDirs, findLlamaServer } from "../config.mjs";
-import { hasPi, setupPiConfig } from "../harness-pi.mjs";
+import { configuredHarness } from "../harnesses.mjs";
 import { latestLlamaRelease, installLlamaRelease } from "../runtime.mjs";
 import { hasHfCli, installHfCli } from "../huggingface.mjs";
 import { execCommand } from "../exec.mjs";
@@ -12,12 +12,13 @@ export async function onboardFlow() {
   console.log(screenHeader({ title: "Welcome to minimal-ai!", subtitle: "Let's set up everything you need to run local models." }));
 
   const llamaBinary = await findLlamaServer();
-  const piInstalled = await hasPi();
+  const harness = await configuredHarness();
+  const harnessInstalled = await harness.detect();
   const hfInstalled = await hasHfCli();
 
   const toInstall = [];
   if (!llamaBinary) toInstall.push("llama.cpp runtime — runs GGUF models");
-  if (!piInstalled) toInstall.push("Pi coding agent — chat interface (with recommended skills & extensions)");
+  if (!harnessInstalled) toInstall.push(`${harness.label} — chat interface`);
   if (!hfInstalled) toInstall.push("HuggingFace CLI — downloads models");
 
   if (toInstall.length === 0) {
@@ -51,22 +52,22 @@ export async function onboardFlow() {
     }
   }
 
-  if (!piInstalled) {
+  if (!harnessInstalled) {
     console.log();
-    console.log(status({ kind: "info", message: "Installing Pi..." }));
+    console.log(status({ kind: "info", message: `Installing ${harness.label}...` }));
     try {
-      await execCommand("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"], { label: "Pi", verbose: true });
-      if (await hasPi()) {
-        console.log(status({ kind: "success", message: "Pi installed" }));
-        await setupPiConfig();
+      await execCommand("npm", ["install", "-g", "--ignore-scripts", harness.npm], { label: harness.label, verbose: true });
+      if (await harness.detect()) {
+        console.log(status({ kind: "success", message: `${harness.label} installed` }));
+        if (harness.setup) await harness.setup();
       } else {
-        console.log(status({ kind: "warning", message: "Pi was installed but not found on PATH." }));
-        failures.push("Pi");
+        console.log(status({ kind: "warning", message: `${harness.label} was installed but not found on PATH.` }));
+        failures.push(harness.label);
       }
     } catch (err) {
-      console.log(status({ kind: "error", message: `Failed to install Pi: ${err.message}` }));
-      console.log(theme.subtle("Install it manually: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"));
-      failures.push("Pi");
+      console.log(status({ kind: "error", message: `Failed to install ${harness.label}: ${err.message}` }));
+      console.log(theme.subtle(`Install it manually: npm install -g --ignore-scripts ${harness.npm}`));
+      failures.push(harness.label);
     }
   }
 

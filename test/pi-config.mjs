@@ -12,7 +12,8 @@ process.env.HOME = sandboxHome;
 process.env.MINIMAL_DIR = join(sandboxHome, "minimal-data");
 after(() => rm(sandboxHome, { recursive: true, force: true }));
 
-const { syncPiConfig } = await import("../src/harness-pi.mjs");
+const { piHarness } = await import("../src/harness-pi.mjs");
+const syncPiConfig = (profile) => piHarness.syncConfig(profile);
 const { detectOmlxVision } = await import("../src/mlx-discovery.mjs");
 
 function omlxProfile(overrides = {}) {

@@ -4,7 +4,7 @@ import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile, effectiveModelId } from "../profiles.mjs";
 import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
-import { syncPiConfig, hasPiModel, launchPi, hasPi } from "../harness-pi.mjs";
+import { configuredHarness, harnessFor, listHarnesses } from "../harnesses.mjs";
 import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
 import { renderMemoryEstimate, parseOptions, status, theme } from "../ui.mjs";
@@ -18,13 +18,14 @@ export async function runCommand(argv) {
 
 export async function runProfile(profile, options = {}) {
   const backend = backendFor(profile.backend);
-  const withHarness = options.with ?? "pi";
-  const validHarnesses = ["pi", "server"];
-  if (!validHarnesses.includes(withHarness)) {
-    throw new Error(`Invalid --with value: "${withHarness}". Supported: ${validHarnesses.join(", ")}`);
+  const harnessId = options.with ?? (await configuredHarness()).id;
+  const validHarnesses = [...listHarnesses().map((h) => h.id), "server"];
+  if (!validHarnesses.includes(harnessId)) {
+    throw new Error(`Invalid --with value: "${harnessId}". Supported: ${validHarnesses.join(", ")}`);
   }
-  if (withHarness === "pi" && !(await hasPi())) {
-    console.log(status({ kind: "warning", message: "Pi is not installed. Run with --with server, or install Pi from https://pi.app" }));
+  if (harnessId !== "server" && !(await harnessFor(harnessId).detect())) {
+    const harness = harnessFor(harnessId);
+    console.log(status({ kind: "warning", message: `${harness.label} is not installed. Run with --with server, or install: npm install -g ${harness.npm}` }));
     console.log(theme.subtle("Starting server only..."));
     return await runProfile(profile, { ...options, with: "server" });
   }
@@ -65,7 +66,7 @@ export async function runProfile(profile, options = {}) {
   }
   console.log(status({ kind: "success", message: "[preflight] Model loaded and generated a test token." }));
 
-  await launchHarness(profile, options, isManaged, withHarness, backend);
+  await launchHarness(profile, options, isManaged, harnessId, backend);
   console.log("");
 }
 
@@ -115,8 +116,8 @@ function printMemoryEstimate(profile, isManaged) {
   }
 }
 
-async function launchHarness(profile, options, isManaged, withHarness, backend) {
-  if (withHarness !== "pi") {
+async function launchHarness(profile, options, isManaged, harnessId, backend) {
+  if (harnessId === "server") {
     if (!isManaged) {
       console.log(theme.subtle(`Server running at ${profile.baseUrl}`));
       console.log(theme.subtle(`Stop with: minimal-ai stop ${profile.id}`));
@@ -126,10 +127,11 @@ async function launchHarness(profile, options, isManaged, withHarness, backend) 
     return;
   }
 
-  if (!(await hasPiModel(profile))) await syncPiConfig(profile);
+  const harness = harnessFor(harnessId);
+  if (!(await harness.hasModel(profile))) await harness.syncConfig(profile);
 
   try {
-    await launchPi(profile, { cwd: options.cwd, message: options.message });
+    await harness.launch(profile, { cwd: options.cwd, message: options.message });
   } finally {
     if (!options["keep-server"]) {
       if (!isManaged) {

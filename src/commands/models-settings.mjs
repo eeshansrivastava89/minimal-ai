@@ -8,7 +8,7 @@ import { serverReady } from "../server-check.mjs";
 import { runningProfiles } from "./stop.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
-import { hasPi } from "../harness-pi.mjs";
+import { configuredHarness, listHarnesses, harnessFor, setConfiguredHarness, syncAllProfiles } from "../harnesses.mjs";
 import { card, renderList, status, theme, promptChoice, promptText } from "../ui.mjs";
 
 export async function runtimeStatusFlow() {
@@ -16,7 +16,8 @@ export async function runtimeStatusFlow() {
     const llamaBinary = await findLlamaServer();
     const omlxInstalled = await hasOmlx();
     const ollamaInstalled = await hasOllama();
-    const piInstalled = await hasPi();
+    const harness = await configuredHarness();
+    const harnessInstalled = await harness.detect();
 
     const running = await runningProfiles();
 
@@ -40,7 +41,7 @@ export async function runtimeStatusFlow() {
         ? (ollamaServerUp ? status({ kind: "success", message: "server up" }) : status({ kind: "warning", message: "installed · server down" }))
         : status({ kind: "error", message: "not found" }),
     ]);
-    runtimeRows.push(["Pi", piInstalled ? status({ kind: "success", message: "installed" }) : status({ kind: "error", message: "not found" })]);
+    runtimeRows.push([`${harness.label} (harness)`, harnessInstalled ? status({ kind: "success", message: "installed" }) : status({ kind: "error", message: "not found" })]);
 
     console.log();
     console.log(card({ title: "Runtime status", body: renderList(runtimeRows) }));
@@ -143,5 +144,28 @@ export async function discoveryPathsFlow() {
       await removeModelScanDir(toRemove);
       console.log(status({ kind: "success", message: `Removed: ${toRemove}` }));
     }
+  }
+}
+
+export async function harnessFlow() {
+  const current = await configuredHarness();
+  const choices = listHarnesses().map((h) => ({
+    value: h.id,
+    label: h.id === current.id ? `${h.label} (current)` : h.label,
+    hint: h.bin,
+  }));
+  const pick = await promptChoice({ message: "Chat harness — the UI minimal-ai launches for chatting", choices, defaultValue: current.id });
+  if (!pick || pick === current.id) return;
+
+  const harness = harnessFor(pick);
+  await setConfiguredHarness(pick);
+  console.log(status({ kind: "success", message: `Harness set to ${harness.label}. New runs will launch ${harness.bin}.` }));
+
+  if (!(await harness.detect())) {
+    console.log(status({ kind: "warning", message: `${harness.label} is not installed: npm install -g ${harness.npm}` }));
+  }
+  const providers = await syncAllProfiles(harness);
+  if (providers > 0) {
+    console.log(theme.subtle(`Synced existing setups to ${harness.label} so your models are available there.`));
   }
 }

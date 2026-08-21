@@ -52,10 +52,6 @@ export const DEFAULT_MODEL_DIRS = [
 
 // ── External config paths ─────────────────────────────────────────────────
 
-export const PI_CONFIG = join(homedir(), ".pi", "agent", "models.json");
-
-// ── Ensure data directories exist ─────────────────────────────────────────
-
 export async function ensureDirs() {
   if (!isSafeDataDirPath(DATA_DIR) || !isSafeDataDirPath(resolvedDataDirPath(DATA_DIR))) {
     throw new Error(`Refusing unsafe MINIMAL_DIR: ${DATA_DIR}. Choose a dedicated absolute data directory.`);
@@ -76,6 +72,7 @@ const DEFAULT_CONFIG = {
   modelScanDirs: [],
   binaryOverrides: {},
   lastSeenVersion: null,
+  harness: "pi",
 };
 
 export async function loadConfig() {
@@ -89,6 +86,9 @@ export async function loadConfig() {
     }
     if (config.binaryOverrides != null && typeof config.binaryOverrides !== "object") {
       config.binaryOverrides = {};
+    }
+    if (config.harness != null && typeof config.harness !== "string") {
+      config.harness = "pi";
     }
     return config;
   } catch (error) {

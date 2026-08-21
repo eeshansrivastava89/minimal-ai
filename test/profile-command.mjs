@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 const dataDir = await mkdtemp(join(tmpdir(), "minimal-profile-command-"));
 process.env.MINIMAL_DIR = dataDir;
 
-const { piApiModelId } = await import("../src/harness-pi.mjs");
+const { harnessModelRef } = await import("../src/harness-shared.mjs");
 
-describe("piApiModelId", () => {
+describe("harnessModelRef", () => {
   it("uses modelAlias for all backends", () => {
-    assert.equal(piApiModelId({ backend: "llama-cpp", modelAlias: "friendly", modelPath: "/m.gguf" }), "friendly");
-    assert.equal(piApiModelId({ backend: "omlx", modelAlias: "Qwen3-27B", modelPath: null }), "Qwen3-27B");
+    assert.equal(harnessModelRef({ providerId: "llama-cpp", modelAlias: "friendly" }), "llama-cpp/friendly");
+    assert.equal(harnessModelRef({ providerId: "omlx", modelAlias: "Qwen3-27B" }), "omlx/Qwen3-27B");
   });
 });

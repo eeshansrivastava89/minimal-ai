@@ -6,7 +6,7 @@ import { resolvedPathAllowMissing } from "../paths.mjs";
 import { HF_HUB_DIR } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { isProfileRunning, stopProfile } from "../process.mjs";
-import { removeFromPiConfig } from "../harness-pi.mjs";
+import { configuredHarness } from "../harnesses.mjs";
 import { deleteProfile, effectiveModelId } from "../profiles.mjs";
 import { deleteOllamaModel } from "../ollama-runtime.mjs";
 import { offerOmlxRestart } from "../omlx-runtime.mjs";
@@ -88,7 +88,7 @@ export async function deleteModelFromSource(item, confirm = promptConfirm) {
       console.log(theme.subtle("Cancelled."));
       return { confirmed: false, cancelled: true };
     }
-    await removeFromPiConfig(item.profile);
+    await (await configuredHarness()).removeModel(item.profile);
     await deleteProfile(item.profile.id);
     console.log(theme.subtle(`Removed configuration: ${item.profile.id}`));
     return { confirmed: true, alreadyAbsent: true };
@@ -212,7 +212,7 @@ export async function deleteModelFromSource(item, confirm = promptConfirm) {
     return sourceDeletion;
   }
   if (item.type === "profile") {
-    await removeFromPiConfig(item.profile);
+    await (await configuredHarness()).removeModel(item.profile);
     await deleteProfile(item.profile.id);
     console.log(theme.subtle(`Removed configuration: ${item.profile.id}`));
   }
