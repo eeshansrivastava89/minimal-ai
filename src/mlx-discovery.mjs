@@ -73,7 +73,7 @@ export async function mlxModelHasMtpWeights(modelDir) {
 
 /**
  * Scan ~/.omlx/models/ for MLX model directories and return a Map of
- * basename → { sizeBytes, publisher, modelType }.
+ * basename → { sizeBytes, publisher, modelType, drafter }.
  */
 export async function scanOmlxModelSizes() {
   if (!existsSync(OMLX_MODELS_DIR)) return new Map();
@@ -93,7 +93,11 @@ export async function scanOmlxModelSizes() {
         const sizeBytes = await getMlxDirSizeBytes(fullPath);
         const config = await readOmlxModelConfig(fullPath);
         const modelType = typeof config?.model_type === "string" ? config.model_type : null;
-        if (sizeBytes > 0) infoByBasename.set(entry.name, { sizeBytes, publisher, modelType });
+        // DFlash/DFlash2 draft checkpoints (and similar) are not chat models:
+        // they carry a dflash_config block and/or a DFlash* architecture.
+        const drafter = Boolean(config?.dflash_config)
+          || (Array.isArray(config?.architectures) && config.architectures.some((a) => /dflash/i.test(String(a))));
+        if (sizeBytes > 0) infoByBasename.set(entry.name, { sizeBytes, publisher, modelType, drafter });
       } else {
         await walk(fullPath, publisher ?? entry.name);
       }

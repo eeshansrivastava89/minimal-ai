@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.6.3] - 2026-08-23
+
+### Fixed
+- DFlash/DFlash2 draft checkpoints (e.g. `z-lab/Qwen3.8-27B-DFlash2`) no longer appear as set-uppable chat models in the picker. They declare a normal-looking `model_type` (unlike `_mtp` drafters, which were already excluded) — the oMLX disk scan now flags them via the `dflash_config` block / `DFlash*` architecture in config.json and the picker hides them.
+
 ## [2.6.2] - 2026-08-23
 
 ### Changed

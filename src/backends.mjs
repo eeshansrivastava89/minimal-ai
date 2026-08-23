@@ -93,8 +93,10 @@ async function scanOmlxModels() {
   const deduped = [];
   for (const model of body.data.filter(isChatOmlxModel)) {
     const info = lookupOmlxModelInfo(model.id, infoMap);
-    // Exclude standalone MTP drafters (model_type ends with _mtp)
+    // Exclude standalone MTP drafters (model_type ends with _mtp) and DFlash
+    // draft checkpoints (flagged from config.json during the disk scan).
     if (info?.modelType && info.modelType.toLowerCase().endsWith("_mtp")) continue;
+    if (info?.drafter) continue;
     const hasPublisher = model.id.includes("/") || model.id.includes("--");
     const fullName = (!hasPublisher && info?.publisher) ? `${info.publisher}/${model.id}` : model.id;
     const normalized = fullName.replace(/--/g, "/");

@@ -194,4 +194,16 @@ describe("detectOmlxCapabilities", () => {
     const facts = await detectOmlxCapabilities({ modelId: id });
     assert.equal(facts.mtp, true);
   });
+
+  it("flags DFlash draft checkpoints as drafters in the disk scan", async () => {
+    const { scanOmlxModelSizes, lookupOmlxModelInfo } = await import("../src/mlx-discovery.mjs");
+    await makeOmlxModel("Qwen3.8-27B-DFlash2", {
+      model_type: "qwen3",
+      architectures: ["DFlash2DraftModel"],
+      dflash_config: { block_size: 8 },
+    });
+    const infoMap = await scanOmlxModelSizes();
+    assert.equal(lookupOmlxModelInfo("Qwen3.8-27B-DFlash2", infoMap)?.drafter, true);
+    assert.equal(lookupOmlxModelInfo("Vision-Model-4bit", infoMap)?.drafter, false);
+  });
 });
