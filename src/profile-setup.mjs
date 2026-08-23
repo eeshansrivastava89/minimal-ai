@@ -87,9 +87,10 @@ async function applyThinkingBudgetNow(profile) {
     : { thinking_budget_enabled: false };
   const result = await putOmlxModelSettings(apiRootUrl(profile.baseUrl), effectiveModelId(profile), settings);
   if (result.ok) {
+    const unverified = result.verified === false ? " (not independently verified)" : "";
     console.log(status({ kind: "success", message: Number.isFinite(profile.thinkingBudget)
-      ? `Thinking budget applied on oMLX server (${profile.thinkingBudget.toLocaleString()} tokens)`
-      : "Thinking budget disabled on oMLX server" }));
+      ? `Thinking budget applied on oMLX server (${profile.thinkingBudget.toLocaleString()} tokens)${unverified}`
+      : `Thinking budget disabled on oMLX server${unverified}` }));
   } else {
     console.log(status({ kind: "warning", message: `Could not apply thinking budget: ${omlxSettingsFailureHint(result)}` }));
     if (Number.isFinite(profile.thinkingBudget)) hint("Stored on the profile — minimal-ai will apply it on next launch.");

@@ -153,7 +153,8 @@ async function ensureOmlxModelSettings(profile) {
       settings.mtp_enabled ? "MTP enabled" : null,
       settings.thinking_budget_tokens ? `thinking budget ${settings.thinking_budget_tokens}` : null,
     ].filter(Boolean).join(" + ");
-    console.log(status({ kind: "success", message: `[omlx] Verified: ${applied} for ${effectiveModelId(profile)}` }));
+    const verb = result.verified === false ? "Applied (not independently verified)" : "Verified";
+    console.log(status({ kind: "success", message: `[omlx] ${verb}: ${applied} for ${effectiveModelId(profile)}` }));
   } else {
     console.log(status({ kind: "warning", message: `[omlx] Could not apply model settings: ${omlxSettingsFailureHint(result)}` }));
   }

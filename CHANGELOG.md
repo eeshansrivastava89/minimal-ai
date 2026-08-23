@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.1] - 2026-08-23
+
+### Fixed
+- oMLX setting applies (MTP, thinking budget) no longer report a false failure: oMLX has no GET settings endpoint (405), so the post-apply verify step always failed and warned even when the apply succeeded. Verification now reads the PUT response's own settings echo, falling back to `~/.omlx/model_settings.json`; the rare apply that can't be independently verified is labeled "not independently verified" instead of warned as a failure.
+
 ## [2.7.0] - 2026-08-23
 
 ### Added

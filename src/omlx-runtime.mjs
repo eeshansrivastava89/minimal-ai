@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { execCommand, execFileAsync } from "./exec.mjs";
 import { isNewerVersion } from "./updates.mjs";
+import { readOmlxModelSettings } from "./mlx-discovery.mjs";
 import { formatBytes, status, theme, promptConfirm, screenHeader, card } from "./ui.mjs";
 
 const OMLX_CLI_SHIM = join(homedir(), ".omlx", "bin", "omlx");
@@ -69,10 +70,14 @@ export async function startOmlxServer() {
 }
 
 /**
- * PUT partial per-model settings to the oMLX admin API, then GET to verify
- * they persisted. Never throws — returns { ok, reason, detail? } so callers
- * can word a context-appropriate warning. reason: "auth" | "not-found" |
- * "http" | "unverifiable" | "not-persisted" | "unreachable".
+ * PUT partial per-model settings to the oMLX admin API, then verify they
+ * persisted. oMLX has no GET settings endpoint (405 since at least
+ * 0.6.3rc2 — a GET-based verify would report a successful PUT as failed),
+ * so verification reads the PUT response's own `settings` echo, falling
+ * back to ~/.omlx/model_settings.json (which oMLX rewrites on every PUT).
+ * Never throws — returns { ok, verified, reason?, detail? } so callers can
+ * word a context-appropriate message. reason: "auth" | "not-found" |
+ * "http" | "not-persisted" | "unreachable".
  */
 export async function putOmlxModelSettings(baseUrl, modelId, settings) {
   const url = `${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`;
@@ -89,12 +94,14 @@ export async function putOmlxModelSettings(baseUrl, modelId, settings) {
       const detail = await response.text().catch(() => "");
       return { ok: false, reason: "http", detail: `HTTP ${response.status} ${detail}`.trim() };
     }
-    const verify = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!verify.ok) return { ok: false, reason: "unverifiable", detail: `HTTP ${verify.status}` };
-    const current = await verify.json();
-    const failed = Object.entries(settings).filter(([key, value]) => current[key] !== value).map(([key]) => key);
+    const echo = await response.json().catch(() => null);
+    const persisted = echo?.settings && typeof echo.settings === "object"
+      ? echo.settings
+      : await readOmlxModelSettings(modelId);
+    if (!persisted) return { ok: true, verified: false };
+    const failed = Object.entries(settings).filter(([key, value]) => persisted[key] !== value).map(([key]) => key);
     if (failed.length > 0) return { ok: false, reason: "not-persisted", detail: failed.join(", ") };
-    return { ok: true };
+    return { ok: true, verified: true };
   } catch (err) {
     return { ok: false, reason: "unreachable", detail: err.message };
   }
