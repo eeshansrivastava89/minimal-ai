@@ -48,7 +48,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - run: npm ci
       - name: Verify tag matches package version
@@ -72,6 +71,6 @@ jobs:
         run: npm run check:privacy
 
       - name: Publish
+        # npm trusted publishing: OIDC via id-token (npm CLI >= 11.5.1),
+        # no NODE_AUTH_TOKEN — tokens expire, OIDC doesn't.
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
