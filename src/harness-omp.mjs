@@ -15,13 +15,13 @@ import {
 const OMP_CONFIG = join(homedir(), ".omp", "agent", "models.yml");
 
 // omp (oh-my-pi, a Pi fork) drives thinking via top-level reasoning_effort.
-// Wire-verified 2026-08: oMLX reads it (levels work); llama.cpp ignores it
-// (needs chat_template_kwargs, which omp can't send per-request); Ollama's
-// /v1 ignores every thinking field. So we only advertise reasoning for oMLX
-// models — showing thinking controls that provably do nothing is how the
-// Ollama/Pi bug happened.
+// Wire-verified 2026-08: oMLX reads it (levels work); Ollama's /v1 maps it
+// to internal think levels (0.32.x); llama.cpp ignores it (needs
+// chat_template_kwargs, which omp can't send per-request). So we advertise
+// reasoning for oMLX and Ollama models only — showing thinking controls
+// that provably do nothing is how the Ollama/Pi bug happened.
 function ompReasoning(profile) {
-  if (profile.backend !== "omlx") return false;
+  if (profile.backend !== "omlx" && profile.backend !== "ollama") return false;
   return modelDescriptor(profile).thinking === true;
 }
 

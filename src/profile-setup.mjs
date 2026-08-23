@@ -38,7 +38,7 @@ async function askThinkingLevel(configured, backendId) {
   const current = configured.thinkingLevel ?? "";
   console.log("");
   if (backendId === "ollama") {
-    hint("Ollama's OpenAI-compatible /v1 ignores thinking levels — the selection won't take effect on that backend.");
+    hint("Ollama /v1 honors thinking levels as soft steering — but the thinking trace is never shown, and \"off\" still thinks at the server default (harness limitation).");
   } else {
     hint("How hard the model thinks on each launch. Benchmark runs inherit this. Harness default = Pi/omp session level.");
   }

@@ -54,11 +54,11 @@ describe("omp harness config", () => {
     assert.equal(model.compat, undefined);
   });
 
-  it("marks llama.cpp and Ollama models as non-reasoning (their servers ignore reasoning_effort)", async () => {
+  it("marks llama.cpp models as non-reasoning; Ollama reasons via /v1 reasoning_effort", async () => {
     // Wire-verified 2026-08: llama.cpp ignores top-level reasoning_effort
-    // (needs chat_template_kwargs, which omp cannot send) and Ollama's /v1
-    // ignores every thinking field. Advertising reasoning would show
-    // thinking controls that do nothing.
+    // (needs chat_template_kwargs, which omp cannot send) — advertising it
+    // would show thinking controls that do nothing. Ollama's /v1 honors
+    // reasoning_effort since 0.32.x (maps to internal think levels).
     const fakeGguf = join(sandboxHome, "fake-model.gguf");
     await writeFile(fakeGguf, "GGUF");
     await ompHarness.syncConfig(omlxProfile({
@@ -79,7 +79,8 @@ describe("omp harness config", () => {
     }));
     const config = await readOmpConfig();
     assert.equal(config.providers["llama-cpp"].models[0].reasoning, false);
-    assert.equal(config.providers.ollama.models[0].reasoning, false);
+    assert.equal(config.providers.ollama.models[0].reasoning, true);
+    assert.equal(config.providers.ollama.compat.supportsReasoningEffort, true);
   });
 
   it("preserves providers it did not write", async () => {

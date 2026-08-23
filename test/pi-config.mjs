@@ -65,9 +65,35 @@ describe("syncPiConfig thinking levels", () => {
     });
   });
 
-  it("suppresses thinking controls for Ollama models", async () => {
-    // Ollama's /v1 endpoint ignores every thinking field (curl-verified) —
-    // advertising reasoning would show knobs that provably do nothing.
+  it("enables reasoning for Ollama models with an identity thinking map", async () => {
+    // Ollama's /v1 honors reasoning_effort since 0.32.x and accepts every
+    // Pi level verbatim (curl-verified 0.32.15). The identity map unlocks
+    // xhigh/max in Pi's picker; no chat-template compat — /v1 ignores
+    // chat_template_kwargs.
+    await syncPiConfig({
+      id: "qwen38-ollama",
+      label: "Qwen3.8 27B (Ollama)",
+      providerId: "ollama",
+      backend: "ollama",
+      modelAlias: "qwen3.8:27b-mlx",
+      ollamaModel: "qwen3.8:27b-mlx",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      capabilities: { thinking: true },
+      flags: { ctxSize: 32768 },
+    });
+    const config = await readPiConfig();
+    const provider = config.providers.ollama;
+    assert.equal(provider.compat.supportsReasoningEffort, true);
+    const model = provider.models[0];
+    assert.equal(model.reasoning, true);
+    assert.deepEqual(model.thinkingLevelMap, {
+      off: "none", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max",
+    });
+    assert.equal(model.compat, undefined);
+  });
+
+  it("suppresses thinking controls for Ollama models without stored facts", async () => {
+    // Same rule as oMLX: the harness renders stored capability facts only.
     await syncPiConfig({
       id: "qwen38-ollama",
       label: "Qwen3.8 27B (Ollama)",

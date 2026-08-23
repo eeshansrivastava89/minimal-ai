@@ -87,12 +87,13 @@ export function modelFamily(profile) {
 
 /**
  * Provider-level compat shared by all local OpenAI-compatible backends.
- * Only oMLX's server reads the top-level reasoning_effort field —
- * llama.cpp needs chat_template_kwargs (carried per-model in Pi compat) and
- * Ollama's /v1 ignores every thinking field.
+ * oMLX's server reads the top-level reasoning_effort field, and Ollama's
+ * /v1 maps it to internal think levels (verified 0.32.15: accepts
+ * minimal/low/medium/high/xhigh/max verbatim, plus "none" and "ultra").
+ * llama.cpp needs chat_template_kwargs (carried per-model in Pi compat).
  */
 export function providerCompat(backendId) {
-  return { supportsDeveloperRole: false, supportsReasoningEffort: backendId === "omlx", maxTokensField: "max_tokens" };
+  return { supportsDeveloperRole: false, supportsReasoningEffort: backendId === "omlx" || backendId === "ollama", maxTokensField: "max_tokens" };
 }
 
 /** Spawn a harness CLI in the foreground, inheriting stdio. */

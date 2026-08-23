@@ -32,12 +32,23 @@ const PI_PACKAGES = [
 // Pi thinking levels → reasoning_effort values sent to the server. oMLX
 // normalizes aliases and falls back to the model template's default on
 // unknown values; llama.cpp passes them through to the template (levels
-// land only if the template reads reasoning_effort). Ollama models never
-// see this map — see piReasoning. minimal/max stay hidden — local
+// land only if the template reads reasoning_effort). Ollama has its own
+// map — see OLLAMA_THINKING_LEVEL_MAP. minimal/max stay hidden — local
 // templates generally accept only low/medium/high (harmony) or
 // low/medium/xhigh (Qwen3.x), and oMLX remaps across the two families
 // automatically.
 const THINKING_LEVEL_MAP = { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null };
+
+// Ollama's /v1 honors reasoning_effort and accepts every Pi level verbatim
+// (curl-verified 0.32.15: minimal/low/medium/high/xhigh/max, plus "none"
+// and "ultra"; invalid values get a clear 400). The identity map exists so
+// xhigh/max show up in Pi's level picker — those levels stay hidden unless
+// the map defines them. Caveats: /v1 never returns the thinking trace
+// (invisible token burn), and Pi's generic OpenAI path omits
+// reasoning_effort when thinking is off, so "off" falls back to the
+// server's default level — off→"none" would be the true off-switch but is
+// not reachable through that path today.
+const OLLAMA_THINKING_LEVEL_MAP = { off: "none", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
 
 // Qwen3.5/3.6/3.8-family templates accept only low/medium/xhigh, with xhigh
 // as the template default. Sending "high" makes the template raise and
@@ -52,6 +63,7 @@ function isQwen3xFamily(family) {
 }
 
 export function thinkingLevelMapFor(profile) {
+  if (profile.backend === "ollama") return OLLAMA_THINKING_LEVEL_MAP;
   return isQwen3xFamily(modelFamily(profile)) ? QWEN3X_THINKING_LEVEL_MAP : THINKING_LEVEL_MAP;
 }
 
@@ -76,7 +88,7 @@ function piModelConfig(profile) {
 
 function piModelCompat(profile) {
   if (profile.compat) return profile.compat;
-  if (profile.backend === "ollama") return null; // no thinking controls — see piReasoning
+  if (profile.backend === "ollama") return null; // /v1 ignores chat_template_kwargs — levels travel via top-level reasoning_effort (piReasoning)
   const family = modelFamily(profile);
   if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) {
     // Generic chat-template kwargs carry BOTH the on/off toggle and the
@@ -85,7 +97,7 @@ function piModelCompat(profile) {
     // their template default (xhigh) no matter what the user picks.
     // oMLX reads chat_template_kwargs natively; llama.cpp passes them
     // through to the template. Ollama models never reach this branch —
-    // see piReasoning.
+    // /v1 ignores chat_template_kwargs (curl-verified).
     return {
       thinkingFormat: "chat-template",
       chatTemplateKwargs: {
@@ -99,12 +111,10 @@ function piModelCompat(profile) {
 }
 
 function piReasoning(profile) {
-  // Ollama's OpenAI-compatible /v1 endpoint ignores every thinking field
-  // (curl-verified: chat_template_kwargs, reasoning_effort, reasoning, and
-  // Ollama's own think field) — only native /api/chat honors them, and Pi
-  // doesn't speak it. Advertising reasoning here would show thinking
-  // controls that provably do nothing, so don't.
-  if (profile.backend === "ollama") return undefined;
+  // Advertise reasoning whenever the model can think. Ollama's /v1 honors
+  // top-level reasoning_effort (verified 0.32.x — see
+  // OLLAMA_THINKING_LEVEL_MAP for caveats); oMLX reads it natively;
+  // llama.cpp gets levels via per-model chat-template compat instead.
   return modelDescriptor(profile).thinking || undefined;
 }
 
