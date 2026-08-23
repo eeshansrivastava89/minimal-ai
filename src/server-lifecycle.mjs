@@ -11,6 +11,7 @@ import { sleep, execFileAsync } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
 import { status, theme } from "./ui.mjs";
 import { computeServerCommand, buildStartScript, timestampForFile } from "./server-command.mjs";
+import { mtpEnabledFor } from "./capabilities.mjs";
 import { pidAlive, readProcessIdentity, processIdentityMatches, serverModelIds, apiRootUrl, responseErrorDetail } from "./server-status.mjs";
 
 // ── Start server ───────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ async function startLocalServer(profile) {
 async function startManagedServer(profile, backend) {
   if (await serverReady(profile.baseUrl)) {
     // Apply per-model settings (MTP) even when server is already running.
-    if (backend.id === "omlx" && profile.capabilities?.mtp) {
+    if (backend.id === "omlx" && mtpEnabledFor(profile)) {
       await ensureOmlxMtpSetting(profile);
     }
     return writeManagedState(profile, backend);
@@ -120,7 +121,7 @@ async function startManagedServer(profile, backend) {
   // Apply per-model settings (MTP) before the model is loaded.
   // oMLX applies MTP patches at load time, so the setting must be in
   // model_settings.json before any request triggers a load.
-  if (backend.id === "omlx" && profile.capabilities?.mtp) {
+  if (backend.id === "omlx" && mtpEnabledFor(profile)) {
     await ensureOmlxMtpSetting(profile);
   }
 

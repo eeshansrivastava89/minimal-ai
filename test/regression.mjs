@@ -9,7 +9,7 @@ function freshConfigImport() {
   return import(`../src/config.mjs?t=${Date.now()}-${++importCounter}`);
 }
 
-import { detectCapabilities } from "../src/autodetect.mjs";
+import { detectGgufCapabilities } from "../src/capabilities.mjs";
 import { removeInstallerPathBlock } from "../src/shell-path.mjs";
 import { checkForUpdate, compareVersions, currentPackageVersion, detectInvocation, isNewerVersion, updateCommand } from "../src/updates.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults } from "../src/profile-flags.mjs";
@@ -157,7 +157,7 @@ describe("regressions", () => {
     const dir = await mkdtemp(join(tmpdir(), "Qwen3.6-35B-A3B-MTP-GGUF-"));
     const file = join(dir, "Qwen3.6-35B-A3B-UD-Q4_K_S.gguf");
     await writeFile(file, "GGUF\0");
-    const caps = detectCapabilities(file, null);
+    const caps = detectGgufCapabilities(file, null);
     assert.equal(caps.mtp, true);
   });
 
@@ -165,7 +165,7 @@ describe("regressions", () => {
     const dir = await mkdtemp(join(tmpdir(), "Qwen3.6-35B-A3B-imatrix-GGUF-"));
     const file = join(dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf");
     await writeFile(file, "GGUF\0");
-    const caps = detectCapabilities(file, null);
+    const caps = detectGgufCapabilities(file, null);
     assert.equal(caps.imatrix, true);
     assert.equal(caps.qat, false);
   });
@@ -174,12 +174,12 @@ describe("regressions", () => {
     const dir = await mkdtemp(join(tmpdir(), "google-gemma-3-4b-it-qat-q4_0-gguf-"));
     const file = join(dir, "gemma-3-4b-it-qat-Q4_0.gguf");
     await writeFile(file, "GGUF\0");
-    const caps = detectCapabilities(file, null);
+    const caps = detectGgufCapabilities(file, null);
     assert.equal(caps.qat, true);
   });
 
 
-  it("disabling MTP clears drafter and capability state", () => {
+  it("disabling MTP clears drafter and the choice, keeping the fact", () => {
     const profile = {
       backend: "llama-cpp",
       providerId: "llama-cpp",
@@ -192,7 +192,9 @@ describe("regressions", () => {
     assert.equal(updated.backend, "llama-cpp");
     assert.equal(updated.providerId, "llama-cpp");
     assert.equal(updated.drafterPath, null);
-    assert.equal(updated.capabilities.mtp, false);
+    // The choice moves to mtpEnabled; capabilities.mtp stays the pure fact.
+    assert.equal(updated.mtpEnabled, false);
+    assert.equal(updated.capabilities.mtp, true);
   });
 
   it("updates first-run profile flags together", () => {
@@ -211,7 +213,7 @@ describe("regressions", () => {
     const dir = await mkdtemp(join(tmpdir(), "minimal-regression-"));
     const file = join(dir, "broken-Q4_K_M.gguf");
     await writeFile(file, "GGUF\0");
-    const caps = detectCapabilities(file, null);
+    const caps = detectGgufCapabilities(file, null);
     assert.equal(caps.architecture, null);
     assert.equal(caps.quant, "Q4_K_M");
   });

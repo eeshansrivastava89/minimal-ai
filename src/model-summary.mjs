@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { backendFor } from "./backends.mjs";
 import { matchDrafter } from "./scan.mjs";
-import { detectCapabilities } from "./autodetect.mjs";
+import { detectGgufCapabilities } from "./capabilities.mjs";
 import { humanCapabilitySummary, formatCtxLabel, status } from "./ui.mjs";
 
 export function isProfileFileMissing(profile) {
@@ -35,7 +35,7 @@ function profileMtpLabel(profile, drafters, { detailed = false } = {}) {
 }
 
 function ggufMtpLabel(model, drafter) {
-  const caps = detectCapabilities(model.path, model.mmprojPath);
+  const caps = detectGgufCapabilities(model.path, model.mmprojPath);
   if (caps.mtp || Boolean(drafter)) return status({ kind: "success", message: "MTP ✓" });
   if (caps.architecture === "gemma4") return status({ kind: "warning", message: "MTP: needs drafter" });
   return null;
@@ -51,11 +51,11 @@ export function profileDetailParts(profile, { fileMissing = false, drafters = nu
 }
 
 export function ggufDetailParts(model, drafter) {
-  const caps = detectCapabilities(model.path, model.mmprojPath);
+  const caps = detectGgufCapabilities(model.path, model.mmprojPath);
   const parts = [humanCapabilitySummary(caps)];
   const mtpLabel = ggufMtpLabel(model, drafter);
   if (mtpLabel) parts.push(mtpLabel);
-  const ctxLabel = caps.ctxSize ? `${formatCtxLabel(caps.ctxSize)} ctx` : null;
+  const ctxLabel = caps.contextLength ? `${formatCtxLabel(caps.contextLength)} ctx` : null;
   if (ctxLabel) parts.push(ctxLabel);
   return { caps, parts };
 }

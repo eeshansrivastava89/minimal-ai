@@ -1,6 +1,6 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -14,7 +14,7 @@ after(() => rm(sandboxHome, { recursive: true, force: true }));
 
 const { piHarness } = await import("../src/harness-pi.mjs");
 const syncPiConfig = (profile) => piHarness.syncConfig(profile);
-const { detectOmlxVision } = await import("../src/mlx-discovery.mjs");
+const { detectOmlxCapabilities } = await import("../src/capabilities.mjs");
 
 function omlxProfile(overrides = {}) {
   return {
@@ -85,16 +85,18 @@ describe("syncPiConfig thinking levels", () => {
     assert.equal(model.compat, undefined);
   });
 
-  it("detects thinking by name for managed models without capabilities", async () => {
-    // oMLX/Ollama profiles never get GGUF capability detection — the name
-    // hint fallback must flag them so Pi shows thinking levels.
+  it("no name-hint fallback at harness sync — managed profiles need stored facts", async () => {
+    // Issue #12: the harness renders stored capabilities only; the name-hint
+    // regex lives in the detector (setup/reconfigure). A managed profile that
+    // never stored thinking (pre-detector) shows no thinking controls until
+    // Reconfigure refreshes its facts.
     const noCaps = omlxProfile();
     delete noCaps.capabilities;
     await syncPiConfig(noCaps);
     const config = await readPiConfig();
     const model = config.providers.omlx.models[0];
-    assert.equal(model.reasoning, true);
-    assert.ok(model.thinkingLevelMap);
+    assert.equal(model.reasoning, undefined);
+    assert.equal(model.thinkingLevelMap, undefined);
   });
 
   it("maps every qwen3.x Pi level to a value its template accepts (no silent xhigh)", async () => {
@@ -161,19 +163,35 @@ describe("syncPiConfig thinking levels", () => {
   });
 });
 
-describe("detectOmlxVision", () => {
+describe("detectOmlxCapabilities", () => {
+  async function makeOmlxModel(id, config) {
+    const dir = join(sandboxHome, ".omlx", "models", "pub", id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.json"), JSON.stringify(config));
+    await writeFile(join(dir, "model.safetensors"), "stub");
+    return id;
+  }
+
   it("detects vision_config in the model's config.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "minimal-mlx-vision-"));
-    after(() => rm(dir, { recursive: true, force: true }));
-    await writeFile(join(dir, "config.json"), JSON.stringify({ model_type: "qwen3_5", vision_config: { depth: 24 } }));
-    assert.equal(await detectOmlxVision(dir), true);
+    const id = await makeOmlxModel("Vision-Model-4bit", { model_type: "qwen3_5", vision_config: { depth: 24 } });
+    const facts = await detectOmlxCapabilities({ modelId: id });
+    assert.equal(facts.vision, true);
+    assert.equal(facts.architecture, "qwen3_5");
   });
 
-  it("returns false for text-only models and missing config", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "minimal-mlx-novision-"));
-    after(() => rm(dir, { recursive: true, force: true }));
-    await writeFile(join(dir, "config.json"), JSON.stringify({ model_type: "qwen3_5" }));
-    assert.equal(await detectOmlxVision(dir), false);
-    assert.equal(await detectOmlxVision(join(dir, "does-not-exist")), false);
+  it("returns no vision for text-only models and falls back to name hints for thinking", async () => {
+    const id = await makeOmlxModel("Qwen3.8-27B-4bit", { model_type: "qwen3_5" });
+    const facts = await detectOmlxCapabilities({ modelId: id });
+    assert.equal(facts.vision, false);
+    assert.equal(facts.mtp, false);
+    assert.equal(facts.thinking, true); // qwen3 name hint, last resort
+  });
+
+  it("detects MTP only when config, whitelist, and weights all agree", async () => {
+    const id = await makeOmlxModel("MTP-Model-4bit", { model_type: "qwen3_5", mtp_num_hidden_layers: 1 });
+    await writeFile(join(sandboxHome, ".omlx", "models", "pub", id, "model.safetensors.index.json"),
+      JSON.stringify({ weight_map: { "mtp.0.weight": "model.safetensors" } }));
+    const facts = await detectOmlxCapabilities({ modelId: id });
+    assert.equal(facts.mtp, true);
   });
 });

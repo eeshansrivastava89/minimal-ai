@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { loadProfiles } from "./profiles.mjs";
-import { nameHintsThinking } from "./autodetect.mjs";
 import { status, theme } from "./ui.mjs";
 
 // ── Harness-neutral model/profile helpers ────────────────────────────────
@@ -47,23 +46,23 @@ export function modelDescriptor(profile) {
 /**
  * The context window a harness should assume for a profile, resolved from
  * backend-appropriate sources (no hardcoded 16K except as a last resort):
- * - llama.cpp: configured flags.ctxSize (user choice), else GGUF metadata
+ * - llama.cpp: configured flags.ctxSize (user choice), else detected model max
  * - managed oMLX: server-reported max_model_len, persisted at setup
- * - managed Ollama: served context from /api/ps (after preflight)
+ * - managed Ollama: served context from /api/ps (runtime fact), else the
+ *   legacy llama flag slot it briefly lived in, else the model max
  */
 export function resolvedLimits(profile) {
+  const caps = profile.capabilities ?? {};
   if (profile.backend === "ollama") {
-    const ctx = profile.capabilities?.servedContext
-      ?? profile.flags?.ctxSize // legacy: served context used to live in the llama flag
-      ?? null;
+    const ctx = caps.servedContext ?? profile.flags?.ctxSize ?? caps.contextLength ?? null;
     return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
   }
   if (profile.backend === "omlx") {
-    const ctx = profile.capabilities?.contextLength ?? profile.flags?.ctxSize ?? null;
+    const ctx = caps.contextLength ?? profile.flags?.ctxSize ?? null;
     return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
   }
   // llama.cpp: the configured context window governs the harness ceiling.
-  const ctx = profile.flags?.ctxSize ?? profile.capabilities?.ctxSize ?? null;
+  const ctx = profile.flags?.ctxSize ?? caps.contextLength ?? null;
   return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
 }
 
@@ -76,11 +75,10 @@ function modelInput(profile) {
 }
 
 function thinkingCapability(profile) {
-  // GGUF profiles get thinking detection from metadata at setup time.
-  // Managed models (oMLX/Ollama) have no readable metadata — fall back to
-  // the same name hints autodetect uses.
-  if (profile.capabilities?.thinking !== undefined) return profile.capabilities.thinking;
-  return nameHintsThinking(modelFamily(profile)) || undefined;
+  // Dumb renderer: only the stored fact counts. Capability detection
+  // (including the name-hint last resort) happens at setup/reconfigure in
+  // capabilities.mjs — reconfigure older managed profiles to refresh facts.
+  return profile.capabilities?.thinking || undefined;
 }
 
 export function modelFamily(profile) {

@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.6.2] - 2026-08-23
+
+### Changed
+- Unified capability detection (#12): one detector, one facts schema for every backend. llama.cpp reads GGUF metadata, oMLX reads the model's config.json/safetensors index (plus its chat template for thinking support), Ollama reads `/api/show` — all filling the same shape, stored on the profile at setup. The context-length facts (`ctxSize`/`metaCtx`/`contextLength`) are now a single `contextLength`; old profiles are migrated automatically on load.
+- Managed setups (oMLX/Ollama) now end with the same "what we detected" overview card llama.cpp setups had, and Ollama profiles store detected facts (thinking, vision, MTP, context) instead of only displaying them during setup.
+
+### Fixed
+- Disabling thinking in Reconfigure for a llama.cpp model is now honored at launch — the launcher was re-adding `chat_template_kwargs` from the detected capability, silently undoing the choice.
+- MTP enable/disable is now a stored per-profile choice (`mtpEnabled`) instead of overwriting the detected capability fact.
+
+### Migration
+- oMLX/Ollama profiles created before this release no longer get name-guessed thinking controls in Pi — Reconfigure the profile once (picker → model → Reconfigure) to store the detected facts.
+
 ## [2.6.1] - 2026-08-22
 
 ### Fixed

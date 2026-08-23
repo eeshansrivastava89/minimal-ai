@@ -22,14 +22,14 @@ export function removeMtpDefaults(profile) {
   return applyProfileFlags({
     ...profile,
     drafterPath: null,
-    capabilities: { ...(profile.capabilities ?? {}), mtp: false },
+    mtpEnabled: false,
   }, profile.flags);
 }
 
 function applyMtpDefaults(profile) {
   return applyProfileFlags({
     ...profile,
-    capabilities: { ...(profile.capabilities ?? {}), mtp: true },
+    mtpEnabled: true,
   }, profile.flags);
 }
 

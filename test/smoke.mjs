@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 // Module imports catch ReferenceError (computeFlags, readFile, etc.) on production paths.
-import { detectCapabilities, computeFlags } from "../src/autodetect.mjs";
+import { detectCapabilities } from "../src/capabilities.mjs";
+import { computeFlags } from "../src/autodetect.mjs";
 import { createProfileFromModel, loadProfiles } from "../src/profiles.mjs";
 import { scanGgufModels } from "../src/scan.mjs";
 import { estimateMemory } from "../src/estimate.mjs";

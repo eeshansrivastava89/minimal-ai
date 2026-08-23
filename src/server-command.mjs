@@ -1,5 +1,6 @@
 import { backendFor, backendBinaryFor } from "./backends.mjs";
 import { computeFlags } from "./autodetect.mjs";
+import { mtpEnabledFor } from "./capabilities.mjs";
 
 // ── Compute server command from profile config ─────────────────────────────
 // Single source of truth: derives the full command (binary + args + env) from
@@ -13,9 +14,16 @@ export async function computeServerCommand(profile) {
   const binary = await backendBinaryFor(profile.backend);
   if (!binary) throw new Error("Server binary not found. Run minimal-ai interactively to install.");
 
-  // llama-cpp
+  // llama.cpp. Pass choice-resolved capabilities: thinking reflects the
+  // configured flags (a user who disabled thinking keeps it off — raw facts
+  // would re-add chat_template_kwargs), MTP reflects the mtpEnabled choice.
+  const caps = profile.capabilities ?? {};
   const result = computeFlags(
-    profile.capabilities ?? {},
+    {
+      ...caps,
+      thinking: caps.thinking && Boolean(profile.flags?.chatTemplateKwargs),
+      mtp: mtpEnabledFor(profile),
+    },
     profile.modelPath,
     profile.mmprojPath,
     profile.drafterPath,

@@ -89,9 +89,8 @@ export function buildCatalogItems(normalized) {
 
     // Resolve context: configured (flags) -> detected facts -> scan -> managed
     item.contextLength = profile.flags?.ctxSize
-      ?? profile.capabilities?.ctxSize
-      ?? profile.capabilities?.servedContext
       ?? profile.capabilities?.contextLength
+      ?? profile.capabilities?.servedContext
       ?? scanModel?.contextLength
       ?? managedModel?.contextLength
       ?? null;

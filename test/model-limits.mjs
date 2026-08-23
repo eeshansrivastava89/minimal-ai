@@ -18,12 +18,12 @@ function profile(overrides = {}) {
 
 describe("resolvedLimits", () => {
   it("llama.cpp: configured flags.ctxSize wins over metadata", () => {
-    const p = profile({ flags: { ctxSize: 8192 }, capabilities: { ctxSize: 32768 } });
+    const p = profile({ flags: { ctxSize: 8192 }, capabilities: { contextLength: 32768 } });
     assert.deepEqual(resolvedLimits(p), { maxTokens: 8192, contextWindow: 8192 });
   });
 
   it("llama.cpp: falls back to metadata context length", () => {
-    assert.equal(resolvedLimits(profile({ capabilities: { ctxSize: 32768 } })).maxTokens, 32768);
+    assert.equal(resolvedLimits(profile({ capabilities: { contextLength: 32768 } })).maxTokens, 32768);
   });
 
   it("omlx: uses the server-reported context length persisted at setup", () => {

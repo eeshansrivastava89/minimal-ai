@@ -3,7 +3,7 @@ import { mkdir, readdir, rm, unlink, writeFile, readFile } from "node:fs/promise
 import { join } from "node:path";
 import { PROFILE_DIR, RUN_DIR, LOG_DIR } from "./config.mjs";
 import { backendFor, baseUrlForFlags, defaultFlagsForBackend, BACKENDS } from "./backends.mjs";
-import { detectCapabilities } from "./autodetect.mjs";
+import { detectGgufCapabilities, migrateProfile } from "./capabilities.mjs";
 import { computeFlags } from "./autodetect.mjs";
 import { readJson, writeJson } from "./json.mjs";
 
@@ -65,20 +65,13 @@ export async function loadProfiles() {
     .map((e) => e.name)
     .sort();
   return (await Promise.all(ids.map((id) => readProfile(id))))
-    .map((p) => {
-      // Migrate legacy llama-cpp-mtp backend → llama-cpp with mtp capability
-      if (p.backend === "llama-cpp-mtp") {
-        return { ...p, backend: "llama-cpp", providerId: "llama-cpp", capabilities: { ...(p.capabilities ?? {}), mtp: true } };
-      }
-      return p;
-    })
     .filter((p) => BACKENDS[p.backend]);
 }
 
 export async function readProfile(id) {
   const path = profileJsonPath(id);
   if (!existsSync(path)) throw new Error(`Profile "${id}" not found.`);
-  return JSON.parse(await readFile(path, "utf8"));
+  return migrateProfile(JSON.parse(await readFile(path, "utf8")));
 }
 
 export async function saveProfile(profile) {
@@ -162,12 +155,13 @@ export function normalizeProfile(profile) {
 // ── Auto-create profile from a discovered model ────────────────────────────
 
 export async function createProfileFromModel(model, backendId, drafterPath) {
-  const caps = detectCapabilities(model.path, model.mmprojPath);
+  const caps = detectGgufCapabilities(model.path, model.mmprojPath);
   // If a drafter is provided, this model supports MTP regardless of filename
   const hasMtp = caps.mtp || Boolean(drafterPath);
   const backend = backendId ?? "llama-cpp";
+  const capabilities = { ...caps, mtp: hasMtp };
   const { flags } = computeFlags(
-    { ...caps, mtp: hasMtp },
+    capabilities,
     model.path,
     model.mmprojPath,
     drafterPath ?? null,
@@ -183,26 +177,13 @@ export async function createProfileFromModel(model, backendId, drafterPath) {
     modelPath: model.path,
     mmprojPath: model.mmprojPath,
     drafterPath: drafterPath ?? null,
-    capabilities: summarizeCapabilities({ ...caps, mtp: hasMtp }),
+    capabilities,
+    // MTP auto-enabled at creation when supported; the choice is re-asked in
+    // the setup wizard and stored on mtpEnabled (never inside capabilities).
+    ...(hasMtp ? { mtpEnabled: true } : {}),
     preset: null, // no presets — auto-detected
     flags,
   });
-}
-
-function summarizeCapabilities(caps) {
-  return {
-    architecture: caps.architecture,
-    thinking: caps.thinking,
-    vision: caps.vision,
-    mtp: caps.mtp,
-    qat: caps.qat,
-    imatrix: caps.imatrix,
-    quant: caps.quant,
-    metaCtx: caps.metaCtx,
-    mmprojProjectorType: caps.mmprojProjectorType,
-    ctxSize: caps.ctxSize,
-    missingContextLength: caps.missingContextLength || undefined,
-  };
 }
 
 // ── State files (for running servers) ──────────────────────────────────────

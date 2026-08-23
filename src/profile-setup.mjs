@@ -6,12 +6,10 @@ import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
 import { formatBytes, formatCtxLabel, renderList, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
-import { detectCapabilities } from "./autodetect.mjs";
+import { detectGgufCapabilities, detectCapabilities, mtpEnabledFor } from "./capabilities.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { effectiveModelId } from "./profiles.mjs";
-import { detectOmlxMtpCapability, detectOmlxVision, findOmlxModelDir } from "./mlx-discovery.mjs";
-import { ollamaModelInfo } from "./ollama-runtime.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults, applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults } from "./profile-flags.mjs";
 
 const CACHE_CHOICES = [
@@ -135,7 +133,7 @@ export async function configureLocalProfile(profile) {
 
 async function configureLocalProfileInner(profile) {
   let configured = profile;
-  const freshCaps = detectCapabilities(profile.modelPath, profile.mmprojPath);
+  const freshCaps = detectGgufCapabilities(profile.modelPath, profile.mmprojPath);
   if (freshCaps.missingContextLength) {
     console.log(status({ kind: "error", message: "\nCannot configure this model: GGUF metadata is missing context_length." }));
     console.log(theme.subtle("Without context_length, we cannot safely determine KV cache size —\nthis can cause out-of-memory errors or silent context truncation.\nUse a GGUF with complete metadata, or fix the file with a GGUF editor."));
@@ -149,8 +147,10 @@ async function configureLocalProfileInner(profile) {
     if (drafter) drafterPath = drafter.path;
   }
   const hasMtp = freshCaps.mtp || Boolean(drafterPath);
+  // Store the freshly detected facts wholesale (one schema, facts only);
+  // the MTP enable/disable answer lives on mtpEnabled, not in capabilities.
   const caps = { ...freshCaps, mtp: hasMtp };
-  configured = { ...configured, drafterPath: drafterPath ?? null, capabilities: { ...configured.capabilities, mtp: hasMtp } };
+  configured = { ...configured, drafterPath: drafterPath ?? null, capabilities: caps };
   if (configured.disabledMmprojPath && configured.mmprojPath === null && existsSync(configured.disabledMmprojPath)) {
     configured = { ...configured, mmprojPath: configured.disabledMmprojPath, disabledMmprojPath: undefined, capabilities: { ...configured.capabilities, vision: true, visionDisabledReason: undefined } };
   }
@@ -166,7 +166,7 @@ async function configureLocalProfileInner(profile) {
   if (caps.mtp) {
     console.log("");
     hint(`Predicts multiple tokens per step — 1.5–3x faster, no quality loss${configured.drafterPath ? ` · drafter: ${configured.drafterPath}` : ""}`);
-    const useMtp = await ask(promptConfirm({ message: "Enable MTP speculative decoding?", initialValue: true }));
+    const useMtp = await ask(promptConfirm({ message: "Enable MTP speculative decoding?", initialValue: mtpEnabledFor(configured) }));
     configured = useMtp ? applyMtpDefaults(configured) : removeMtpDefaults(configured);
     if (useMtp) {
       console.log("");
@@ -199,7 +199,7 @@ async function configureLocalProfileInner(profile) {
   const nGpuLayers = await ask(promptNumber({ message: "GPU layers", defaultValue: configured.flags.nGpuLayers ?? 99, min: 0, max: 999 }));
   configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
-  const maxCtx = caps.metaCtx ?? caps.ctxSize;
+  const maxCtx = caps.contextLength;
   const availableRam = availableRamBytes();
   const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, drafterPath);
   const hasKvParams = Boolean(prepared.kvParams.layers);
@@ -338,7 +338,7 @@ async function configureLocalProfileInner(profile) {
     ["Flash attention", configured.flags.flashAttention],
     ["Jinja", configured.flags.jinja ? "on" : "off"],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
-    ...(configured.capabilities?.mtp ? [["MTP", `enabled (${configured.flags.specDraftNMax ?? 2} draft tokens)`]] : []),
+    ...(mtpEnabledFor(configured) ? [["MTP", `enabled (${configured.flags.specDraftNMax ?? 2} draft tokens)`]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "enabled"]] : []),
     ...(configured.capabilities?.thinking ? [["Thinking", "enabled"]] : []),
   ]) }));
@@ -364,33 +364,37 @@ export async function configureManagedProfile(profile) {
 async function configureOmlxProfile(profile) {
   let configured = profile;
   const modelId = effectiveModelId(profile);
-  const modelDir = await findOmlxModelDir(modelId);
-  if (modelDir) {
-    const mtpResult = await detectOmlxMtpCapability(modelDir);
-    if (mtpResult.compatible) {
-      console.log("");
-      hint("oMLX native MTP — speculative decoding enabled at load time");
-      const useMtp = await ask(promptConfirm({ message: "Use MTP speculative decoding?", initialValue: true }));
-      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), mtp: useMtp } };
-    } else if (mtpResult.reason !== "model has no MTP heads in config") {
-      console.log("");
-      hint(`MTP not available — ${mtpResult.reason}`);
-    }
 
-    const hasVision = await detectOmlxVision(modelDir);
-    configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: hasVision } };
-  }
-
-  // Refresh the server-reported context window so harness configs keep a
-  // real ceiling instead of the 16K fallback. Profiles created before
-  // context-length persistence (v2.5.0) lack this fact; Reconfigure re-detects it.
+  // Server-reported context (max_model_len) beats config.json when available.
+  // Profiles created before context-length persistence (v2.5.0) lack this
+  // fact; Reconfigure re-detects it.
+  let serverContext = null;
   try {
     const entry = (await backendFor("omlx").scanModels())
       .find((m) => m.id.toLowerCase() === modelId.toLowerCase());
-    if (entry?.contextLength) {
-      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), contextLength: entry.contextLength } };
-    }
-  } catch { /* oMLX unreachable — keep existing facts */ }
+    serverContext = entry?.contextLength ?? null;
+  } catch { /* oMLX unreachable — detector falls back to config.json */ }
+
+  const { mtpReason, ...facts } = await detectCapabilities({ backend: "omlx", modelId, contextLength: serverContext });
+  configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), ...facts } };
+
+  console.log("");
+  console.log(card({ title: "Model overview", body: renderList([
+    ["Model", theme.bold(profile.label)],
+    ["Detected", capabilitySummary(facts)],
+    ["Backend", "oMLX (managed server)"],
+    ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
+  ]) }));
+
+  if (facts.mtp) {
+    console.log("");
+    hint("oMLX native MTP — speculative decoding enabled at load time");
+    const useMtp = await ask(promptConfirm({ message: "Use MTP speculative decoding?", initialValue: mtpEnabledFor(configured) }));
+    configured = { ...configured, mtpEnabled: useMtp };
+  } else if (mtpReason && mtpReason !== "model has no MTP heads in config") {
+    console.log("");
+    hint(`MTP not available — ${mtpReason}`);
+  }
 
   configured = await askThinkingLevel(configured, "omlx");
 
@@ -398,11 +402,12 @@ async function configureOmlxProfile(profile) {
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
-    ["Context", configured.capabilities?.contextLength ? formatCtxLabel(configured.capabilities.contextLength) : "unknown"],
+    ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
-    ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
-    ...(configured.capabilities?.vision ? [["Vision", "yes"]] : []),
+    ...(mtpEnabledFor(configured) && facts.mtp ? [["MTP", "enabled"]] : []),
+    ...(facts.vision ? [["Vision", "yes"]] : []),
   ]) }));
+  console.log(theme.subtle("  Server settings (quant, KV cache, MTP internals) live in the oMLX dashboard."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;
@@ -411,20 +416,22 @@ async function configureOmlxProfile(profile) {
 async function configureOllamaProfile(profile) {
   let configured = profile;
   const modelId = effectiveModelId(profile);
-  let capabilities = [];
+  let facts = null;
   try {
-    const info = await ollamaModelInfo(modelId);
-    const caps = info.capabilities ?? [];
-    if (caps.includes("vision")) {
-      capabilities.push("Vision");
-      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: true } };
-    }
-    if (caps.includes("tools")) capabilities.push("Tool calling");
-    if (info.model_info) {
-      const keys = Object.keys(info.model_info);
-      if (keys.some((k) => /mtp/i.test(k))) capabilities.push("MTP");
-    }
-  } catch { /* model info unavailable */ }
+    facts = await detectCapabilities({ backend: "ollama", modelId });
+    configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), ...facts } };
+  } catch { /* model info unavailable — keep existing facts */ }
+
+  if (facts) {
+    console.log("");
+    console.log(card({ title: "Model overview", body: renderList([
+      ["Model", theme.bold(profile.label)],
+      ["Detected", capabilitySummary(facts)],
+      ["Backend", "Ollama (managed server)"],
+      ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
+      ...(facts.tools ? [["Tools", "yes"]] : []),
+    ]) }));
+  }
 
   configured = await askThinkingLevel(configured, "ollama");
 
@@ -434,8 +441,9 @@ async function configureOllamaProfile(profile) {
     ["Backend", "Ollama"],
     ["Model ID", modelId],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
-    ...(capabilities.length > 0 ? [["Capabilities", capabilities.join(" · ")]] : []),
+    ...(facts ? [["Detected", [capabilitySummary(facts), facts.tools ? "tools" : null].filter(Boolean).join(" · ")]] : []),
   ]) }));
+  console.log(theme.subtle("  Server settings live in the Ollama app / OLLAMA_* environment."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;

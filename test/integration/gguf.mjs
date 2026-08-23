@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 
-import { detectCapabilities, computeFlags } from "../../src/autodetect.mjs";
+import { detectGgufCapabilities } from "../../src/capabilities.mjs";
+import { computeFlags } from "../../src/autodetect.mjs";
 import { createProfileFromModel } from "../../src/profiles.mjs";
 import { scanGgufModels } from "../../src/scan.mjs";
 import { estimateMemory } from "../../src/estimate.mjs";
@@ -22,10 +23,10 @@ describe("GGUF model pipeline", { skip: !runIntegration }, () => {
     assert.ok(models.length > 0, "Expected at least one GGUF model");
   });
 
-  it("detectCapabilities works on each model", () => {
+  it("detectGgufCapabilities works on each model", () => {
     for (const model of models) {
-      const caps = detectCapabilities(model.path, model.mmprojPath);
-      assert.ok(caps, `detectCapabilities returned null for ${model.label}`);
+      const caps = detectGgufCapabilities(model.path, model.mmprojPath);
+      assert.ok(caps, `detectGgufCapabilities returned null for ${model.label}`);
       assert.ok(caps.architecture, `missing architecture for ${model.label}`);
       assert.ok(typeof caps.thinking === "boolean", `thinking not boolean for ${model.label}`);
       assert.ok(typeof caps.vision === "boolean", `vision not boolean for ${model.label}`);
@@ -35,7 +36,7 @@ describe("GGUF model pipeline", { skip: !runIntegration }, () => {
 
   it("computeFlags produces valid argv for each model", () => {
     for (const model of models) {
-      const caps = detectCapabilities(model.path, model.mmprojPath);
+      const caps = detectGgufCapabilities(model.path, model.mmprojPath);
       const { flags, argv } = computeFlags(caps, model.path, model.mmprojPath, null);
       assert.ok(flags, `computeFlags returned null flags for ${model.label}`);
       assert.ok(argv.length > 0, `empty argv for ${model.label}`);
@@ -47,7 +48,7 @@ describe("GGUF model pipeline", { skip: !runIntegration }, () => {
 
   it("estimateMemory returns a result for each model", () => {
     for (const model of models) {
-      const caps = detectCapabilities(model.path, model.mmprojPath);
+      const caps = detectGgufCapabilities(model.path, model.mmprojPath);
       const { flags } = computeFlags(caps, model.path, model.mmprojPath, null);
       const mem = estimateMemory(model.path, model.mmprojPath, null, flags);
       assert.ok(mem, `estimateMemory returned null for ${model.label}`);
