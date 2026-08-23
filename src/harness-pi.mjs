@@ -7,12 +7,12 @@ import { readJson, writeJson } from "./json.mjs";
 import { execCommand, commandExists } from "./exec.mjs";
 import { status, theme } from "./ui.mjs";
 import {
-  activeProviderProfiles,
-  harnessModelRef,
+  launchModel,
   modelDescriptor,
   modelFamily,
-  providerCompat,
-  runForeground,
+  providerHasModel,
+  removeProviderModel,
+  syncProviderConfig,
 } from "./harness-shared.mjs";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
@@ -49,7 +49,10 @@ function piModelConfig(profile) {
     input: base.input,
     maxTokens: base.maxTokens,
     ...(reasoning === undefined ? {} : { reasoning, thinkingLevelMap: THINKING_LEVEL_MAP }),
-    ...(compat ? { compat } : {}),
+    // Compat only makes sense for models we know can think — attaching
+    // chat-template kwargs to a non-thinking model would show Pi thinking
+    // controls that do nothing.
+    ...(reasoning !== undefined && compat ? { compat } : {}),
     ...(base.contextWindow ? { contextWindow: base.contextWindow } : {}),
     cost: base.cost,
   };
@@ -89,58 +92,38 @@ function piReasoning(profile) {
   return modelDescriptor(profile).thinking || undefined;
 }
 
+const PI_IO = {
+  configPath: PI_CONFIG,
+  readConfig: () => readJson(PI_CONFIG, { providers: {} }),
+  writeConfig: (config) => writeJson(PI_CONFIG, config),
+};
+
 export const piHarness = {
   id: "pi",
   label: "Pi",
   bin: "pi",
   npm: "@earendil-works/pi-coding-agent",
   thinking: "chat-template-kwargs",
+  modelConfig: piModelConfig,
 
   async detect() {
     return await commandExists(this.bin);
   },
 
   async syncConfig(profile) {
-    const profiles = await activeProviderProfiles(profile);
-    const config = await readJson(PI_CONFIG, { providers: {} });
-    config.providers ??= {};
-    config.providers[profile.providerId] = {
-      baseUrl: profile.baseUrl,
-      api: "openai-completions",
-      apiKey: "none",
-      compat: providerCompat(),
-      models: profiles.map(piModelConfig),
-    };
-    await writeJson(PI_CONFIG, config);
-    console.log(status({ kind: "success", message: `Synced Pi config: ${PI_CONFIG} (${profiles.length} model${profiles.length === 1 ? "" : "s"})` }));
+    await syncProviderConfig(this, profile, PI_IO);
   },
 
   async removeModel(profile) {
-    const config = await readJson(PI_CONFIG, { providers: {} });
-    config.providers ??= {};
-    const provider = config.providers[profile.providerId];
-    if (!provider?.models) return { cleaned: false, reason: `no ${profile.providerId} provider in Pi config` };
-    const before = provider.models.length;
-    provider.models = provider.models.filter((m) => m.id !== profile.modelAlias);
-    if (provider.models.length === 0) delete config.providers[profile.providerId];
-    if (before > provider.models.length) {
-      await writeJson(PI_CONFIG, config);
-      return { cleaned: true, removed: before - provider.models.length };
-    }
-    return { cleaned: false, reason: `${profile.modelAlias} not in Pi config` };
+    return await removeProviderModel(this, profile, PI_IO);
   },
 
   async hasModel(profile) {
-    const config = await readJson(PI_CONFIG, null);
-    return Boolean(config?.providers?.[profile.providerId]?.models?.some?.((m) => m.id === profile.modelAlias));
+    return await providerHasModel(profile, PI_IO);
   },
 
-  async launch(profile, { cwd, message } = {}) {
-    const model = harnessModelRef(profile);
-    const args = ["--model", model];
-    if (message) args.push(message);
-    console.log(theme.bold(`[pi] pi --model ${model}`));
-    await runForeground(this.bin, args, { cwd });
+  async launch(profile, options = {}) {
+    await launchModel(this, profile, options);
   },
 
   // One-time Pi setup: bundled skills, recommended packages, web search.
@@ -154,7 +137,7 @@ export const piHarness = {
         await mkdir(PI_SKILLS_DIR, { recursive: true });
         for (const entry of skills) {
           if (!entry.isDirectory()) continue;
-          const src = join(PI_SKILLS_DIR, entry.name);
+          const src = join(bundledSkillsDir, entry.name);
           const dest = join(PI_SKILLS_DIR, entry.name);
           if (!existsSync(dest)) await cp(src, dest, { recursive: true });
         }

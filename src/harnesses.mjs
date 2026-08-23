@@ -20,7 +20,7 @@ const HARNESSES = {
   omp: ompHarness,
 };
 
-export const DEFAULT_HARNESS = "pi";
+const DEFAULT_HARNESS = "pi";
 
 export function listHarnesses() {
   return Object.values(HARNESSES);

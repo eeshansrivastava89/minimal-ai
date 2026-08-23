@@ -177,7 +177,7 @@ export async function findLlamaServer() {
   return null;
 }
 
-export function isDanglingSymlink(path) {
+function isDanglingSymlink(path) {
   try {
     // lstat sees the link itself even when its target is gone.
     return lstatSync(path).isSymbolicLink() && !existsSync(path);

@@ -17,7 +17,7 @@ import { hfRepoFromPath } from "../huggingface.mjs";
 
 const OMLX_MODELS_ROOT = join(homedir(), ".omlx", "models");
 
-export async function modelLocationForItem(item) {
+async function modelLocationForItem(item) {
   if (item.type === "profile") {
     const backend = backendFor(item.profile.backend);
     if (backend.type === "managed-server") {
@@ -49,7 +49,7 @@ export async function modelLocationForItem(item) {
   return { kind: "unknown" };
 }
 
-export function isStrictDescendantPath(target, root) {
+function isStrictDescendantPath(target, root) {
   if (typeof target !== "string" || typeof root !== "string" || !isAbsolute(target) || !isAbsolute(root)) return false;
   const rel = relative(resolve(root), resolve(target)).replace(/\\/gu, "/");
   return Boolean(rel && rel !== "." && rel !== ".." && !rel.startsWith("../"));

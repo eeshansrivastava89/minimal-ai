@@ -66,67 +66,33 @@ export function buildCatalogItems(normalized) {
 
   const profileItems = profiles.map((profile) => {
     const item = { type: "profile", profile, label: profile.label, fileMissing: isProfileFileMissing(profile) };
+    const scanModel = profile.modelPath ? scanByPath.get(profile.modelPath) : null;
+    const managedModel = lookupManagedModel(profile, managedByKey);
 
     // Resolve label + quant from scan data (re-parse for consistency)
     let quant = profile.capabilities?.quant ?? null;
-    if (profile.modelPath) {
-      const scanModel = scanByPath.get(profile.modelPath);
-      if (scanModel) {
-        item.label = scanModel.label;
-        if (scanModel.quant) quant = scanModel.quant;
-      }
+    if (scanModel) {
+      item.label = scanModel.label;
+      if (scanModel.quant) quant = scanModel.quant;
     }
-    if (!quant) {
-      const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server") {
-        const mid = managedModelId(profile);
-        if (mid) {
-          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
-          if (managedModel) {
-            item.label = managedModel.label;
-            if (managedModel.quant) quant = managedModel.quant;
-          }
-        }
-      }
+    if (!quant && managedModel) {
+      item.label = managedModel.label;
+      if (managedModel.quant) quant = managedModel.quant;
     }
     item.quant = quant;
 
-    // Resolve size: profile.modelSizeBytes → scan lookup → managed lookup
-    let sizeBytes = profile.modelSizeBytes || 0;
-    if (!sizeBytes && profile.modelPath) {
-      const scanModel = scanByPath.get(profile.modelPath);
-      if (scanModel?.sizeBytes) sizeBytes = scanModel.sizeBytes;
-    }
-    if (!sizeBytes) {
-      const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server") {
-        const mid = managedModelId(profile);
-        if (mid) {
-          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
-          if (managedModel?.sizeBytes) sizeBytes = managedModel.sizeBytes;
-        }
-      }
-    }
-    item.sizeBytes = sizeBytes || null;
+    // Resolve size: profile.modelSizeBytes → scan → managed
+    item.sizeBytes = profile.modelSizeBytes
+      || scanModel?.sizeBytes
+      || managedModel?.sizeBytes
+      || null;
 
     // Resolve context: flags.ctxSize (configured) → capabilities.ctxSize (trained) → scan → managed
-    let contextLength = profile.flags?.ctxSize ?? null;
-    if (!contextLength) contextLength = profile.capabilities?.ctxSize ?? null;
-    if (!contextLength && profile.modelPath) {
-      const scanModel = scanByPath.get(profile.modelPath);
-      if (scanModel?.contextLength) contextLength = scanModel.contextLength;
-    }
-    if (!contextLength) {
-      const backend = backendFor(profile.backend);
-      if (backend.type === "managed-server") {
-        const mid = managedModelId(profile);
-        if (mid) {
-          const managedModel = managedByKey.get(`${profile.backend}:${mid}`);
-          if (managedModel?.contextLength) contextLength = managedModel.contextLength;
-        }
-      }
-    }
-    item.contextLength = contextLength;
+    item.contextLength = profile.flags?.ctxSize
+      ?? profile.capabilities?.ctxSize
+      ?? scanModel?.contextLength
+      ?? managedModel?.contextLength
+      ?? null;
 
     return item;
   });
@@ -152,6 +118,13 @@ export function buildCatalogItems(normalized) {
       quant: model.quant ?? null,
     })),
   ];
+}
+
+/** Find the managed-server scan entry for a profile, or null. */
+function lookupManagedModel(profile, managedByKey) {
+  if (backendFor(profile.backend).type !== "managed-server") return null;
+  const mid = managedModelId(profile);
+  return (mid ? managedByKey.get(`${profile.backend}:${mid}`) : null) ?? null;
 }
 
 export function createManagedProfile(model, backendId) {

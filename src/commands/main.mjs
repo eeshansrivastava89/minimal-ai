@@ -51,7 +51,7 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   }
 
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  startInteractive("minimal-ai");
+  startInteractive();
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
 
   console.log(appHeader({ name: "minimal-ai", version: currentPackageVersion() }));

@@ -114,13 +114,12 @@ function buildProgram() {
     ],
     globalOptions: [
       { flags: "-v, --version", description: "Show version" },
-      { flags: "--verbose", description: "Run in verbose mode (interactive flow only)" },
+      { flags: "--verbose", description: "Verbose output where supported (e.g. uninstall)" },
       { flags: "--uninstall", description: "Remove minimal-ai" },
     ],
     rootAction: async (options, thisCommand) => {
       if (options.uninstall) return await uninstallCommand(thisCommand.args);
       if (options.version) return await printVersion();
-      if (options.verbose) return await mainFlow();
       if (thisCommand.args.length > 0) {
         throw new Error(`Unknown command: ${thisCommand.args[0]}. Run minimal-ai help`);
       }

@@ -7,7 +7,7 @@ import { startInteractive, promptConfirm, status, theme, screenHeader, card, wit
 
 export async function onboardFlow() {
   await ensureDirs();
-  startInteractive("minimal-ai setup");
+  startInteractive();
 
   console.log(screenHeader({ title: "Welcome to minimal-ai!", subtitle: "Let's set up everything you need to run local models." }));
 

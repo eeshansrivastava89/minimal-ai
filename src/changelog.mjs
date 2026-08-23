@@ -7,7 +7,7 @@ import { loadConfig, saveConfig } from "./config.mjs";
 const CHANGELOG_PATH = fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
 const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/eeshansrivastava89/minimal-ai";
 
-export function parseChangelog(content) {
+function parseChangelog(content) {
   const lines = content.split("\n");
   const entries = [];
   let currentVersion = null;
@@ -55,7 +55,7 @@ export function entriesBetween(entries, fromVersion, toVersion) {
     .sort((a, b) => compareVersions(b.version, a.version));
 }
 
-export function readLocalChangelog() {
+function readLocalChangelog() {
   if (!existsSync(CHANGELOG_PATH)) return [];
   try {
     const content = readFileSync(CHANGELOG_PATH, "utf-8");

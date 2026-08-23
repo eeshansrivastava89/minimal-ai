@@ -9,7 +9,7 @@ import { startOmlxServer } from "./omlx-runtime.mjs";
 import { startOllamaServer, unloadOllamaModel } from "./ollama-runtime.mjs";
 import { sleep, execFileAsync } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
-import { status } from "./ui.mjs";
+import { status, theme } from "./ui.mjs";
 import { computeServerCommand, buildStartScript, timestampForFile } from "./server-command.mjs";
 import { pidAlive, readProcessIdentity, processIdentityMatches, serverModelIds, apiRootUrl, responseErrorDetail } from "./server-status.mjs";
 
@@ -250,28 +250,36 @@ async function processGone(pid, identity) {
 }
 
 // ── Unload model from a managed server (oMLX, Ollama) ──────────────────────
-// Counterpart to stopProfile for local-server backends: stopProfile kills the
-// server process (which unloads the model); unloadModelFromServer asks a
-// managed server to release the model from memory via its HTTP API, leaving the
-// server itself running. Together they give a consistent UX: quitting Pi
-// unloads the model regardless of backend type.
 
+/** Ask a managed server to release the model; local servers return a reason. */
 export async function unloadModelFromServer(profile) {
   const backend = backendFor(profile.backend);
+  if (backend.id === "omlx") return await unloadOmlxModel(profile);
+  if (backend.id === "ollama") return await unloadOllamaModelFromServer(profile);
+  return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+}
 
-  if (backend.id === "llama-cpp") {
-    return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+/**
+ * The single "stop this model" UX: local servers are killed (which unloads
+ * the model); managed servers keep running and just release the model from
+ * memory via their HTTP API. Prints the outcome either way.
+ */
+export async function stopOrUnload(profile) {
+  const backend = backendFor(profile.backend);
+  if (backend.type === "managed-server") {
+    const result = await unloadModelFromServer(profile);
+    if (result.unloaded) {
+      console.log(status({ kind: "success", message: `[unload] ${profile.label}: model unloaded` }));
+    } else if (result.reason) {
+      console.log(theme.subtle(`[unload] ${profile.label}: ${result.reason}`));
+    } else if (result.error) {
+      console.log(status({ kind: "warning", message: `[unload] ${profile.label}: ${result.error}` }));
+    }
+    return result;
   }
-
-  if (backend.id === "omlx") {
-    return await unloadOmlxModel(profile);
-  }
-
-  if (backend.id === "ollama") {
-    return await unloadOllamaModelFromServer(profile);
-  }
-
-  return { unloaded: false, backend: backend.id, reason: "unsupported backend" };
+  const result = await stopProfile(profile);
+  console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
+  return result;
 }
 
 async function unloadOllamaModelFromServer(profile) {

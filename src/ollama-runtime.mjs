@@ -19,7 +19,7 @@ const OLLAMA_V1_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}/v1`;
 const OLLAMA_API_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}/api`;
 const RELEASE_API = "https://api.github.com/repos/ollama/ollama/releases/latest";
 
-export async function findOllama() {
+async function findOllama() {
   if (!(await commandExists("ollama"))) return null;
   try {
     const { stdout } = await execFileAsync("which", ["ollama"]);
@@ -163,12 +163,6 @@ async function startAndWaitForServer() {
   }
 }
 
-export const OLLAMA_URLS = {
-  v1: OLLAMA_V1_BASE,
-  api: OLLAMA_API_BASE,
-  defaultBaseUrl: OLLAMA_V1_BASE,
-};
-
 export async function scanOllamaModels() {
   const response = await fetch(`${OLLAMA_API_BASE}/tags`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`Ollama /api/tags returned ${response.status}`);
@@ -176,7 +170,7 @@ export async function scanOllamaModels() {
   if (!Array.isArray(body?.models)) return [];
 
   return body.models
-    .filter(isChatOllamaModel)
+    .filter((model) => typeof model?.name === "string" && model.name.trim())
     .map((model) => {
       const name = model.name ?? model.model ?? "";
       const parsed = parseOllamaName(name);
@@ -193,11 +187,6 @@ export async function scanOllamaModels() {
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-function isChatOllamaModel(model) {
-  if (typeof model?.name !== "string" || !model.name.trim()) return false;
-  return true;
 }
 
 function parseOllamaName(ollamaName) {

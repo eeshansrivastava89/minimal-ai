@@ -1,8 +1,9 @@
-import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
+import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfTree, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
+import { BACKENDS } from "./backends.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
-import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer, OLLAMA_URLS } from "./ollama-runtime.mjs";
+import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
 import { serverReady } from "./server-check.mjs";
 import { sleep } from "./exec.mjs";
 import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
@@ -28,13 +29,8 @@ export async function downloadOllamaHfGguf() {
   if (!input || !input.trim()) return false;
   const ref = parseHfRef(input.trim());
 
-  let ggufFiles;
-  try {
-    ggufFiles = await listGgufFiles(ref.repo);
-  } catch (err) {
-    console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
-    return false;
-  }
+  const ggufFiles = await fetchGgufFiles(ref.repo);
+  if (!ggufFiles) return false;
   if (ggufFiles.length === 0) {
     console.log(status({ kind: "warning", message: "No GGUF files found in this repo. Look for a repo ending in -GGUF." }));
     return false;
@@ -47,15 +43,28 @@ export async function downloadOllamaHfGguf() {
   return await downloadViaOllama(modelRef);
 }
 
+/** Fetch the repo's GGUF file list, or null (message printed) on API failure. */
+async function fetchGgufFiles(repo) {
+  try {
+    return await listGgufFiles(repo);
+  } catch (err) {
+    console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
+    return null;
+  }
+}
+
 async function _downloadHfGguf(repo, filename) {
+  // One tree fetch serves quant picking, mmproj lookup, and the download plan.
+  let tree;
+  try {
+    tree = await getHfTree(repo);
+  } catch (err) {
+    console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
+    return false;
+  }
+
   if (!filename) {
-    let ggufFiles;
-    try {
-      ggufFiles = await listGgufFiles(repo);
-    } catch (err) {
-      console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
-      return false;
-    }
+    const ggufFiles = await listGgufFiles(repo, { tree });
     if (ggufFiles.length > 0) {
       filename = await pickGgufQuant(repo, ggufFiles);
       if (!filename) return false;
@@ -97,7 +106,7 @@ async function _downloadHfGguf(repo, filename) {
   const downloadRef = filename ? `${repo}/${filename}` : repo;
   let plan;
   try {
-    plan = await resolveHfDownload(downloadRef);
+    plan = await resolveHfDownload(downloadRef, { tree });
   } catch (err) {
     console.log(status({ kind: "error", message: `Could not resolve download: ${err.message}` }));
     return false;
@@ -106,7 +115,7 @@ async function _downloadHfGguf(repo, filename) {
   let extraFiles = [];
   if (plan.format === "gguf") {
     try {
-      const mmprojFiles = await listMmprojFiles(repo);
+      const mmprojFiles = await listMmprojFiles(repo, { tree });
       if (mmprojFiles.length > 0) {
         const mmproj = mmprojFiles[0];
         extraFiles = [mmproj.path];
@@ -150,7 +159,7 @@ async function downloadViaOllama(modelRef) {
   }
 
   await ensureOllamaServer();
-  const OLLAMA_V1 = OLLAMA_URLS.v1;
+  const OLLAMA_V1 = BACKENDS.ollama.defaultBaseUrl;
   if (!(await serverReady(OLLAMA_V1))) {
     process.stdout.write(theme.subtle("Waiting for Ollama server"));
     for (let i = 0; i < 30; i++) {

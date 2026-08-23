@@ -62,16 +62,7 @@ function removeThinkingDefaults(profile) {
 }
 
 function applyProfileFlags(profile, flags) {
-  const next = {
-    ...profile,
-    flags,
-    baseUrl: baseUrlForFlags(flags),
-    harnesses: {
-      ...(profile.harnesses ?? {}),
-      pi: { ...(profile.harnesses?.pi ?? {}), enabled: true, model: `${profile.providerId ?? profile.backend}/${profile.modelAlias ?? profile.id}` },
-    },
-  };
-  return next;
+  return { ...profile, flags, baseUrl: baseUrlForFlags(flags) };
 }
 
-export { applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults, GENERAL_DEFAULTS, THINKING_DEFAULTS };
+export { applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults };

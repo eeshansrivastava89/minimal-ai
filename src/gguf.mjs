@@ -7,6 +7,14 @@ const MAX_METADATA_ENTRIES = 100_000;
 // keep that valid case while rejecting hostile/unbounded counts.
 const MAX_METADATA_ARRAY_VALUES = 1_000_000;
 
+// Most metadata sections (keys, chat template, truncated vocab arrays) fit
+// in a few MB; only retry with the large prefix when parsing runs past it.
+const METADATA_PREFIX_INITIAL = 4 * 1024 * 1024;
+const METADATA_PREFIX_MAX = 64 * 1024 * 1024;
+
+/** Thrown when the read prefix is too short — retryable with a larger one. */
+class TruncatedMetadataError extends Error {}
+
 function u64AsSafeNumber(buffer, offset) {
   const value = buffer.readBigUInt64LE(offset);
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("GGUF integer exceeds safe range");
@@ -27,24 +35,36 @@ function i64Value(buffer, offset) {
 
 function ensureBytes(buffer, offset, length) {
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset + length > buffer.length) {
-    throw new Error("GGUF metadata offset is outside the file prefix");
+    throw new TruncatedMetadataError("GGUF metadata offset is outside the file prefix");
   }
 }
 
 export function readGgufMetadata(path) {
-  const buffer = readFilePrefix(path, 64 * 1024 * 1024);
+  const fileSize = statSync(path).size;
+  const initial = readFilePrefix(path, Math.min(fileSize, METADATA_PREFIX_INITIAL));
+  try {
+    return parseGgufMetadata(initial);
+  } catch (error) {
+    // Vocab-heavy files can legitimately extend past the initial prefix.
+    const maxPrefix = Math.min(fileSize, METADATA_PREFIX_MAX);
+    if (!(error instanceof TruncatedMetadataError) || initial.length >= maxPrefix) throw error;
+    return parseGgufMetadata(readFilePrefix(path, maxPrefix));
+  }
+}
+
+function parseGgufMetadata(buffer) {
   let offset = 0;
   const meta = {};
   if (buffer.length < 24 || buffer.toString("utf8", 0, 4) !== "GGUF") return meta;
   offset += 4;
   offset += 4; // version
   offset += 8; // tensor count
-  if (offset + 8 > buffer.length) throw new Error("GGUF metadata header is truncated");
+  if (offset + 8 > buffer.length) throw new TruncatedMetadataError("GGUF metadata header is truncated");
   const kvCount = u64AsSafeNumber(buffer, offset);
   offset += 8;
   if (kvCount > MAX_METADATA_ENTRIES) return {};
   for (let i = 0; i < kvCount; i++) {
-    if (offset + 8 > buffer.length) throw new Error("GGUF metadata key is truncated");
+    if (offset + 8 > buffer.length) throw new TruncatedMetadataError("GGUF metadata key is truncated");
     const keyLen = u64AsSafeNumber(buffer, offset);
     offset += 8;
     ensureBytes(buffer, offset, keyLen + 4);
@@ -56,9 +76,10 @@ export function readGgufMetadata(path) {
     try {
       read = readValue(buffer, offset, type);
     } catch (error) {
+      if (error instanceof TruncatedMetadataError) throw error;
       throw new Error(`GGUF metadata value is invalid: ${error.message}`, { cause: error });
     }
-    if (read.offset > buffer.length) throw new Error("GGUF metadata value exceeds the file prefix");
+    if (read.offset > buffer.length) throw new TruncatedMetadataError("GGUF metadata value exceeds the file prefix");
     offset = read.offset;
     meta[key] = read.value;
   }
@@ -87,6 +108,7 @@ const TYPE_READERS = [
   (buf, off) => { ensureBytes(buf, off, 4); return { value: buf.readFloatLE(off), offset: off + 4 }; },
   (buf, off) => { ensureBytes(buf, off, 1); return { value: Boolean(buf.readUInt8(off)), offset: off + 1 }; },
   (buf, off) => {
+    ensureBytes(buf, off, 8);
     const len = u64AsSafeNumber(buf, off);
     off += 8;
     ensureBytes(buf, off, len);

@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { findLlamaServer, getModelScanDirs, addModelScanDir, removeModelScanDir, DEFAULT_MODEL_DIRS, HF_HUB_DIR } from "../config.mjs";
 import { backendFor, BACKENDS } from "../backends.mjs";
-import { stopProfile, unloadModelFromServer } from "../process.mjs";
+import { stopOrUnload } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
 import { runningProfiles } from "./stop.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
@@ -76,18 +76,7 @@ export async function runtimeStatusFlow() {
       const toStop = await promptChoice({ message: "Stop which server?", choices: stopChoices, defaultValue: stopChoices[0].value });
       if (!toStop || toStop === "__cancel") continue;
       const target = running.find((r) => r.profile.id === toStop);
-      if (target) {
-        const isManaged = backendFor(target.profile.backend).type === "managed-server";
-        if (isManaged) {
-          const result = await unloadModelFromServer(target.profile);
-          if (result.unloaded) console.log(status({ kind: "success", message: `[unload] ${target.profile.label}: model unloaded` }));
-          else if (result.error) console.log(status({ kind: "warning", message: `[unload] ${target.profile.label}: ${result.error}` }));
-          else console.log(theme.subtle(`[unload] ${target.profile.label}: ${result.reason ?? "nothing to unload"}`));
-        } else {
-          const result = await stopProfile(target.profile);
-          console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
-        }
-      }
+      if (target) await stopOrUnload(target.profile);
     }
   }
 }

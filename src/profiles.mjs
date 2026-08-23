@@ -21,7 +21,7 @@ function notesPath(id) {
   return join(profileDir(id), "notes.md");
 }
 
-export function statePath(id) {
+function statePath(id) {
   return join(RUN_DIR, `${sanitizeProfileId(id)}.state.json`);
 }
 
@@ -156,9 +156,6 @@ export function normalizeProfile(profile) {
     ...profile,
     flags,
     providerId: profile.providerId ?? endpointProviderId(backend, profile.baseUrl),
-    harnesses: profile.harnesses ?? {
-      pi: { enabled: true, model: `${profile.providerId ?? endpointProviderId(backend, profile.baseUrl)}/${profile.modelAlias ?? profile.id}` },
-    },
   };
 }
 

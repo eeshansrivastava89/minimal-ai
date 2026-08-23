@@ -2,7 +2,7 @@ import { ensureDirs } from "../config.mjs";
 import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, modelAvailableOnServer, stopProfile, unloadModelFromServer } from "../process.mjs";
+import { isProfileRunning, modelAvailableOnServer, stopProfile, stopOrUnload } from "../process.mjs";
 import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
@@ -25,7 +25,7 @@ export async function modelsCommand(argv) {
     return;
   }
 
-  if (process.stdin.isTTY) startInteractive("minimal-ai");
+  if (process.stdin.isTTY) startInteractive();
   return await modelCommandCenter(catalog);
 }
 
@@ -304,21 +304,7 @@ async function startServerItem(item) {
 }
 
 async function stopServerItem(item) {
-  const profile = await readProfile(item.profile.id);
-  const isManaged = backendFor(profile.backend).type === "managed-server";
-  if (isManaged) {
-    const result = await unloadModelFromServer(profile);
-    if (result.unloaded) {
-      console.log(status({ kind: "success", message: `[unload] ${profile.label}: model unloaded` }));
-    } else if (result.reason) {
-      console.log(theme.subtle(`[unload] ${profile.label}: ${result.reason}`));
-    } else if (result.error) {
-      console.log(status({ kind: "warning", message: `[unload] ${profile.label}: ${result.error}` }));
-    }
-  } else {
-    const result = await stopProfile(profile);
-    console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
-  }
+  await stopOrUnload(await readProfile(item.profile.id));
 }
 
 function printProfileSaved(id) {

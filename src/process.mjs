@@ -6,6 +6,7 @@ export { computeServerCommand, buildStartScript } from "./server-command.mjs";
 export {
   startServer,
   stopProfile,
+  stopOrUnload,
   unloadModelFromServer,
 } from "./server-lifecycle.mjs";
 

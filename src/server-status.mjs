@@ -201,7 +201,7 @@ export function processIdentityMatches(expected, actual) {
   return true;
 }
 
-export async function pidRssBytes(pid) {
+async function pidRssBytes(pid) {
   try {
     const { stdout } = await execFileAsync("ps", ["-o", "rss=", "-p", String(pid)]);
     const rssKb = Number(stdout.trim().split(/\s+/)[0]);

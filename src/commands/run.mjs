@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { normalizeProfile, readProfile, saveProfile, effectiveModelId } from "../profiles.mjs";
-import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, unloadModelFromServer, preflightInference } from "../process.mjs";
+import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, stopOrUnload, preflightInference } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
 import { configuredHarness, harnessFor, listHarnesses } from "../harnesses.mjs";
 import { ollamaServedContext } from "../ollama-runtime.mjs";
@@ -57,11 +57,7 @@ export async function runProfile(profile, options = {}) {
   console.log(theme.subtle("Verifying model loads (pre-flight inference test)..."));
   const preflight = await preflightInference(profile);
   if (!preflight.ok) {
-    if (!isManaged) {
-      try { await stopProfile(profile); } catch { /* best effort */ }
-    } else {
-      try { await unloadModelFromServer(profile); } catch { /* best effort */ }
-    }
+    try { await stopOrUnload(profile); } catch { /* best effort */ }
     const modelId = effectiveModelId(profile);
     throw new Error(`Model "${modelId}" failed to generate a test token: ${preflight.error}. The server was ready but the model could not load or infer. Check the model format and backend compatibility.`);
   }
@@ -151,21 +147,7 @@ async function launchHarness(profile, options, isManaged, harnessId, backend) {
   try {
     await harness.launch(profile, { cwd: options.cwd, message: options.message });
   } finally {
-    if (!options["keep-server"]) {
-      if (!isManaged) {
-        const result = await stopProfile(profile);
-        console.log(result.stopped ? status({ kind: "success", message: `[stop] ${result.message}` }) : theme.subtle(`[stop] ${result.message}`));
-      } else {
-        const result = await unloadModelFromServer(profile);
-        if (result.unloaded) {
-          console.log(status({ kind: "success", message: `[unload] ${backend.label}: model unloaded` }));
-        } else if (result.reason) {
-          console.log(theme.subtle(`[unload] ${backend.label}: ${result.reason}`));
-        } else if (result.error) {
-          console.log(status({ kind: "warning", message: `[unload] ${backend.label}: ${result.error}` }));
-        }
-      }
-    }
+    if (!options["keep-server"]) await stopOrUnload(profile);
   }
 }
 

@@ -64,10 +64,10 @@ export function parseHfRef(input) {
 }
 
 /** Resolve file metadata for a GGUF file from the HF tree API. */
-export async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch } = {}) {
+async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch, tree } = {}) {
   const { repo, filename } = parseHfRef(ref);
-  const tree = await getHfTree(repo, { fetchImpl });
-  const entry = tree.find((f) => f.path === filename && f.type === "file");
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  const entry = resolvedTree.find((f) => f.path === filename && f.type === "file");
   if (!entry) throw new Error(`File '${filename}' not found in HuggingFace repo '${repo}'.`);
   return {
     repo,
@@ -80,9 +80,9 @@ export async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch } = {}
 }
 
 /** Resolve all model files in an MLX repo from the HF tree API. */
-export async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch } = {}) {
-  const tree = await getHfTree(repo, { fetchImpl });
-  const modelFiles = tree.filter(
+async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  const modelFiles = resolvedTree.filter(
     (f) => f.type === "file" && !f.path.startsWith(".") && f.path !== ".gitattributes" && f.path !== "README.md",
   );
   return modelFiles.map((f) => ({
@@ -95,7 +95,7 @@ export async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch } = {}
   }));
 }
 
-async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch } = {}) {
+export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch } = {}) {
   const url = `https://huggingface.co/api/models/${repo}/tree/${branch}?recursive=true`;
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`HuggingFace API error: HTTP ${response.status} for ${repo}`);
@@ -103,9 +103,9 @@ async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch }
 }
 
 /** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors). */
-export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
-  const tree = await getHfTree(repo, { fetchImpl });
-  return tree
+export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  return resolvedTree
     .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && !isDrafterFile(f.path) && !isMmprojFile(f.path))
     .map((f) => ({
       path: f.path,
@@ -133,9 +133,9 @@ function isMmprojFile(path) {
 }
 
 /** List all mmproj (vision projector) GGUF files in a HuggingFace repo. */
-export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch } = {}) {
-  const tree = await getHfTree(repo, { fetchImpl });
-  return tree
+export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  return resolvedTree
     .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && isMmprojFile(f.path))
     .map((f) => ({
       path: f.path,
@@ -159,11 +159,12 @@ export function isMlxRepo(modelInfo) {
 }
 
 /** Resolve a user-provided HF reference into a download plan. */
-export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } = {}) {
+export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch, tree } = {}) {
   const { repo, filename } = parseHfRef(input);
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
 
   if (filename && filename.endsWith(".gguf")) {
-    const file = await resolveGgufFile(`${repo}/${filename}`, { fetchImpl });
+    const file = await resolveGgufFile(`${repo}/${filename}`, { fetchImpl, tree: resolvedTree });
     return {
       id: repo.split("/").pop() ?? repo,
       repo,
@@ -173,11 +174,10 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
     };
   }
 
-  const tree = await getHfTree(repo, { fetchImpl });
-  const ggufFiles = tree.filter((f) => f.type === "file" && f.path.endsWith(".gguf"));
+  const ggufFiles = resolvedTree.filter((f) => f.type === "file" && f.path.endsWith(".gguf"));
   if (ggufFiles.length > 0) {
     const file = ggufFiles[0];
-    const resolved = await resolveGgufFile(`${repo}/${file.path}`, { fetchImpl });
+    const resolved = await resolveGgufFile(`${repo}/${file.path}`, { fetchImpl, tree: resolvedTree });
     return {
       id: repo.split("/").pop() ?? repo,
       repo,
@@ -187,7 +187,7 @@ export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch } 
     };
   }
 
-  const files = await resolveMlxRepo(repo, { fetchImpl });
+  const files = await resolveMlxRepo(repo, { fetchImpl, tree: resolvedTree });
   return {
     id: repo.split("/").pop() ?? repo,
     repo,

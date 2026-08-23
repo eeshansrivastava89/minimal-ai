@@ -20,7 +20,6 @@ import { parseModelName } from "./model-name.mjs";
 import { promptChoice, promptConfirm, promptText, card, status, theme } from "./ui.mjs";
 import { runProfile } from "./commands/run.mjs";
 import { configuredHarness } from "./harnesses.mjs";
-import { piHarness } from "./harness-pi.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,7 +72,7 @@ export async function loadBenchmarks(benchDir) {
 
 // ── Gallery repo linking ────────────────────────────────────────────────────
 
-export async function findBenchmarkRepo() {
+async function findBenchmarkRepo() {
   const config = await loadConfig();
   if (config.benchmarkRepoPath && existsSync(join(config.benchmarkRepoPath, "benchmarks"))) {
     return config.benchmarkRepoPath;
@@ -87,7 +86,7 @@ async function rememberBenchmarkRepo(path) {
   await saveConfig(config);
 }
 
-export async function linkBenchmarkRepo() {
+async function linkBenchmarkRepo() {
   const existing = await findBenchmarkRepo();
   if (existing) return existing;
 
@@ -149,7 +148,7 @@ function modelSourceFor(profile) {
   return profile.backend;
 }
 
-export async function prepareBenchmarkRun({ repoPath, benchmark, profile, harness = piHarness, now = new Date() }) {
+export async function prepareBenchmarkRun({ repoPath, benchmark, profile, harness = null, now = new Date() }) {
   const modelId = effectiveModelId(profile);
   const modelSource = modelSourceFor(profile);
   const backendLabel = backendFor(profile.backend).label;
@@ -186,8 +185,8 @@ export async function prepareBenchmarkRun({ repoPath, benchmark, profile, harnes
       : { metadata: "metadata.json", prompt: "prompt.md", html: "index.html", preview: "preview.png", video: "preview.webm" },
     runner: {
       mode: "external",
-      intendedRunner: harness.label,
-      tool: harness.id,
+      intendedRunner: harness?.label ?? null,
+      tool: harness?.id ?? null,
       modelSource,
       backendLabel,
       baseUrl: profile.baseUrl,

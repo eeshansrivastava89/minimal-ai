@@ -59,7 +59,7 @@ export function timestampForFile() {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
 
-export function quoteShell(value) {
+function quoteShell(value) {
   const text = String(value);
   return /^[A-Za-z0-9_/@%+=:,.-]+$/u.test(text) ? text : `'${text.replace(/'/gu, ` '"'"'`)}'`;
 }

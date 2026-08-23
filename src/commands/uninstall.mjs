@@ -21,7 +21,7 @@ export async function uninstallCommand(argv) {
     return;
   }
 
-  startInteractive("minimal-ai uninstall");
+  startInteractive();
   console.log(screenHeader({ title: "minimal-ai uninstall" }));
   const running = await runningProfiles();
   if (running.length > 0) {

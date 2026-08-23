@@ -22,7 +22,7 @@ export async function stopCommand(argv) {
     return;
   }
 
-  startInteractive("minimal-ai stop");
+  startInteractive();
   const choices = running.map(({ profile, status: s }) => ({ value: profile.id, label: profile.label, hint: `pid ${s.pid} · ${profile.baseUrl}` }));
   if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
   choices.push({ value: "__cancel", label: "Cancel" });

@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { loadProfiles } from "./profiles.mjs";
 import { nameHintsThinking } from "./autodetect.mjs";
+import { status, theme } from "./ui.mjs";
 
 // ── Harness-neutral model/profile helpers ────────────────────────────────
 // Everything a chat harness (Pi, omp, …) needs to describe minimal-ai
 // profiles in its own config format lives here. Adapters only serialize.
 
 /** All saved profiles on the same provider as `profile`, plus `profile` itself. */
-export async function activeProviderProfiles(currentProfile) {
+async function activeProviderProfiles(currentProfile) {
   const allProfiles = await loadProfiles();
   const byAlias = new Map();
   for (const item of [...allProfiles, currentProfile]) {
@@ -60,16 +61,74 @@ export function modelFamily(profile) {
   return [profile.id, profile.label, profile.modelAlias, profile.omlxModel, profile.ollamaModel].filter(Boolean).join(" ").toLowerCase();
 }
 
-/** Provider-level compat shared by all local OpenAI-compatible backends. */
-export function providerCompat() {
-  return { supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: "max_tokens" };
+/**
+ * Provider-level compat shared by all local OpenAI-compatible backends.
+ * Only oMLX's server reads the top-level reasoning_effort field —
+ * llama.cpp needs chat_template_kwargs (carried per-model in Pi compat) and
+ * Ollama's /v1 ignores every thinking field.
+ */
+export function providerCompat(backendId) {
+  return { supportsDeveloperRole: false, supportsReasoningEffort: backendId === "omlx", maxTokensField: "max_tokens" };
 }
 
 /** Spawn a harness CLI in the foreground, inheriting stdio. */
-export function runForeground(cmd, argv, { cwd } = {}) {
+function runForeground(cmd, argv, { cwd } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, argv, { stdio: "inherit", ...(cwd ? { cwd } : {}) });
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${cmd} exited with code ${code}`)));
   });
+}
+
+// ── Shared harness config plumbing ────────────────────────────────────────
+// Every chat harness config (Pi models.json, omp models.yml) is a providers
+// map with the same block shape; only the file format and per-model fields
+// differ. Adapters supply io { configPath, readConfig, writeConfig } and a
+// modelConfig(profile) serializer; these helpers own everything else.
+
+/** Write the provider block for profile.providerId with all same-provider models. */
+export async function syncProviderConfig(harness, profile, io) {
+  const profiles = await activeProviderProfiles(profile);
+  const config = await io.readConfig();
+  config.providers ??= {};
+  config.providers[profile.providerId] = {
+    baseUrl: profile.baseUrl,
+    api: "openai-completions",
+    apiKey: "none",
+    compat: providerCompat(profile.backend),
+    models: profiles.map((item) => harness.modelConfig(item)),
+  };
+  await io.writeConfig(config);
+  console.log(status({ kind: "success", message: `Synced ${harness.label} config: ${io.configPath} (${profiles.length} model${profiles.length === 1 ? "" : "s"})` }));
+}
+
+/** Remove a model from its provider block; drop the provider when empty. */
+export async function removeProviderModel(harness, profile, io) {
+  const config = await io.readConfig();
+  config.providers ??= {};
+  const provider = config.providers[profile.providerId];
+  if (!provider?.models) return { cleaned: false, reason: `no ${profile.providerId} provider in ${harness.label} config` };
+  const before = provider.models.length;
+  provider.models = provider.models.filter((m) => m.id !== profile.modelAlias);
+  if (provider.models.length === 0) delete config.providers[profile.providerId];
+  if (before > provider.models.length) {
+    await io.writeConfig(config);
+    return { cleaned: true, removed: before - provider.models.length };
+  }
+  return { cleaned: false, reason: `${profile.modelAlias} not in ${harness.label} config` };
+}
+
+/** Whether the profile's model is present in the harness config. */
+export async function providerHasModel(profile, io) {
+  const config = await io.readConfig();
+  return Boolean(config?.providers?.[profile.providerId]?.models?.some?.((m) => m.id === profile.modelAlias));
+}
+
+/** Launch the harness CLI in the foreground against the profile's model. */
+export async function launchModel(harness, profile, { cwd, message } = {}) {
+  const model = harnessModelRef(profile);
+  const args = ["--model", model];
+  if (message) args.push(message);
+  console.log(theme.bold(`[${harness.id}] ${harness.bin} --model ${model}`));
+  await runForeground(harness.bin, args, { cwd });
 }

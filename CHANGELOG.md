@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.4.3] - 2026-08-22
+
+### Fixed
+- Pi bundled skills now install correctly on fresh machines — the setup step was copying from the destination directory instead of the bundled resources, so the copy silently failed whenever the skill wasn't already present.
+- `--verbose` no longer bypasses the platform check and update offers on startup.
+
+### Changed
+- Thinking-control honesty at the provider level: `reasoning_effort` is now advertised only for oMLX (the one server that reads the top-level field) in Pi/omp configs. llama.cpp models keep working thinking controls through per-model chat-template settings; Ollama models remain without thinking controls, as before.
+- Pi chat-template thinking settings are only attached to models minimal-ai knows can think, instead of every Qwen/Gemma-family model.
+- Benchmark run metadata no longer records Pi as the runner when another harness is configured.
+- GGUF scanning reads metadata incrementally (small prefix first, large retry only when needed) instead of reading up to 64MB per model on every launch — noticeably faster picker startup with many local models.
+- Reduced code duplication across harness adapters, stop/unload flows, model catalog enrichment, and HuggingFace downloads (one tree fetch per download instead of three); removed the dead `profile.harnesses` schema field and other unused code.
+
 ## [2.4.2] - 2026-08-18
 
 ### Fixed

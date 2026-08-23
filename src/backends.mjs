@@ -10,7 +10,7 @@ const LOCAL_HOST = "127.0.0.1";
 const LLAMA_CPP_PORT = 8080;
 const OMLX_PORT = 8000;
 
-export function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
+function baseUrlFor({ host = LOCAL_HOST, port, path = "/v1" }) {
   return `http://${host}:${port}${path}`;
 }
 

@@ -9,7 +9,7 @@ import { formatBytes, status, theme, promptConfirm, screenHeader, card } from ".
 const OMLX_CLI_SHIM = join(homedir(), ".omlx", "bin", "omlx");
 const RELEASES_API = "https://api.github.com/repos/jundot/omlx/releases";
 
-export async function findOmlx() {
+async function findOmlx() {
   if (existsSync(OMLX_CLI_SHIM)) return OMLX_CLI_SHIM;
   try {
     const { stdout } = await execFileAsync("which", ["omlx"]);
