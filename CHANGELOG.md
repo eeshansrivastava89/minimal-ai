@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.6.0] - 2026-08-22
+
+### Added
+- Thinking level is now set per model in the picker: `models` → a model → Reconfigure → "Thinking level for launches" (harness default / off / minimal / low / medium / high / xhigh / max). Stored on the profile and inherited by every chat launch and benchmark — no need to pass `--thinking` every time. Ollama models show the question with a note that its `/v1` ignores thinking levels.
+
 ## [2.5.0] - 2026-08-22
 
 ### Added

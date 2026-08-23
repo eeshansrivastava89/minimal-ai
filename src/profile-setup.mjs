@@ -21,6 +21,33 @@ const CACHE_CHOICES = [
   { value: "q4_0", label: "q4_0", hint: "4-bit · quarter memory · quality tradeoff · 0.5 bytes/elem" },
 ];
 
+const THINKING_CHOICES = [
+  { value: "", label: "Harness default (Pi/omp session level)" },
+  { value: "off", label: "Off — no thinking" },
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "XHigh" },
+  { value: "max", label: "Max" },
+];
+
+/** Ask which thinking level launches should use; stored per profile, inherited by benchmarks. */
+async function askThinkingLevel(configured, backendId) {
+  const current = configured.thinkingLevel ?? "";
+  console.log("");
+  if (backendId === "ollama") {
+    hint("Ollama's OpenAI-compatible /v1 ignores thinking levels — the selection won't take effect on that backend.");
+  } else {
+    hint("How hard the model thinks on each launch. Benchmark runs inherit this. Harness default = Pi/omp session level.");
+  }
+  const level = await ask(promptSelect({ message: "Thinking level for launches", choices: THINKING_CHOICES, defaultValue: current }));
+  const next = { ...configured };
+  if (level) next.thinkingLevel = level;
+  else delete next.thinkingLevel;
+  return next;
+}
+
 const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
 const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
 
@@ -290,6 +317,8 @@ async function configureLocalProfileInner(profile) {
   const jinja = await ask(promptConfirm({ message: "Enable Jinja templates?", initialValue: true }));
   configured = applyRuntimeFlagOverrides(configured, { jinja });
 
+  configured = await askThinkingLevel(configured, "llama-cpp");
+
   console.log("");
   console.log(card({ title: "Configuration summary", body: renderList([
     ["Model", theme.bold(configured.label)],
@@ -308,6 +337,7 @@ async function configureLocalProfileInner(profile) {
     ["Parallel", String(configured.flags.parallel)],
     ["Flash attention", configured.flags.flashAttention],
     ["Jinja", configured.flags.jinja ? "on" : "off"],
+    ["Thinking", configured.thinkingLevel ?? "harness default"],
     ...(configured.capabilities?.mtp ? [["MTP", `enabled (${configured.flags.specDraftNMax ?? 2} draft tokens)`]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "enabled"]] : []),
     ...(configured.capabilities?.thinking ? [["Thinking", "enabled"]] : []),
@@ -351,10 +381,13 @@ async function configureOmlxProfile(profile) {
     configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: hasVision } };
   }
 
+  configured = await askThinkingLevel(configured, "omlx");
+
   console.log("");
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
+    ["Thinking", configured.thinkingLevel ?? "harness default"],
     ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "yes"]] : []),
   ]) }));
@@ -381,11 +414,14 @@ async function configureOllamaProfile(profile) {
     }
   } catch { /* model info unavailable */ }
 
+  configured = await askThinkingLevel(configured, "ollama");
+
   console.log("");
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "Ollama"],
     ["Model ID", modelId],
+    ["Thinking", configured.thinkingLevel ?? "harness default"],
     ...(capabilities.length > 0 ? [["Capabilities", capabilities.join(" · ")]] : []),
   ]) }));
 
