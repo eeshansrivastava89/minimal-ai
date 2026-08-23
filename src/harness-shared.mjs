@@ -31,17 +31,43 @@ export function harnessModelRef(profile) {
 
 /** Neutral model descriptor; each harness adapter maps this into its own schema. */
 export function modelDescriptor(profile) {
+  const { maxTokens, contextWindow } = resolvedLimits(profile);
   return {
     id: profile.modelAlias,
     name: profile.label,
     input: modelInput(profile),
-    maxTokens: profile.flags?.ctxSize ?? 16384,
-    contextWindow: profile.flags?.ctxSize || undefined,
+    maxTokens: maxTokens ?? FALLBACK_MAX_TOKENS,
+    contextWindow: contextWindow || undefined,
     // Whether the model can think at all (capability fact, harness-independent).
     thinking: thinkingCapability(profile),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 }
+
+/**
+ * The context window a harness should assume for a profile, resolved from
+ * backend-appropriate sources (no hardcoded 16K except as a last resort):
+ * - llama.cpp: configured flags.ctxSize (user choice), else GGUF metadata
+ * - managed oMLX: server-reported max_model_len, persisted at setup
+ * - managed Ollama: served context from /api/ps (after preflight)
+ */
+export function resolvedLimits(profile) {
+  if (profile.backend === "ollama") {
+    const ctx = profile.capabilities?.servedContext
+      ?? profile.flags?.ctxSize // legacy: served context used to live in the llama flag
+      ?? null;
+    return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
+  }
+  if (profile.backend === "omlx") {
+    const ctx = profile.capabilities?.contextLength ?? profile.flags?.ctxSize ?? null;
+    return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
+  }
+  // llama.cpp: the configured context window governs the harness ceiling.
+  const ctx = profile.flags?.ctxSize ?? profile.capabilities?.ctxSize ?? null;
+  return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
+}
+
+const FALLBACK_MAX_TOKENS = 16384;
 
 function modelInput(profile) {
   if (profile.mmprojPath && existsSync(profile.mmprojPath)) return ["text", "image"];
@@ -125,9 +151,10 @@ export async function providerHasModel(profile, io) {
 }
 
 /** Launch the harness CLI in the foreground against the profile's model. */
-export async function launchModel(harness, profile, { cwd, message } = {}) {
+export async function launchModel(harness, profile, { cwd, message, thinking } = {}) {
   const model = harnessModelRef(profile);
   const args = ["--model", model];
+  if (thinking) args.push("--thinking", thinking);
   if (message) args.push(message);
   console.log(theme.bold(`[${harness.id}] ${harness.bin} --model ${model}`));
   await runForeground(harness.bin, args, { cwd });

@@ -10,11 +10,31 @@ import { tailFriendly } from "../logs.mjs";
 import { estimateMemory } from "../estimate.mjs";
 import { renderMemoryEstimate, parseOptions, status, theme } from "../ui.mjs";
 
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 export async function runCommand(argv) {
   await ensureDirs();
   const { positional, options } = parseOptions(argv);
   if (!positional[0]) throw new Error("Specify a model name: minimal-ai run <model>");
-  return await runProfile(await readProfile(positional[0]), options);
+  const profile = await readProfile(positional[0]);
+
+  // Per-model thinking level: persists on the profile so later launches
+  // (picker chat, benchmark) inherit it. Ollama's /v1 ignores thinking.
+  if (options.thinking !== undefined && options.thinking !== true) {
+    const level = String(options.thinking).toLowerCase();
+    if (!THINKING_LEVELS.includes(level)) {
+      throw new Error(`Invalid --thinking level: "${options.thinking}". Supported: ${THINKING_LEVELS.join(", ")}`);
+    }
+    if (backendFor(profile.backend).id === "ollama") {
+      console.log(status({ kind: "warning", message: `Ollama's OpenAI-compatible /v1 ignores thinking levels — --thinking ${level} has no effect for this model.` }));
+    } else {
+      await saveProfile({ ...profile, thinkingLevel: level });
+      profile.thinkingLevel = level;
+    }
+    options.thinking = level;
+  }
+
+  return await runProfile(profile, options);
 }
 
 export async function runProfile(profile, options = {}) {
@@ -110,11 +130,15 @@ async function ensureLocalServer(profile, backend, options) {
 // Ollama loads models with a VRAM-fit context that can be far smaller than
 // the model's metadata max (and even smaller than OLLAMA_CONTEXT_LENGTH).
 // After preflight the model is loaded, so /api/ps knows the served context —
-// persist it on the profile so harness configs carry the real window.
+// persist it as a capability fact (not a llama.cpp flag) so harness configs
+// carry the real window.
 async function refreshOllamaServedContext(profile) {
   const served = await ollamaServedContext(profile.ollamaModel ?? profile.modelAlias);
-  if (!served || profile.flags?.ctxSize === served) return profile;
-  const updated = { ...profile, flags: { ...(profile.flags ?? {}), ctxSize: served } };
+  if (!served || profile.capabilities?.servedContext === served) return profile;
+  const updated = {
+    ...profile,
+    capabilities: { ...(profile.capabilities ?? {}), servedContext: served },
+  };
   await saveProfile(updated);
   console.log(theme.subtle(`Ollama serves this model with a ${served}-token context (VRAM auto-fit) — profile updated so the harness sees the real window.`));
   return updated;
@@ -145,7 +169,7 @@ async function launchHarness(profile, options, isManaged, harnessId, backend) {
   await harness.syncConfig(profile);
 
   try {
-    await harness.launch(profile, { cwd: options.cwd, message: options.message });
+    await harness.launch(profile, { cwd: options.cwd, message: options.message, thinking: options.thinking ?? profile.thinkingLevel });
   } finally {
     if (!options["keep-server"]) await stopOrUnload(profile);
   }

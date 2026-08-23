@@ -87,9 +87,11 @@ export function buildCatalogItems(normalized) {
       || managedModel?.sizeBytes
       || null;
 
-    // Resolve context: flags.ctxSize (configured) → capabilities.ctxSize (trained) → scan → managed
+    // Resolve context: configured (flags) -> detected facts -> scan -> managed
     item.contextLength = profile.flags?.ctxSize
       ?? profile.capabilities?.ctxSize
+      ?? profile.capabilities?.servedContext
+      ?? profile.capabilities?.contextLength
       ?? scanModel?.contextLength
       ?? managedModel?.contextLength
       ?? null;
@@ -137,6 +139,10 @@ export function createManagedProfile(model, backendId) {
     source: backendId,
     modelAlias: model.aliasSuggestion,
     modelSizeBytes: model.sizeBytes || 0,
+    // Server-reported context window (oMLX max_model_len; Ollama uses the
+    // served context after preflight). Kept as a capability fact so harness
+    // configs get a real ceiling instead of the 16K fallback.
+    ...(model.contextLength ? { capabilities: { contextLength: model.contextLength } } : {}),
     ...(primaryField ? { [primaryField]: model.id } : {}),
   });
 }

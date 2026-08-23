@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.5.0] - 2026-08-22
+
+### Added
+- Per-model thinking level: `minimal-ai run <profile> --thinking low|medium|high|...` sets a thinking level on that profile and launches with it — saved for later runs, so picker chats and benchmarks inherit it. Other models are untouched (each profile carries its own level; no flag means Pi keeps its own session default).
+
+### Fixed
+- oMLX/Ollama models no longer default to a 16,384-token response ceiling. Harness configs now use the real context: oMLX's server-reported `max_model_len` (persisted at setup) and Ollama's served context (from `/api/ps` after preflight, stored as a capability fact instead of overwriting the llama.cpp `ctxSize` flag). Long responses are no longer cut off mid-turn by the hardcoded 16K cap.
+- Thinking level "high" no longer silently becomes maximum-effort thinking on Qwen3.5/3.6/3.8 models. Those templates only accept `low/medium/xhigh`, so Pi levels now map explicitly per family: `high` -> `xhigh`, `minimal`/`max` -> `low`/`xhigh` (previously omitted, silently falling to the template's xhigh default).
+
 ## [2.4.3] - 2026-08-22
 
 ### Fixed

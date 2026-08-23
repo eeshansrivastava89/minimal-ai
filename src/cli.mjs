@@ -109,6 +109,7 @@ function buildProgram() {
     examples: [
       "minimal-ai",
       "minimal-ai run <profile-id>",
+      "minimal-ai run <profile-id> --thinking low",
       "minimal-ai status",
       "minimal-ai update",
     ],

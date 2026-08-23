@@ -39,6 +39,22 @@ const PI_PACKAGES = [
 // automatically.
 const THINKING_LEVEL_MAP = { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null };
 
+// Qwen3.5/3.6/3.8-family templates accept only low/medium/xhigh, with xhigh
+// as the template default. Sending "high" makes the template raise and
+// oMLX's alias fallback silently remaps it to xhigh — Pi "high" would mean
+// maximum thinking with no way back. Omitting the value (minimal/max in the
+// standard map) also falls to the xhigh default. So every level is mapped to
+// a value the template accepts.
+const QWEN3X_THINKING_LEVEL_MAP = { minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: "xhigh" };
+
+function isQwen3xFamily(family) {
+  return /qwen3[._-]?(?:[568]|next)/i.test(family);
+}
+
+export function thinkingLevelMapFor(profile) {
+  return isQwen3xFamily(modelFamily(profile)) ? QWEN3X_THINKING_LEVEL_MAP : THINKING_LEVEL_MAP;
+}
+
 function piModelConfig(profile) {
   const compat = piModelCompat(profile);
   const reasoning = piReasoning(profile);
@@ -48,7 +64,7 @@ function piModelConfig(profile) {
     name: base.name,
     input: base.input,
     maxTokens: base.maxTokens,
-    ...(reasoning === undefined ? {} : { reasoning, thinkingLevelMap: THINKING_LEVEL_MAP }),
+    ...(reasoning === undefined ? {} : { reasoning, thinkingLevelMap: thinkingLevelMapFor(profile) }),
     // Compat only makes sense for models we know can think — attaching
     // chat-template kwargs to a non-thinking model would show Pi thinking
     // controls that do nothing.

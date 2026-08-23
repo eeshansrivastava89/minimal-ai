@@ -46,13 +46,11 @@ describe("syncPiConfig thinking levels", () => {
 
     const model = provider.models.find((m) => m.id === "Youssofal--Qwen3.8-27B-MTPLX-Optimized-Speed");
     assert.equal(model.reasoning, true);
+    // Qwen3.8's template accepts only low/medium/xhigh, so every Pi level maps
+    // to one of those (high must never silently escalate to xhigh via oMLX
+    // alias fallback; minimal/max must not fall to the xhigh template default).
     assert.deepEqual(model.thinkingLevelMap, {
-      minimal: null,
-      low: "low",
-      medium: "medium",
-      high: "high",
-      xhigh: "xhigh",
-      max: null,
+      minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: "xhigh",
     });
     // Qwen-family models must carry the level through chat_template_kwargs —
     // the "qwen-chat-template" format drops it (regression: oMLX model stuck
@@ -97,6 +95,33 @@ describe("syncPiConfig thinking levels", () => {
     const model = config.providers.omlx.models[0];
     assert.equal(model.reasoning, true);
     assert.ok(model.thinkingLevelMap);
+  });
+
+  it("maps every qwen3.x Pi level to a value its template accepts (no silent xhigh)", async () => {
+    // Qwen3.5/3.6/3.8 templates accept only low/medium/xhigh (xhigh default).
+    // Pi "high" would 400 the template and oMLX would alias it to xhigh;
+    // minimal/max would be omitted and fall to the xhigh default. Every level
+    // must land where the user expects.
+    await syncPiConfig(omlxProfile()); // label "Qwen3.8 27B"
+    const config = await readPiConfig();
+    const model = config.providers.omlx.models[0];
+    assert.deepEqual(model.thinkingLevelMap, {
+      minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: "xhigh",
+    });
+  });
+
+  it("keeps the standard thinking map for non-qwen3.x families", async () => {
+    await syncPiConfig(omlxProfile({
+      id: "gemma426",
+      label: "Gemma 4 26B",
+      modelAlias: "gemma-4-26b-a4b-it",
+      omlxModel: "gemma-4-26b-a4b-it",
+    }));
+    const config = await readPiConfig();
+    const model = config.providers.omlx.models[0];
+    assert.deepEqual(model.thinkingLevelMap, {
+      minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null,
+    });
   });
 
   it("omits reasoning fields for non-thinking models", async () => {
