@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.0] - 2026-08-23
+
+### Added
+- oMLX hard thinking budget in setup/Reconfigure (#15): thinking-capable oMLX profiles can set a server-enforced cap on thinking tokens. Thinking levels are only soft steering — and on the DFlash engine path they don't land at all — so when Reconfigure detects DFlash (`dflash_enabled` in the model's oMLX settings) it says so and offers the budget as the control that actually works. The budget is applied immediately via the oMLX admin API, stored on the profile, and re-applied on every launch.
+- Thinking control for Ollama profiles (#16): Pi and omp now advertise reasoning for thinking-capable Ollama models. Ollama 0.32.x's `/v1` endpoint honors `reasoning_effort` and accepts every Pi level verbatim (verified on 0.32.15), so per-launch thinking levels now take effect on Ollama too.
+
+### Changed
+- Reconfigure's Ollama thinking note is now honest about the tradeoffs instead of calling levels inert: levels are soft steering, `/v1` never shows the thinking trace (invisible token burn), and "off" still thinks at the server default because the harness omits the field rather than sending Ollama's true-off value (`"none"`).
+
 ## [2.6.3] - 2026-08-23
 
 ### Fixed
