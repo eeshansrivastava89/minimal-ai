@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
 import { writeState, readState, profileDir, effectiveModelId } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
-import { startOmlxServer } from "./omlx-runtime.mjs";
+import { startOmlxServer, putOmlxModelSettings, omlxSettingsFailureHint } from "./omlx-runtime.mjs";
 import { startOllamaServer, unloadOllamaModel } from "./ollama-runtime.mjs";
 import { sleep, execFileAsync } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
@@ -84,9 +84,10 @@ async function startLocalServer(profile) {
 
 async function startManagedServer(profile, backend) {
   if (await serverReady(profile.baseUrl)) {
-    // Apply per-model settings (MTP) even when server is already running.
-    if (backend.id === "omlx" && mtpEnabledFor(profile)) {
-      await ensureOmlxMtpSetting(profile);
+    // Apply per-model settings (MTP, thinking budget) even when the server
+    // is already running.
+    if (backend.id === "omlx") {
+      await ensureOmlxModelSettings(profile);
     }
     return writeManagedState(profile, backend);
   }
@@ -118,58 +119,43 @@ async function startManagedServer(profile, backend) {
     throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
   }
 
-  // Apply per-model settings (MTP) before the model is loaded.
-  // oMLX applies MTP patches at load time, so the setting must be in
-  // model_settings.json before any request triggers a load.
-  if (backend.id === "omlx" && mtpEnabledFor(profile)) {
-    await ensureOmlxMtpSetting(profile);
+  // Apply per-model settings (MTP, thinking budget) before the model is
+  // loaded. oMLX applies MTP patches at load time, so mtp_enabled must be
+  // in model_settings.json before any request triggers a load; the
+  // thinking budget is generation-time but applied here so the profile
+  // stays the source of truth.
+  if (backend.id === "omlx") {
+    await ensureOmlxModelSettings(profile);
   }
 
   return writeManagedState(profile, backend);
 }
 
 /**
- * Enable MTP on an oMLX model via the admin API before loading.
- * oMLX applies MTP patches at model load time, so the setting must be
- * persisted to model_settings.json before any request triggers a load.
- * If the model is already loaded, oMLX will use the setting on next reload.
+ * Push profile-owned oMLX model settings (MTP toggle, thinking budget) to
+ * the server via the admin API before loading. oMLX applies MTP patches at
+ * model load time, so the setting must be persisted to model_settings.json
+ * before any request triggers a load. If the model is already loaded, oMLX
+ * uses MTP on next reload; thinking budget takes effect immediately.
  */
-async function ensureOmlxMtpSetting(profile) {
-  const baseUrl = apiRootUrl(profile.baseUrl);
-  const modelId = effectiveModelId(profile);
-  const settingsUrl = `${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`;
-  try {
-    const response = await fetch(settingsUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mtp_enabled: true }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or enable MTP manually from the admin panel.` }));
-      } else if (response.status === 404) {
-        console.log(status({ kind: "warning", message: `[mtp] Model ${modelId} not found on oMLX server. MTP setting not applied.` }));
-      } else {
-        const detail = await response.text().catch(() => "");
-        console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: HTTP ${response.status} ${detail}` }));
-      }
-      return;
-    }
-    // PUT succeeded — verify the setting was actually persisted via GET
-    const verifyResponse = await fetch(settingsUrl, { signal: AbortSignal.timeout(5000) });
-    if (!verifyResponse.ok) {
-      console.log(status({ kind: "warning", message: `[mtp] MTP setting sent but could not verify (HTTP ${verifyResponse.status}). Check oMLX admin panel.` }));
-      return;
-    }
-    const settings = await verifyResponse.json();
-    if (settings.mtp_enabled === true) {
-      console.log(status({ kind: "success", message: `[mtp] Verified: MTP enabled for ${modelId}` }));
-    } else {
-      console.log(status({ kind: "warning", message: `[mtp] MTP setting was not persisted. Enable manually from oMLX admin panel.` }));
-    }
-  } catch (err) {
-    console.log(status({ kind: "warning", message: `[mtp] Could not enable MTP: ${err.message}` }));
+async function ensureOmlxModelSettings(profile) {
+  const settings = {};
+  if (mtpEnabledFor(profile)) settings.mtp_enabled = true;
+  if (Number.isFinite(profile.thinkingBudget)) {
+    settings.thinking_budget_enabled = true;
+    settings.thinking_budget_tokens = profile.thinkingBudget;
+  }
+  if (Object.keys(settings).length === 0) return;
+
+  const result = await putOmlxModelSettings(apiRootUrl(profile.baseUrl), effectiveModelId(profile), settings);
+  if (result.ok) {
+    const applied = [
+      settings.mtp_enabled ? "MTP enabled" : null,
+      settings.thinking_budget_tokens ? `thinking budget ${settings.thinking_budget_tokens}` : null,
+    ].filter(Boolean).join(" + ");
+    console.log(status({ kind: "success", message: `[omlx] Verified: ${applied} for ${effectiveModelId(profile)}` }));
+  } else {
+    console.log(status({ kind: "warning", message: `[omlx] Could not apply model settings: ${omlxSettingsFailureHint(result)}` }));
   }
 }
 

@@ -8,10 +8,29 @@
 
 import { readdir, stat, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 
 const OMLX_MODELS_DIR = join(homedir(), ".omlx", "models");
+const OMLX_MODEL_SETTINGS = join(homedir(), ".omlx", "model_settings.json");
+
+/**
+ * Read an oMLX model's server-side settings (dflash_enabled, thinking
+ * budget, MTP toggles, …) from ~/.omlx/model_settings.json — works offline,
+ * no server required. Entries are keyed by model dir name. These are oMLX
+ * choices, not model facts; capability detection lives in capabilities.mjs.
+ * Returns null when the file or entry is missing/unreadable.
+ */
+export async function readOmlxModelSettings(modelId) {
+  try {
+    const parsed = JSON.parse(await readFile(OMLX_MODEL_SETTINGS, "utf8"));
+    const models = parsed?.models;
+    if (!models || typeof models !== "object") return null;
+    return models[modelId] ?? models[basename(modelId)] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function isMlxModelDir(dir) {
   if (!existsSync(join(dir, "config.json"))) return false;

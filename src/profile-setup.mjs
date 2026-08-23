@@ -7,6 +7,9 @@ import { backendFor } from "./backends.mjs";
 import { formatBytes, formatCtxLabel, renderList, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectGgufCapabilities, detectCapabilities, mtpEnabledFor } from "./capabilities.mjs";
+import { readOmlxModelSettings } from "./mlx-discovery.mjs";
+import { putOmlxModelSettings, omlxSettingsFailureHint } from "./omlx-runtime.mjs";
+import { apiRootUrl } from "./server-status.mjs";
 import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { effectiveModelId } from "./profiles.mjs";
@@ -46,8 +49,56 @@ async function askThinkingLevel(configured, backendId) {
   return next;
 }
 
+/**
+ * oMLX hard thinking budget (thinking_budget_* server settings). Thinking
+ * levels are soft steering — and on the DFlash engine path they don't land
+ * at all (verified 2026-08: DFlashEngine applies the chat template itself
+ * and drops chat_template_kwargs/reasoning_effort). The budget is the hard
+ * cap that works on every engine path. Stored on the profile as
+ * thinkingBudget and re-applied at launch; also pushed immediately below.
+ */
+async function askThinkingBudget(configured, serverSettings) {
+  const dflashOn = serverSettings?.dflash_enabled === true;
+  const current = serverSettings?.thinking_budget_enabled && Number.isFinite(serverSettings?.thinking_budget_tokens)
+    ? serverSettings.thinking_budget_tokens
+    : null;
+  console.log("");
+  if (dflashOn) {
+    hint("DFlash is enabled for this model — its engine ignores thinking levels.");
+    hint("A hard budget is the thinking control that works there (force-stops runaway thinking).");
+  } else {
+    hint("Hard cap on thinking tokens, enforced server-side — stops runaway thinking that soft levels can't.");
+  }
+  const wantsBudget = await ask(promptConfirm({ message: "Set a hard thinking budget?", initialValue: dflashOn || current != null }));
+  const next = { ...configured };
+  if (!wantsBudget) {
+    delete next.thinkingBudget;
+    return next;
+  }
+  hint("Thinking is force-stopped at this many tokens · 4096 works well for Qwen3.8");
+  next.thinkingBudget = await ask(promptNumber({ message: "Thinking budget tokens", defaultValue: next.thinkingBudget ?? current ?? DEFAULT_THINKING_BUDGET, min: 256, max: 65536 }));
+  return next;
+}
+
+/** Push the thinking-budget answer to the oMLX server right away (best-effort). */
+async function applyThinkingBudgetNow(profile) {
+  const settings = Number.isFinite(profile.thinkingBudget)
+    ? { thinking_budget_enabled: true, thinking_budget_tokens: profile.thinkingBudget }
+    : { thinking_budget_enabled: false };
+  const result = await putOmlxModelSettings(apiRootUrl(profile.baseUrl), effectiveModelId(profile), settings);
+  if (result.ok) {
+    console.log(status({ kind: "success", message: Number.isFinite(profile.thinkingBudget)
+      ? `Thinking budget applied on oMLX server (${profile.thinkingBudget.toLocaleString()} tokens)`
+      : "Thinking budget disabled on oMLX server" }));
+  } else {
+    console.log(status({ kind: "warning", message: `Could not apply thinking budget: ${omlxSettingsFailureHint(result)}` }));
+    if (Number.isFinite(profile.thinkingBudget)) hint("Stored on the profile — minimal-ai will apply it on next launch.");
+  }
+}
+
 const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288];
 const HEATMAP_CACHE_TYPES = ["bf16", "q8_0", "q4_0"];
+const DEFAULT_THINKING_BUDGET = 4096;
 
 function hint(text) {
   console.log(theme.subtle(`  ${text}`));
@@ -377,6 +428,7 @@ async function configureOmlxProfile(profile) {
 
   const { mtpReason, ...facts } = await detectCapabilities({ backend: "omlx", modelId, contextLength: serverContext });
   configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), ...facts } };
+  const serverSettings = await readOmlxModelSettings(modelId);
 
   console.log("");
   console.log(card({ title: "Model overview", body: renderList([
@@ -398,18 +450,26 @@ async function configureOmlxProfile(profile) {
 
   configured = await askThinkingLevel(configured, "omlx");
 
+  if (facts.thinking) {
+    configured = await askThinkingBudget(configured, serverSettings);
+  }
+
   console.log("");
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
     ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
+    ...(configured.thinkingBudget ? [["Thinking budget", `${configured.thinkingBudget.toLocaleString()} tokens`]] : []),
     ...(mtpEnabledFor(configured) && facts.mtp ? [["MTP", "enabled"]] : []),
     ...(facts.vision ? [["Vision", "yes"]] : []),
   ]) }));
   console.log(theme.subtle("  Server settings (quant, KV cache, MTP internals) live in the oMLX dashboard."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
+  if (facts.thinking && (configured.thinkingBudget != null || serverSettings?.thinking_budget_enabled)) {
+    await applyThinkingBudgetNow(configured);
+  }
   return configured;
 }
 

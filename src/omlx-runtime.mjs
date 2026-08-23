@@ -68,6 +68,45 @@ export async function startOmlxServer() {
   await execFileAsync(bin, ["start"], { timeout: 60000 });
 }
 
+/**
+ * PUT partial per-model settings to the oMLX admin API, then GET to verify
+ * they persisted. Never throws — returns { ok, reason, detail? } so callers
+ * can word a context-appropriate warning. reason: "auth" | "not-found" |
+ * "http" | "unverifiable" | "not-persisted" | "unreachable".
+ */
+export async function putOmlxModelSettings(baseUrl, modelId, settings) {
+  const url = `${baseUrl}/admin/api/models/${encodeURIComponent(modelId)}/settings`;
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) return { ok: false, reason: "auth" };
+      if (response.status === 404) return { ok: false, reason: "not-found" };
+      const detail = await response.text().catch(() => "");
+      return { ok: false, reason: "http", detail: `HTTP ${response.status} ${detail}`.trim() };
+    }
+    const verify = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!verify.ok) return { ok: false, reason: "unverifiable", detail: `HTTP ${verify.status}` };
+    const current = await verify.json();
+    const failed = Object.entries(settings).filter(([key, value]) => current[key] !== value).map(([key]) => key);
+    if (failed.length > 0) return { ok: false, reason: "not-persisted", detail: failed.join(", ") };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: "unreachable", detail: err.message };
+  }
+}
+
+/** Human-readable advice for a failed putOmlxModelSettings call. */
+export function omlxSettingsFailureHint(result) {
+  if (result.reason === "auth") return "oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or change it manually from the admin panel.";
+  if (result.reason === "not-found") return "Model not found on the oMLX server. Setting not applied.";
+  return `Check the oMLX admin panel (${result.detail ?? result.reason}).`;
+}
+
 export async function offerOmlxRestart(reason = "to update its model list") {
   const bin = await findOmlx();
   if (!bin) {

@@ -207,3 +207,35 @@ describe("detectOmlxCapabilities", () => {
     assert.equal(lookupOmlxModelInfo("Vision-Model-4bit", infoMap)?.drafter, false);
   });
 });
+
+describe("readOmlxModelSettings", () => {
+  it("reads per-model server settings from ~/.omlx/model_settings.json", async () => {
+    const { readOmlxModelSettings } = await import("../src/mlx-discovery.mjs");
+    await mkdir(join(sandboxHome, ".omlx"), { recursive: true });
+    await writeFile(join(sandboxHome, ".omlx", "model_settings.json"), JSON.stringify({
+      version: 1,
+      models: {
+        "Qwen3.8-27B-4bit": { dflash_enabled: true, thinking_budget_enabled: true, thinking_budget_tokens: 4096 },
+        "Qwen3.6-35B-A3B-4bit": { dflash_enabled: false, thinking_budget_enabled: false },
+      },
+    }));
+    const dflash = await readOmlxModelSettings("Qwen3.8-27B-4bit");
+    assert.equal(dflash.dflash_enabled, true);
+    assert.equal(dflash.thinking_budget_tokens, 4096);
+    const plain = await readOmlxModelSettings("Qwen3.6-35B-A3B-4bit");
+    assert.equal(plain.dflash_enabled, false);
+  });
+
+  it("matches by dir basename for org/name-style ids", async () => {
+    const { readOmlxModelSettings } = await import("../src/mlx-discovery.mjs");
+    const settings = await readOmlxModelSettings("mlx-community/Qwen3.8-27B-4bit");
+    assert.equal(settings.dflash_enabled, true);
+  });
+
+  it("returns null for unknown models and a missing file", async () => {
+    const { readOmlxModelSettings } = await import("../src/mlx-discovery.mjs");
+    assert.equal(await readOmlxModelSettings("no-such-model"), null);
+    await rm(join(sandboxHome, ".omlx", "model_settings.json"));
+    assert.equal(await readOmlxModelSettings("Qwen3.8-27B-4bit"), null);
+  });
+});
