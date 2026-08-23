@@ -50,6 +50,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # Trusted publishing needs npm CLI >= 11.5.1 (Node 22 ships npm 10).
+      - run: npm install -g npm@latest
       - name: Verify tag matches package version
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
