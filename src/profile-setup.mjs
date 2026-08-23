@@ -381,12 +381,24 @@ async function configureOmlxProfile(profile) {
     configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), vision: hasVision } };
   }
 
+  // Refresh the server-reported context window so harness configs keep a
+  // real ceiling instead of the 16K fallback. Profiles created before
+  // context-length persistence (v2.5.0) lack this fact; Reconfigure re-detects it.
+  try {
+    const entry = (await backendFor("omlx").scanModels())
+      .find((m) => m.id.toLowerCase() === modelId.toLowerCase());
+    if (entry?.contextLength) {
+      configured = { ...configured, capabilities: { ...(configured.capabilities ?? {}), contextLength: entry.contextLength } };
+    }
+  } catch { /* oMLX unreachable — keep existing facts */ }
+
   configured = await askThinkingLevel(configured, "omlx");
 
   console.log("");
   console.log(card({ title: "Model setup", body: renderList([
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
+    ["Context", configured.capabilities?.contextLength ? formatCtxLabel(configured.capabilities.contextLength) : "unknown"],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
     ...(configured.capabilities?.mtp ? [["MTP", "enabled"]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "yes"]] : []),

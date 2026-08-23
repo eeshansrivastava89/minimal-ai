@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.6.1] - 2026-08-22
+
+### Fixed
+- Reconfigure now refreshes the oMLX server-reported context window (`max_model_len`) onto the profile. Profiles created before v2.5.0 had no persisted context length, so harness configs kept falling back to the 16,384-token ceiling. Re-running Reconfigure once now picks up the model's real window (no profile re-creation needed).
+
 ## [2.6.0] - 2026-08-22
 
 ### Added
