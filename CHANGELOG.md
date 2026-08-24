@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.3] - 2026-08-23
+
+### Fixed
+- oMLX thinking-off (v2.7.2) now actually works end to end. Root cause of "off but still thinking": minimal-ai advertised thinking controls to Pi/omp for thinkingOff profiles, so Pi attached `chat_template_kwargs: {enable_thinking: true}` to every request — and client kwargs override oMLX's server-side `enable_thinking: false` (verified live on the DFlash path). Pi/omp configs now hide thinking controls entirely for thinkingOff profiles (no reasoning flag, no compat), so nothing on the wire can stomp the server off-switch.
+
 ## [2.7.2] - 2026-08-23
 
 ### Fixed

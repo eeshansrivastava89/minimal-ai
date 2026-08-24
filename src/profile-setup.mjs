@@ -54,10 +54,14 @@ async function askThinkingLevel(configured, backendId) {
  * oMLX 0.6.3rc2:
  * - Batched engines: thinking levels land (soft steering) and
  *   thinking_budget is enforced — a hard cap against runaway thinking.
- * - DFlash engine path: the engine applies the chat template itself and
- *   drops chat_template_kwargs/reasoning_effort, and thinking_budget is
- *   NOT enforced (a benchmark turn ran ~10K thinking tokens past a 4096
- *   cap). The only control that works there is enable_thinking on/off.
+ * - DFlash engine path: levels are weak soft steering, thinking_budget is
+ *   NOT enforced (a benchmark turn ran ~10K thinking tokens past an active
+ *   4096 cap), and client-sent chat_template_kwargs OVERRIDE server
+ *   settings (Pi's enable_thinking=true beats a server-side
+ *   enable_thinking=false). The only reliable off: enable_thinking=false
+ *   server-side PLUS no harness thinking controls on the wire — which is
+ *   why thinkingOff also strips reasoning from harness configs
+ *   (harness-pi/harness-omp).
  * Answers are stored on the profile (thinkingOff / thinkingBudget),
  * pushed to the server immediately, and re-applied at launch.
  */
@@ -65,8 +69,8 @@ async function askOmlxThinkingControl(configured, serverSettings) {
   const next = { ...configured };
   console.log("");
   if (serverSettings?.dflash_enabled === true) {
-    hint("DFlash is enabled — its engine ignores thinking levels AND the thinking budget (verified).");
-    hint("The only thinking control that works on this path is turning thinking off entirely.");
+    hint("DFlash is enabled — thinking levels barely steer it and the budget isn't enforced (verified).");
+    hint("The reliable fix is turning thinking off entirely. Harness thinking toggles will be hidden so they can't override it.");
     next.thinkingOff = await ask(promptConfirm({ message: "Turn thinking off entirely?", initialValue: next.thinkingOff ?? serverSettings?.enable_thinking === false }));
     delete next.thinkingBudget;
     return next;

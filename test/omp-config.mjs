@@ -83,6 +83,12 @@ describe("omp harness config", () => {
     assert.equal(config.providers.ollama.compat.supportsReasoningEffort, true);
   });
 
+  it("marks thinkingOff omlx models as non-reasoning (harness kwargs would override the server off-switch)", async () => {
+    await ompHarness.syncConfig(omlxProfile({ thinkingOff: true }));
+    const config = await readOmpConfig();
+    assert.equal(config.providers.omlx.models[0].reasoning, false);
+  });
+
   it("preserves providers it did not write", async () => {
     const configPath = join(sandboxHome, ".omp", "agent", "models.yml");
     await mkdir(join(sandboxHome, ".omp", "agent"), { recursive: true });

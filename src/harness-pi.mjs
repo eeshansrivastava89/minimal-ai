@@ -111,6 +111,11 @@ function piModelCompat(profile) {
 }
 
 function piReasoning(profile) {
+  // thinkingOff (oMLX hard server-side off) means the harness must hide
+  // thinking controls entirely: Pi's per-request chat_template_kwargs
+  // enable_thinking would OVERRIDE the server-side enable_thinking=false
+  // (verified 2026-08 on the DFlash path — client kwargs win).
+  if (profile.thinkingOff === true) return undefined;
   // Advertise reasoning whenever the model can think. Ollama's /v1 honors
   // top-level reasoning_effort (verified 0.32.x — see
   // OLLAMA_THINKING_LEVEL_MAP for caveats); oMLX reads it natively;

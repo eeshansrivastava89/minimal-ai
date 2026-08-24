@@ -21,6 +21,7 @@ const OMP_CONFIG = join(homedir(), ".omp", "agent", "models.yml");
 // reasoning for oMLX and Ollama models only — showing thinking controls
 // that provably do nothing is how the Ollama/Pi bug happened.
 function ompReasoning(profile) {
+  if (profile.thinkingOff === true) return false; // see piReasoning: harness kwargs override the server off-switch
   if (profile.backend !== "omlx" && profile.backend !== "ollama") return false;
   return modelDescriptor(profile).thinking === true;
 }

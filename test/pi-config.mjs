@@ -152,6 +152,18 @@ describe("syncPiConfig thinking levels", () => {
     });
   });
 
+  it("hides all thinking controls when thinkingOff is set (harness kwargs override the server off-switch)", async () => {
+    // oMLX DFlash path: Pi's chat_template_kwargs enable_thinking=true
+    // overrides a server-side enable_thinking=false (verified 2026-08),
+    // so thinkingOff must strip reasoning + compat from the Pi config.
+    await syncPiConfig(omlxProfile({ thinkingOff: true }));
+    const config = await readPiConfig();
+    const model = config.providers.omlx.models[0];
+    assert.equal(model.reasoning, undefined);
+    assert.equal(model.thinkingLevelMap, undefined);
+    assert.equal(model.compat, undefined);
+  });
+
   it("omits reasoning fields for non-thinking models", async () => {
     await syncPiConfig(omlxProfile({
       capabilities: undefined,
