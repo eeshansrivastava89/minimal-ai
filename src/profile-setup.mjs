@@ -54,13 +54,15 @@ async function askThinkingLevel(configured, backendId) {
  * oMLX 0.6.3rc2:
  * - Batched engines: thinking levels land (soft steering) and
  *   thinking_budget is enforced — a hard cap against runaway thinking.
- * - DFlash engine path: levels are weak soft steering, thinking_budget is
- *   NOT enforced (a benchmark turn ran ~10K thinking tokens past an active
- *   4096 cap), and client-sent chat_template_kwargs OVERRIDE server
- *   settings (Pi's enable_thinking=true beats a server-side
- *   enable_thinking=false). The only reliable off: enable_thinking=false
- *   server-side PLUS no harness thinking controls on the wire — which is
- *   why thinkingOff also strips reasoning from harness configs
+ * - DFlash engine path: levels sent via client chat_template_kwargs DO
+ *   land (verified 2026-08: reasoning_effort low vs xhigh = ~2-2.5x
+ *   thinking-token reduction on hard prompts), but are soft steering, and
+ *   thinking_budget is NOT enforced (a benchmark turn ran ~10K thinking
+ *   tokens past an active 4096 cap). The template default when nothing is
+ *   sent is xhigh — the runaway-turn cause. The only hard control:
+ *   enable_thinking=false server-side PLUS no harness thinking controls
+ *   on the wire (client kwargs override server settings) — which is why
+ *   thinkingOff also strips reasoning from harness configs
  *   (harness-pi/harness-omp).
  * Answers are stored on the profile (thinkingOff / thinkingBudget),
  * pushed to the server immediately, and re-applied at launch.
@@ -69,8 +71,8 @@ async function askOmlxThinkingControl(configured, serverSettings) {
   const next = { ...configured };
   console.log("");
   if (serverSettings?.dflash_enabled === true) {
-    hint("DFlash is enabled — thinking levels barely steer it and the budget isn't enforced (verified).");
-    hint("The reliable fix is turning thinking off entirely. Harness thinking toggles will be hidden so they can't override it.");
+    hint("DFlash is enabled — thinking levels work here but are soft steering (~2x swing, verified).");
+    hint("The hard budget is NOT enforced on this path; turning thinking off entirely is the only hard control.");
     next.thinkingOff = await ask(promptConfirm({ message: "Turn thinking off entirely?", initialValue: next.thinkingOff ?? serverSettings?.enable_thinking === false }));
     delete next.thinkingBudget;
     return next;
@@ -472,10 +474,9 @@ async function configureOmlxProfile(profile) {
   const dflashOn = serverSettings?.dflash_enabled === true;
   if (dflashOn && facts.thinking) {
     console.log("");
-    hint("DFlash engine path ignores thinking levels — level selection skipped. (Stored level still applies if you disable DFlash later.)");
-  } else {
-    configured = await askThinkingLevel(configured, "omlx");
+    hint("DFlash engine path: levels apply (soft steering) — no hard budget on this path; see next step for the off switch.");
   }
+  configured = await askThinkingLevel(configured, "omlx");
 
   if (facts.thinking) {
     configured = await askOmlxThinkingControl(configured, serverSettings);
@@ -486,9 +487,9 @@ async function configureOmlxProfile(profile) {
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
     ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
-    ...(dflashOn && facts.thinking
-      ? [["Thinking", configured.thinkingOff ? "off entirely (only control DFlash honors)" : "on — levels/budget don't apply on the DFlash path"]]
-      : [["Thinking", configured.thinkingLevel ?? "harness default"]]),
+    ["Thinking", configured.thinkingOff
+      ? "off entirely (server-side, hard)"
+      : (configured.thinkingLevel ?? "harness default") + (dflashOn && facts.thinking ? " · soft steering on DFlash" : "")],
     ...(configured.thinkingBudget ? [["Thinking budget", `${configured.thinkingBudget.toLocaleString()} tokens`]] : []),
     ...(mtpEnabledFor(configured) && facts.mtp ? [["MTP", "enabled"]] : []),
     ...(facts.vision ? [["Vision", "yes"]] : []),

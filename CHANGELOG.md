@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.4] - 2026-08-23
+
+### Fixed
+- DFlash oMLX models get the thinking-level picker back. v2.7.2 skipped it on the false belief that levels don't land on the DFlash path — they do: reasoning_effort via chat_template_kwargs is honored by DFlashEngine (~2–2.5x thinking-token reduction from xhigh→low on hard prompts, verified on 0.6.3rc2). The runaway-turn cause was never broken levels; it's the template's xhigh default when no level is sent. Caveats shown in the flow: levels are soft steering, the hard budget is not enforced on the DFlash path, and thinking-off (v2.7.2/v2.7.3) remains the only hard control.
+
 ## [2.7.3] - 2026-08-23
 
 ### Fixed
