@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.5] - 2026-08-23
+
+### Fixed
+- oMLX setup/Reconfigure asks thinking on/off (or budget, on non-DFlash models) BEFORE the level picker — answering "off" now skips the level question entirely instead of asking a moot follow-up.
+
 ## [2.7.4] - 2026-08-23
 
 ### Fixed

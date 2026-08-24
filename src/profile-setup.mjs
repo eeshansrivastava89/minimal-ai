@@ -472,14 +472,19 @@ async function configureOmlxProfile(profile) {
   }
 
   const dflashOn = serverSettings?.dflash_enabled === true;
-  if (dflashOn && facts.thinking) {
-    console.log("");
-    hint("DFlash engine path: levels apply (soft steering) — no hard budget on this path; see next step for the off switch.");
-  }
-  configured = await askThinkingLevel(configured, "omlx");
-
   if (facts.thinking) {
+    // Off/budget first: answering "off" makes the level question moot.
     configured = await askOmlxThinkingControl(configured, serverSettings);
+    if (!configured.thinkingOff) {
+      if (dflashOn) {
+        console.log("");
+        hint("DFlash engine path: levels apply (soft steering, ~2x swing) — no hard budget on this path.");
+      }
+      configured = await askThinkingLevel(configured, "omlx");
+    } else {
+      console.log("");
+      hint("Thinking is off — harness thinking toggles for this model are hidden so they can't override it.");
+    }
   }
 
   console.log("");
