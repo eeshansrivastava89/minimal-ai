@@ -141,6 +141,7 @@ async function startManagedServer(profile, backend) {
 async function ensureOmlxModelSettings(profile) {
   const settings = {};
   if (mtpEnabledFor(profile)) settings.mtp_enabled = true;
+  if (profile.thinkingOff === true) settings.enable_thinking = false;
   if (Number.isFinite(profile.thinkingBudget)) {
     settings.thinking_budget_enabled = true;
     settings.thinking_budget_tokens = profile.thinkingBudget;
@@ -151,6 +152,7 @@ async function ensureOmlxModelSettings(profile) {
   if (result.ok) {
     const applied = [
       settings.mtp_enabled ? "MTP enabled" : null,
+      settings.enable_thinking === false ? "thinking off" : null,
       settings.thinking_budget_tokens ? `thinking budget ${settings.thinking_budget_tokens}` : null,
     ].filter(Boolean).join(" + ");
     const verb = result.verified === false ? "Applied (not independently verified)" : "Verified";

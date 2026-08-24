@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.7.2] - 2026-08-23
+
+### Fixed
+- oMLX Reconfigure no longer offers thinking controls that don't work on the DFlash engine path. Follow-up verification after v2.7.0 showed DFlashEngine not only drops thinking levels but also does NOT enforce `thinking_budget` (a benchmark turn ran ~10K thinking tokens past an active 4096 cap). When DFlash is detected, setup/Reconfigure now skips the level selection and offers the one control that works on that path — turning thinking off entirely (`enable_thinking: false`, verified: zero reasoning tokens) — stored on the profile and applied immediately + on every launch. The thinking budget is still offered for non-DFlash (batched-engine) oMLX models, where it is enforced.
+
 ## [2.7.1] - 2026-08-23
 
 ### Fixed

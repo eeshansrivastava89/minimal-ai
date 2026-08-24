@@ -50,27 +50,33 @@ async function askThinkingLevel(configured, backendId) {
 }
 
 /**
- * oMLX hard thinking budget (thinking_budget_* server settings). Thinking
- * levels are soft steering — and on the DFlash engine path they don't land
- * at all (verified 2026-08: DFlashEngine applies the chat template itself
- * and drops chat_template_kwargs/reasoning_effort). The budget is the hard
- * cap that works on every engine path. Stored on the profile as
- * thinkingBudget and re-applied at launch; also pushed immediately below.
+ * oMLX thinking controls (server-side settings). Verified 2026-08 on
+ * oMLX 0.6.3rc2:
+ * - Batched engines: thinking levels land (soft steering) and
+ *   thinking_budget is enforced — a hard cap against runaway thinking.
+ * - DFlash engine path: the engine applies the chat template itself and
+ *   drops chat_template_kwargs/reasoning_effort, and thinking_budget is
+ *   NOT enforced (a benchmark turn ran ~10K thinking tokens past a 4096
+ *   cap). The only control that works there is enable_thinking on/off.
+ * Answers are stored on the profile (thinkingOff / thinkingBudget),
+ * pushed to the server immediately, and re-applied at launch.
  */
-async function askThinkingBudget(configured, serverSettings) {
-  const dflashOn = serverSettings?.dflash_enabled === true;
+async function askOmlxThinkingControl(configured, serverSettings) {
+  const next = { ...configured };
+  console.log("");
+  if (serverSettings?.dflash_enabled === true) {
+    hint("DFlash is enabled — its engine ignores thinking levels AND the thinking budget (verified).");
+    hint("The only thinking control that works on this path is turning thinking off entirely.");
+    next.thinkingOff = await ask(promptConfirm({ message: "Turn thinking off entirely?", initialValue: next.thinkingOff ?? serverSettings?.enable_thinking === false }));
+    delete next.thinkingBudget;
+    return next;
+  }
+  delete next.thinkingOff;
   const current = serverSettings?.thinking_budget_enabled && Number.isFinite(serverSettings?.thinking_budget_tokens)
     ? serverSettings.thinking_budget_tokens
     : null;
-  console.log("");
-  if (dflashOn) {
-    hint("DFlash is enabled for this model — its engine ignores thinking levels.");
-    hint("A hard budget is the thinking control that works there (force-stops runaway thinking).");
-  } else {
-    hint("Hard cap on thinking tokens, enforced server-side — stops runaway thinking that soft levels can't.");
-  }
-  const wantsBudget = await ask(promptConfirm({ message: "Set a hard thinking budget?", initialValue: dflashOn || current != null }));
-  const next = { ...configured };
+  hint("Hard cap on thinking tokens, enforced server-side — stops runaway thinking that soft levels can't.");
+  const wantsBudget = await ask(promptConfirm({ message: "Set a hard thinking budget?", initialValue: current != null }));
   if (!wantsBudget) {
     delete next.thinkingBudget;
     return next;
@@ -80,20 +86,30 @@ async function askThinkingBudget(configured, serverSettings) {
   return next;
 }
 
-/** Push the thinking-budget answer to the oMLX server right away (best-effort). */
-async function applyThinkingBudgetNow(profile) {
-  const settings = Number.isFinite(profile.thinkingBudget)
-    ? { thinking_budget_enabled: true, thinking_budget_tokens: profile.thinkingBudget }
-    : { thinking_budget_enabled: false };
+/** Push the thinking answers to the oMLX server right away (best-effort). No-op when nothing needs changing. */
+async function applyOmlxThinkingSettings(profile, serverSettings) {
+  const settings = {};
+  if (typeof profile.thinkingOff === "boolean") settings.enable_thinking = !profile.thinkingOff;
+  else if (serverSettings?.enable_thinking === false) settings.enable_thinking = true; // control moved off the DFlash path — restore the server default
+  if (Number.isFinite(profile.thinkingBudget)) {
+    settings.thinking_budget_enabled = true;
+    settings.thinking_budget_tokens = profile.thinkingBudget;
+  } else if (serverSettings?.thinking_budget_enabled) {
+    settings.thinking_budget_enabled = false;
+  }
+  if (Object.keys(settings).length === 0) return;
   const result = await putOmlxModelSettings(apiRootUrl(profile.baseUrl), effectiveModelId(profile), settings);
   if (result.ok) {
     const unverified = result.verified === false ? " (not independently verified)" : "";
-    console.log(status({ kind: "success", message: Number.isFinite(profile.thinkingBudget)
-      ? `Thinking budget applied on oMLX server (${profile.thinkingBudget.toLocaleString()} tokens)${unverified}`
-      : `Thinking budget disabled on oMLX server${unverified}` }));
+    const applied = [
+      "enable_thinking" in settings ? `thinking ${settings.enable_thinking ? "on" : "off"}` : null,
+      settings.thinking_budget_enabled === true ? `budget ${settings.thinking_budget_tokens.toLocaleString()} tokens` : null,
+      settings.thinking_budget_enabled === false ? "budget disabled" : null,
+    ].filter(Boolean).join(", ");
+    console.log(status({ kind: "success", message: `oMLX thinking settings applied: ${applied}${unverified}` }));
   } else {
-    console.log(status({ kind: "warning", message: `Could not apply thinking budget: ${omlxSettingsFailureHint(result)}` }));
-    if (Number.isFinite(profile.thinkingBudget)) hint("Stored on the profile — minimal-ai will apply it on next launch.");
+    console.log(status({ kind: "warning", message: `Could not apply thinking settings: ${omlxSettingsFailureHint(result)}` }));
+    hint("Stored on the profile — minimal-ai will apply them on next launch.");
   }
 }
 
@@ -449,10 +465,16 @@ async function configureOmlxProfile(profile) {
     hint(`MTP not available — ${mtpReason}`);
   }
 
-  configured = await askThinkingLevel(configured, "omlx");
+  const dflashOn = serverSettings?.dflash_enabled === true;
+  if (dflashOn && facts.thinking) {
+    console.log("");
+    hint("DFlash engine path ignores thinking levels — level selection skipped. (Stored level still applies if you disable DFlash later.)");
+  } else {
+    configured = await askThinkingLevel(configured, "omlx");
+  }
 
   if (facts.thinking) {
-    configured = await askThinkingBudget(configured, serverSettings);
+    configured = await askOmlxThinkingControl(configured, serverSettings);
   }
 
   console.log("");
@@ -460,7 +482,9 @@ async function configureOmlxProfile(profile) {
     ["Model", theme.bold(profile.label)],
     ["Backend", "oMLX"],
     ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
-    ["Thinking", configured.thinkingLevel ?? "harness default"],
+    ...(dflashOn && facts.thinking
+      ? [["Thinking", configured.thinkingOff ? "off entirely (only control DFlash honors)" : "on — levels/budget don't apply on the DFlash path"]]
+      : [["Thinking", configured.thinkingLevel ?? "harness default"]]),
     ...(configured.thinkingBudget ? [["Thinking budget", `${configured.thinkingBudget.toLocaleString()} tokens`]] : []),
     ...(mtpEnabledFor(configured) && facts.mtp ? [["MTP", "enabled"]] : []),
     ...(facts.vision ? [["Vision", "yes"]] : []),
@@ -468,8 +492,8 @@ async function configureOmlxProfile(profile) {
   console.log(theme.subtle("  Server settings (quant, KV cache, MTP internals) live in the oMLX dashboard."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
-  if (facts.thinking && (configured.thinkingBudget != null || serverSettings?.thinking_budget_enabled)) {
-    await applyThinkingBudgetNow(configured);
+  if (facts.thinking) {
+    await applyOmlxThinkingSettings(configured, serverSettings);
   }
   return configured;
 }
