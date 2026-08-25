@@ -1,6 +1,6 @@
 {
   "name": "minimal-ai",
-  "version": "2.7.5",
+  "version": "2.8.0",
   "description": "Privacy-first CLI for running local LLMs — discover, configure, run, and chat",
   "author": "Eeshan Srivastava (https://eeshans.com)",
   "type": "module",

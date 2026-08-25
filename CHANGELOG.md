@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.8.0] - 2026-08-24
+
+### Added
+- llama.cpp setup now seeds sampler defaults from the model's HuggingFace `generation_config.json` (#17): the lab's recommended `temperature`/`top_p`/`top_k`/`repetition_penalty`/`presence_penalty`/`min_p` are fetched from the profile's HF repo and used as the prompt defaults for fields the user hasn't customized. A "Model card recommends X" hint appears next to each sampler. A user's saved value is never silently overwritten — recommendations only seed fields still at the fresh-profile default. Addresses the "my Qwen loops inside its THINK output" class of bug that comes from fighting the model with wrong sampler settings.
+- Quant-picker and KV-cache fidelity guardrails (#18): the GGUF quant picker now notes that 8-bit (Q8_0) preserves tool-calling fidelity better than 4-bit at long context, and the KV-cache step warns (one-line hint, not a block) when context is set above 32K with a low-bit (q4_0) cache that agentic runs can degrade on.
+
+### Removed
+- Ollama download paths (#14): `downloadOllamaLibrary`, `downloadOllamaHfGguf`, `downloadViaOllama`, and `pullOllamaModel` are gone. Ollama is a managed backend — users download via `ollama pull` natively; the minimal-ai downloader is now llama.cpp-only (the glass-box backend where guided quant/fit selection is the differentiator). Ollama scan / launch / delete and app-install onboarding stay.
+
 ## [2.7.5] - 2026-08-23
 
 ### Fixed
