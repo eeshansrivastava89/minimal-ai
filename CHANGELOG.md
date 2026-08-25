@@ -4,6 +4,14 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.9.1] - 2026-08-25
+
+### Fixed
+- Bundled Pi skills are now refreshed when minimal-ai updates, not frozen at first install (#10 follow-up 2). A version marker (`~/.pi/agent/skills/.minimal-ai-bundled.json`) records which skills minimal-ai installed and at which version; `setup()` re-copies only when minimal-ai's version moved on, and only overwrites skills it owns — a skill the user replaced via `pi install` is left alone. Same-version re-runs are a no-op. Previously the copy-once rule (`if (!existsSync(dest))`) left users with stale first-install snapshots while they believed they had current skills.
+
+### Changed
+- Platform claims narrowed to tested surfaces (#10 follow-up 3): the README badge is now "macOS (Apple Silicon)" and the Linux row is labeled untested (with an invitation for Linux CI contributions), matching the intro's existing "only verified on Apple Silicon" caveat. Previously the badge/table claimed Linux alongside macOS.
+
 ## [2.9.0] - 2026-08-25
 
 ### Added
