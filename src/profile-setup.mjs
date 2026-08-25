@@ -160,8 +160,9 @@ async function loadRecommendedSamplers(configured) {
 
 /** Prompt default for a sampler field: the model-card recommendation when
  *  one exists AND the saved value is still a fresh-profile default; otherwise
- *  the user's saved value (never silently override a deliberate choice). */
-function samplerDefault(configured, field, recommended) {
+ *  the user's saved value (never silently override a deliberate choice).
+ *  Exported for testing the seeding rule without driving the prompt UI. */
+export function samplerDefault(configured, field, recommended) {
   const saved = configured.flags[field];
   if (recommended && recommended[field] !== undefined && isUncustomizedSampler(field, saved)) {
     return recommended[field];
@@ -195,6 +196,8 @@ const LONG_CONTEXT_KV_THRESHOLD = 32768;
 function lowBitKvWarning(ctxSize) {
   return ctxSize > LONG_CONTEXT_KV_THRESHOLD;
 }
+
+export { lowBitKvWarning, LONG_CONTEXT_KV_THRESHOLD };
 
 const LOW_BIT_KV_HINT = "⚠ low-bit KV at 32K+ context can degrade tool-call fidelity — prefer q8_0+ for agentic runs";
 
