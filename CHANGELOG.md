@@ -4,6 +4,14 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.9.0] - 2026-08-25
+
+### Added
+- MTP drafter download prompt (#2): after picking a main GGUF quant, minimal-ai now checks the HuggingFace repo for MTP drafter files and offers to download one alongside the main model. A single drafter is a Y/n prompt; multiple drafter quants show a picker (smallest-that-fits is the default) with a skip option. The drafter lands in the HF cache and the scanner auto-wires it to the main model at setup time, so MTP speculative decoding works without manually locating a drafter. Pairs both `mtp-`-prefix (e.g. huihui-ai) and `...-MTP`-suffix (e.g. unsloth `MTP/` subdirectory) drafter styles, and won't offer a drafter for a different model size in a mixed repo.
+
+### Fixed
+- `drafterTargetHint` (the scanner's drafter-to-model matcher) now strips quant tokens globally instead of only as a suffix, so a `-MTP`-suffix drafter like `gemma-4-E2B-it-Q8_0-MTP` reduces to the same base as its main model `gemma-4-E2B-it-Q8_0`. Also strips F16/BF16 quants and a trailing `.gguf` defensively. This fixes `matchDrafter` for the unsloth `-MTP`-suffix style (previously these drafters downloaded but never auto-wired).
+
 ## [2.8.0] - 2026-08-24
 
 ### Added
