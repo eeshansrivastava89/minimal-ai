@@ -143,6 +143,21 @@ export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree
     }));
 }
 
+/** List all MTP drafter GGUF files in a HuggingFace repo (by filename
+ *  heuristic — the same isDrafterFile rule listGgufFiles uses to exclude
+ *  them, so the two lists are complementary). Used to offer a drafter
+ *  download alongside the main model (#2). */
+export async function listDrafterFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  return resolvedTree
+    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && isDrafterFile(f.path))
+    .map((f) => ({
+      path: f.path,
+      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+    }))
+    .sort((a, b) => a.sizeBytes - b.sizeBytes);
+}
+
 /** Fetch model metadata from the HF API. */
 export async function getHfModelInfo(repo, { fetchImpl = globalThis.fetch } = {}) {
   const url = `https://huggingface.co/api/models/${repo}`;

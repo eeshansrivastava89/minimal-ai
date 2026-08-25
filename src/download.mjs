@@ -1,7 +1,9 @@
-import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfTree, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
+import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, listDrafterFiles, getHfTree, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
+import { drafterTargetHint } from "./scan.mjs";
+import { basename } from "node:path";
 import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
 
 export async function downloadHfGguf() {
@@ -49,6 +51,19 @@ async function _downloadHfGguf(repo, filename) {
     }
   }
 
+  // MTP drafter offer (#2): if the repo ships a drafter for the chosen
+  // model, offer to fetch it alongside. The drafter lands in the HF cache
+  // and the scanner auto-matches it to the main model at setup time.
+  let drafterFile = null;
+  if (filename) {
+    try {
+      const allDrafters = await listDrafterFiles(repo, { tree });
+      drafterFile = await offerDrafter(filename, allDrafters);
+    } catch {
+      // drafter lookup is best-effort — never block the main download
+    }
+  }
+
   if (!(await hasHfCli())) {
     const shouldInstall = await promptConfirm({
       message: "HuggingFace CLI is required to download models. Install it now?",
@@ -84,6 +99,11 @@ async function _downloadHfGguf(repo, filename) {
     } catch {
       // proceed without mmproj
     }
+    if (drafterFile) {
+      extraFiles.push(drafterFile.path);
+      plan.totalSizeBytes += drafterFile.sizeBytes;
+      console.log(theme.subtle(`Includes MTP drafter: ${drafterFile.path} (${formatBytes(drafterFile.sizeBytes)})`));
+    }
   }
 
   const freeBytes = getFreeDiskBytes(HF_HUB_DIR);
@@ -103,6 +123,62 @@ async function _downloadHfGguf(repo, filename) {
     console.log(status({ kind: "error", message: "Download failed: " + err.message }));
     return false;
   }
+}
+
+/** Offer to download an MTP drafter alongside the chosen main model (#2).
+ *  Matches drafters in the repo to the main model by stripped base name
+ *  (the same drafterTargetHint rule the scanner uses), so a repo with
+ *  multiple model sizes pairs the right drafter to the right main. Returns
+ *  the chosen drafter file or null (none / no match / user skipped). */
+async function offerDrafter(mainFilename, drafters) {
+  if (!drafters || drafters.length === 0) return null;
+  // Use basenames — the scanner (matchDrafter) computes hints from
+  // basenames too, so a drafter in an MTP/ subdirectory matches its
+  // top-level main model.
+  const mainHint = drafterTargetHint(basename(mainFilename));
+  // Match the scanner's own semantics (matchDrafter): main base equals or
+  // starts with the drafter's target hint. With the fixed drafterTargetHint
+  // this pairs both `mtp-...`-prefix and `...-MTP`-suffix drafter styles.
+  const matching = drafters.filter((d) => {
+    const dh = drafterTargetHint(basename(d.path));
+    return mainHint === dh || mainHint.startsWith(dh);
+  });
+  if (matching.length === 0) return null;
+
+  const availableRam = availableRamBytes();
+  const sorted = [...matching].sort((a, b) => a.sizeBytes - b.sizeBytes);
+
+  const fitLabel = (sizeBytes) => {
+    const { status: fitStatus } = fitCheck(sizeBytes + Math.round(sizeBytes * 0.1), availableRam);
+    if (fitStatus === "won't fit") return status({ kind: "error", message: "won't fit" });
+    if (fitStatus === "tight") return status({ kind: "warning", message: "tight" });
+    return status({ kind: "success", message: "fits" });
+  };
+
+  if (sorted.length === 1) {
+    const d = sorted[0];
+    console.log("");
+    console.log(theme.subtle(`  This model supports MTP speculative decoding (~2x speedup).`));
+    console.log(theme.subtle(`  Drafter: ${d.path} (${formatBytes(d.sizeBytes)}) · ${fitLabel(d.sizeBytes)}`));
+    const yes = await promptConfirm({ message: "Also download the MTP drafter?", initialValue: true });
+    return yes ? d : null;
+  }
+
+  // Multiple drafter quants — smallest that fits is the default, user can
+  // pick another or skip.
+  const fitting = sorted.filter((d) => fitCheck(d.sizeBytes + Math.round(d.sizeBytes * 0.1), availableRam).status !== "won't fit");
+  const recommended = fitting[0] ?? sorted[0];
+  const choices = sorted.map((d) => ({
+    value: d.path,
+    label: `${d.path} ${formatBytes(d.sizeBytes)}`,
+    hint: d.path === recommended.path ? "recommended" : fitLabel(d.sizeBytes),
+  }));
+  choices.push({ value: "__skip_drafter__", label: "Skip drafter" });
+  console.log("");
+  console.log(theme.subtle("  This model supports MTP speculative decoding (~2x speedup). Pick a drafter quant or skip."));
+  const picked = await promptSelect({ message: "MTP drafter", choices, defaultValue: recommended.path });
+  if (!picked || picked === "__skip_drafter__") return null;
+  return sorted.find((d) => d.path === picked) ?? null;
 }
 
 async function pickGgufQuant(repo, ggufFiles) {
