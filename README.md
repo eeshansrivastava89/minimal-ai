@@ -5,7 +5,7 @@
 **Run local AI models on your machine using llama.cpp / oMLX + Pi coding agent.**
 
 [![node](https://img.shields.io/badge/node-20%2B-3c873a)](package.json)
-[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)]()
+[![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-blue)]()
 
 
 </div>
@@ -97,7 +97,7 @@ These are good starting points sorted by minimum RAM. All are available on Huggi
 ## Platform support
 
 - **macOS (Apple Silicon)** — full support: llama.cpp (GGUF), oMLX (MLX), Ollama (GGUF + MLX). Requires Metal GPU (all Apple Silicon Macs have this). Virtual machines without GPU passthrough will fail on model load.
-- **Linux** — llama.cpp (GGUF) and Ollama. oMLX is Apple Silicon exclusive.
+- **Linux** — *untested.* llama.cpp (GGUF) and Ollama should work in theory (oMLX is Apple Silicon exclusive), but the maintainer has only verified minimal-ai on Apple Silicon. Feedback and Linux CI contributions welcome.
 - **Windows** — not supported
 
 ## Need help?
