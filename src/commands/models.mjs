@@ -11,7 +11,7 @@ import { startInteractive, promptSelectModel, promptChoice, promptConfirm, theme
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "./run.mjs";
-import { downloadHfGguf, downloadOllamaLibrary, downloadOllamaHfGguf } from "../download.mjs";
+import { downloadHfGguf } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { runtimeStatusFlow, discoveryPathsFlow, harnessFlow } from "./models-settings.mjs";
@@ -118,8 +118,6 @@ async function showModelPicker(catalog) {
 
   const downloadItems = [
     { value: "__download_hf_gguf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for llama.cpp)")}` },
-    { value: "__download_ollama_library__", label: `${theme.success("↓ Model from Ollama library")} ${theme.subtle("(for Ollama)")}` },
-    { value: "__download_ollama_hf__", label: `${theme.success("↓ GGUF from HuggingFace")} ${theme.subtle("(for Ollama)")}` },
   ];
   if (isAppleSilicon) {
     downloadItems.push({ value: "__download_omlx__", label: `${theme.success("↓ oMLX model")} ${theme.subtle("(open and download from oMLX app)")}` });
@@ -148,16 +146,6 @@ async function showModelPicker(catalog) {
 
   if (selected === "__download_hf_gguf__") {
     await downloadHfGguf();
-    console.log("");
-    return;
-  }
-  if (selected === "__download_ollama_library__") {
-    await downloadOllamaLibrary();
-    console.log("");
-    return;
-  }
-  if (selected === "__download_ollama_hf__") {
-    await downloadOllamaHfGguf();
     console.log("");
     return;
   }

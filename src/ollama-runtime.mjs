@@ -71,18 +71,6 @@ export async function startOllamaServer() {
   child.unref();
 }
 
-export async function ensureOllamaServer() {
-  if (await serverReady(OLLAMA_V1_BASE)) return true;
-  const bin = await findOllama();
-  if (!bin) throw new Error("Ollama is not installed");
-  try {
-    await startOllamaServer();
-  } catch (err) {
-    throw new Error(`Ollama could not be started: ${err.message}. Run \`ollama serve\` manually.`, { cause: err });
-  }
-  return false;
-}
-
 async function installOllamaFlow() {
   if (await hasOllama()) {
     console.log(status({ kind: "success", message: "Ollama is already installed." }));
@@ -210,20 +198,6 @@ export async function ollamaModelInfo(modelName) {
   });
   if (!response.ok) throw new Error(`Ollama /api/show returned ${response.status}`);
   return await response.json();
-}
-
-export async function pullOllamaModel(modelRef) {
-  const bin = await findOllama();
-  if (!bin) throw new Error("Ollama is not installed");
-  console.log(theme.subtle(`\nPulling ${modelRef}...`));
-  try {
-    await execCommand(bin, ["pull", modelRef], { label: "ollama pull", verbose: true });
-    console.log(status({ kind: "success", message: `${modelRef} pulled.` }));
-    return true;
-  } catch (err) {
-    console.log(status({ kind: "error", message: `Pull failed: ${err.message}` }));
-    return false;
-  }
 }
 
 export async function deleteOllamaModel(modelName) {

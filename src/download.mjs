@@ -1,11 +1,7 @@
 import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, listMmprojFiles, getHfTree, getHfModelInfo, isMlxRepo, installHfCli } from "./huggingface.mjs";
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { BACKENDS } from "./backends.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
-import { pullOllamaModel, hasOllama, installOllama, ensureOllamaServer } from "./ollama-runtime.mjs";
-import { serverReady } from "./server-check.mjs";
-import { sleep } from "./exec.mjs";
 import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
 
 export async function downloadHfGguf() {
@@ -14,43 +10,6 @@ export async function downloadHfGguf() {
   if (!input || !input.trim()) return false;
   const ref = parseHfRef(input.trim());
   return await _downloadHfGguf(ref.repo, ref.filename);
-}
-
-export async function downloadOllamaLibrary() {
-  console.log(theme.subtle("  Browse models at ollama.com/library"));
-  const input = await promptText({ message: "Ollama model name (e.g. qwen3:8b, llama3.2:3b)", defaultValue: "" });
-  if (!input || !input.trim()) return false;
-  return await downloadViaOllama(input.trim());
-}
-
-export async function downloadOllamaHfGguf() {
-  console.log(theme.subtle("  Browse GGUF models at huggingface.co/models"));
-  const input = await promptText({ message: "HuggingFace repo ID (e.g. unsloth/Qwen3.5-4B-GGUF)", defaultValue: "" });
-  if (!input || !input.trim()) return false;
-  const ref = parseHfRef(input.trim());
-
-  const ggufFiles = await fetchGgufFiles(ref.repo);
-  if (!ggufFiles) return false;
-  if (ggufFiles.length === 0) {
-    console.log(status({ kind: "warning", message: "No GGUF files found in this repo. Look for a repo ending in -GGUF." }));
-    return false;
-  }
-
-  const filename = await pickGgufQuant(ref.repo, ggufFiles);
-  if (!filename) return false;
-
-  const modelRef = `hf.co/${ref.repo}:${filename}`;
-  return await downloadViaOllama(modelRef);
-}
-
-/** Fetch the repo's GGUF file list, or null (message printed) on API failure. */
-async function fetchGgufFiles(repo) {
-  try {
-    return await listGgufFiles(repo);
-  } catch (err) {
-    console.log(status({ kind: "error", message: `Could not fetch repo info: ${err.message}` }));
-    return null;
-  }
 }
 
 async function _downloadHfGguf(repo, filename) {
@@ -144,45 +103,6 @@ async function _downloadHfGguf(repo, filename) {
     console.log(status({ kind: "error", message: "Download failed: " + err.message }));
     return false;
   }
-}
-
-async function downloadViaOllama(modelRef) {
-  if (!(await hasOllama())) {
-    console.log(status({ kind: "warning", message: "Ollama is enabled but not installed." }));
-    const shouldInstall = await promptConfirm({ message: "Install Ollama now?", initialValue: true });
-    if (!shouldInstall) {
-      console.log(theme.subtle("Install manually: brew install ollama  —  or  curl -fsSL https://ollama.com/install.sh | sh"));
-      return false;
-    }
-    const installed = await installOllama();
-    if (!installed) return false;
-  }
-
-  await ensureOllamaServer();
-  const OLLAMA_V1 = BACKENDS.ollama.defaultBaseUrl;
-  if (!(await serverReady(OLLAMA_V1))) {
-    process.stdout.write(theme.subtle("Waiting for Ollama server"));
-    for (let i = 0; i < 30; i++) {
-      await sleep(1000);
-      if (await serverReady(OLLAMA_V1)) break;
-      process.stdout.write(".");
-    }
-    console.log("");
-    if (!(await serverReady(OLLAMA_V1))) {
-      console.log(status({ kind: "warning", message: "Ollama server is starting up — try again in a moment." }));
-      console.log(theme.subtle("  Run: ollama serve"));
-      return false;
-    }
-  }
-
-  console.log(theme.subtle(`\nOllama will pull ${modelRef}`));
-  console.log(theme.subtle("Ollama manages model storage and loading automatically.\n"));
-
-  const ok = await pullOllamaModel(modelRef);
-  if (ok) {
-    console.log(status({ kind: "success", message: "Run minimal-ai again to see the model in the picker." }));
-  }
-  return ok;
 }
 
 async function pickGgufQuant(repo, ggufFiles) {
