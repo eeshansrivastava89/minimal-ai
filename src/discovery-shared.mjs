@@ -41,3 +41,27 @@ export function inferSourceLabel(scanPath) {
   }
   return name;
 }
+
+/**
+ * Reduce a drafter filename to its target main-model base name, so a drafter
+ * can be matched to its main model. Strips quant tokens anywhere (not just as
+ * a suffix — a `-MTP`-suffix drafter like "gemma-4-E2B-it-Q8_0-MTP" has the
+ * quant before the -MTP marker) plus MTP/assistant/draft markers and the
+ * .gguf extension. Lives here (not scan.mjs) so download.mjs can use it
+ * without importing the whole scanner (#2, L1).
+ */
+export function drafterTargetHint(name) {
+  const lower = String(name).toLowerCase().replace(/\.gguf$/i, "");
+  let base = lower
+    .replace(/[-_]ud-[a-z0-9_]+/gi, "")
+    .replace(/[-_](?:bf|f)\d{2}\b/gi, "")
+    .replace(/[-_]q\d_k_[a-z]+/gi, "")
+    .replace(/[-_]q\d_[01]\b/gi, "");
+  base = base
+    .replace(/^mtp[-_]/i, "")
+    .replace(/[-_]mtp$/i, "")
+    .replace(/[-_]assistant([-_].*)?$/i, "")
+    .replace(/[-_]draft([-_].*)?$/i, "");
+  base = base.replace(/[-_]{2,}/g, "-").replace(/^[-_]+|[-_]+$/g, "");
+  return base;
+}

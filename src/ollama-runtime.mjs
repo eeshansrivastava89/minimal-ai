@@ -80,14 +80,18 @@ async function installOllamaFlow() {
 
   try {
     console.log(theme.subtle("Installing Ollama via official installer..."));
-    await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true });
+    await execCommand("/bin/bash", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"], { label: "ollama", verbose: true, timeout: 300000 });
     if (await hasOllama()) {
       console.log(status({ kind: "success", message: "Ollama installed." }));
       await startAndWaitForServer();
       console.log(theme.subtle("  Run minimal-ai again to see Ollama models in the picker."));
       return true;
     }
-  } catch { /* fall through to Homebrew */ }
+  } catch (err) {
+    // Don't swallow silently — tell the user why the official installer
+    // failed before falling back to Homebrew (no hidden fallbacks, M11).
+    console.log(status({ kind: "warning", message: `Official installer failed: ${err.message}. Trying Homebrew...` }));
+  }
 
   if (await commandExists("brew")) {
     try {
@@ -225,12 +229,14 @@ export async function unloadOllamaModel(modelName) {
 export async function ollamaLoadedModels() {
   try {
     const response = await fetch(`${OLLAMA_API_BASE}/ps`, { signal: AbortSignal.timeout(1000) });
-    if (!response.ok) return [];
+    if (!response.ok) return { ok: false, ids: [] };
     const body = await response.json();
-    if (!Array.isArray(body?.models)) return [];
-    return body.models.map((m) => m.name ?? m.model ?? "").filter(Boolean);
+    const ids = (Array.isArray(body?.models) ? body.models : [])
+      .map((m) => m.name ?? m.model ?? "")
+      .filter(Boolean);
+    return { ok: true, ids };
   } catch {
-    return [];
+    return { ok: false, ids: [] };
   }
 }
 

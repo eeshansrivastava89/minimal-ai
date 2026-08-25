@@ -53,17 +53,18 @@ export function modelDescriptor(profile) {
  */
 export function resolvedLimits(profile) {
   const caps = profile.capabilities ?? {};
-  if (profile.backend === "ollama") {
-    const ctx = caps.servedContext ?? profile.flags?.ctxSize ?? caps.contextLength ?? null;
-    return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
-  }
-  if (profile.backend === "omlx") {
-    const ctx = caps.contextLength ?? profile.flags?.ctxSize ?? null;
-    return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
-  }
-  // llama.cpp: the configured context window governs the harness ceiling.
-  const ctx = profile.flags?.ctxSize ?? caps.contextLength ?? null;
+  const ctx = ctxForBackend(profile, caps);
   return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
+}
+
+/** Resolve the governing context window for a backend. The three backends
+ *  differ only in which fact wins — extracted so resolvedLimits has one return
+ *  path (L4). */
+function ctxForBackend(profile, caps) {
+  if (profile.backend === "ollama") return caps.servedContext ?? profile.flags?.ctxSize ?? caps.contextLength ?? null;
+  if (profile.backend === "omlx") return caps.contextLength ?? profile.flags?.ctxSize ?? null;
+  // llama.cpp: the configured context window governs the harness ceiling.
+  return profile.flags?.ctxSize ?? caps.contextLength ?? null;
 }
 
 const FALLBACK_MAX_TOKENS = 16384;

@@ -18,7 +18,7 @@ import { backendFor } from "./backends.mjs";
 import { effectiveModelId } from "./profiles.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { promptChoice, promptConfirm, promptText, card, status, theme } from "./ui.mjs";
-import { runProfile } from "./commands/run.mjs";
+import { runProfile } from "./launch.mjs";
 import { configuredHarness } from "./harnesses.mjs";
 
 const execFileAsync = promisify(execFile);

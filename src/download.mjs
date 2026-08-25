@@ -2,7 +2,7 @@ import { hasHfCli, parseHfRef, resolveHfDownload, downloadModel, listGgufFiles, 
 import { installedRamGB, availableRamBytes, getFreeDiskBytes, fitCheck } from "./hardware.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
-import { drafterTargetHint } from "./scan.mjs";
+import { drafterTargetHint } from "./discovery-shared.mjs";
 import { basename } from "node:path";
 import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
 

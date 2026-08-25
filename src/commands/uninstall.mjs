@@ -5,7 +5,7 @@ import { removeInstallerPathEntries } from "../shell-path.mjs";
 import { stopProfile } from "../process.mjs";
 import { execCommand } from "../exec.mjs";
 import { startInteractive, promptChoice, parseOptions, status, theme, screenHeader } from "../ui.mjs";
-import { runningProfiles } from "./stop.mjs";
+import { runningProfiles } from "../process.mjs";
 
 export async function uninstallCommand(argv) {
   const { options } = parseOptions(argv);

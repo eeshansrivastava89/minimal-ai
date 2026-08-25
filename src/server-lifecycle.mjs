@@ -288,8 +288,11 @@ async function unloadOmlxModel(profile) {
   const modelId = effectiveModelId(profile);
 
   try {
-    const ids = await serverModelIds(profile.baseUrl);
-    const match = ids.find((id) => id.toLowerCase() === modelId.toLowerCase());
+    const result = await serverModelIds(profile.baseUrl);
+    if (!result.ok) {
+      return { unloaded: false, backend: "omlx", modelId, error: `couldn't reach ${profile.baseUrl} to list loaded models for unload` };
+    }
+    const match = result.ids.find((id) => id.toLowerCase() === modelId.toLowerCase());
     const targetId = match ?? modelId;
 
     const response = await fetch(`${adminUrl}/${encodeURIComponent(targetId)}/unload`, {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseHfRef, resolveHfDownload, getHfGenerationConfig, extractRecommendedSamplers, listDrafterFiles, listGgufFiles } from "../src/huggingface.mjs";
+import { parseHfRef, resolveHfDownload, getHfGenerationConfig, extractRecommendedSamplers, listDrafterFiles, listGgufFiles, isValidRepoId, assertValidRepoId, isSafeRelativePath, assertSafeHfFilename, isMlxRepo } from "../src/huggingface.mjs";
 
 describe("huggingface download helpers", () => {
   it("parses a repo ID", () => {
@@ -164,5 +164,102 @@ describe("extractRecommendedSamplers", () => {
     assert.equal(extractRecommendedSamplers(null), null);
     assert.equal(extractRecommendedSamplers(undefined), null);
     assert.equal(extractRecommendedSamplers("not an object"), null);
+  });
+});
+
+describe("HF input validation (H1/M1/M2 security)", () => {
+  describe("isValidRepoId / assertValidRepoId", () => {
+    it("accepts a well-formed org/name", () => {
+      assert.equal(isValidRepoId("unsloth/Qwen3-8B-GGUF"), true);
+      assert.equal(isValidRepoId("mlx-community/Qwen3.8-27B-4bit"), true);
+    });
+    it("rejects flag-injection, traversal, and malformed repo IDs", () => {
+      assert.equal(isValidRepoId("--foo/bar"), false);
+      assert.equal(isValidRepoId("org/.."), false);
+      assert.equal(isValidRepoId("../etc"), false);
+      assert.equal(isValidRepoId("unsloth"), false); // one part
+      assert.equal(isValidRepoId("a/b/c"), false); // three parts
+      assert.equal(isValidRepoId(""), false);
+      assert.equal(isValidRepoId(null), false);
+      assert.equal(isValidRepoId(123), false);
+    });
+    it("assertValidRepoId throws a clear message", () => {
+      assert.throws(() => assertValidRepoId("--foo/bar"), /Invalid HuggingFace repo ID/);
+    });
+  });
+
+  describe("parseHfRef rejects unsafe repo IDs (M2)", () => {
+    it("rejects a flag-injection repo ID", () => {
+      assert.throws(() => parseHfRef("--foo/bar"), /Invalid HuggingFace repo ID/);
+    });
+    it("rejects a path-traversal repo ID", () => {
+      assert.throws(() => parseHfRef("../etc/passwd"), /Invalid HuggingFace repo ID/);
+    });
+    it("still accepts a valid repo/filename", () => {
+      const ref = parseHfRef("unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_S.gguf");
+      assert.equal(ref.repo, "unsloth/gemma-4-E2B-it-GGUF");
+      assert.equal(ref.filename, "gemma-4-E2B-it-Q4_K_S.gguf");
+    });
+  });
+
+  describe("isSafeRelativePath (M1)", () => {
+    it("accepts normal and subdirectory paths", () => {
+      assert.equal(isSafeRelativePath("model-Q8_0.gguf"), true);
+      assert.equal(isSafeRelativePath("MTP/gemma-4-E2B-it-Q8_0-MTP.gguf"), true);
+    });
+    it("rejects flag-injection, traversal, absolute, backslash, empty", () => {
+      assert.equal(isSafeRelativePath("--cache-dir=/tmp/x.gguf"), false);
+      assert.equal(isSafeRelativePath("model/../../etc"), false);
+      assert.equal(isSafeRelativePath("/etc/passwd"), false);
+      assert.equal(isSafeRelativePath("model\\\\..\\\\x"), false);
+      assert.equal(isSafeRelativePath(""), false);
+      assert.equal(isSafeRelativePath(null), false);
+    });
+  });
+
+  describe("assertSafeHfFilename — download boundary guard (H1)", () => {
+    it("accepts a normal filename", () => {
+      assert.equal(assertSafeHfFilename("model-Q8_0.gguf"), "model-Q8_0.gguf");
+    });
+    it("rejects a flag-injection filename", () => {
+      assert.throws(() => assertSafeHfFilename("--cache-dir=/tmp"), /unsafe filename/);
+    });
+    it("rejects a path-traversal filename", () => {
+      assert.throws(() => assertSafeHfFilename("../escape.gguf"), /unsafe filename/);
+    });
+  });
+
+  describe("listGgufFiles drops unsafe tree entries paths (M1)", () => {
+    const evilTree = [
+      { type: "file", path: "model-Q8_0.gguf", size: 1000 },
+      { type: "file", path: "--cache-dir=/tmp/x.gguf", size: 1 }, // flag injection
+      { type: "file", path: "../escape.gguf", size: 1 },        // traversal
+      { type: "file", path: "/abs.gguf", size: 1 },              // absolute
+      { type: "file", path: "model.gguf", size: "huge" },        // non-numeric size
+      { type: "file", path: "ok.gguf", lfs: { size: 2000 } },
+    ];
+    const fetchImpl = async () => ({ ok: true, json: async () => evilTree });
+    it("keeps only safe paths", async () => {
+      const files = await listGgufFiles("org/repo", { fetchImpl });
+      assert.deepEqual(files.map((f) => f.path).sort(), ["model-Q8_0.gguf", "model.gguf", "ok.gguf"]);
+    });
+    it("coerces non-numeric sizes to 0", async () => {
+      const files = await listGgufFiles("org/repo", { fetchImpl });
+      assert.equal(files.find((f) => f.path === "model.gguf").sizeBytes, 0);
+      assert.equal(files.find((f) => f.path === "ok.gguf").sizeBytes, 2000);
+    });
+  });
+
+  describe("isMlxRepo guards non-object input (M1)", () => {
+    it("returns false for null/string/non-object", () => {
+      assert.equal(isMlxRepo(null), false);
+      assert.equal(isMlxRepo("mlx"), false);
+      assert.equal(isMlxRepo(42), false);
+    });
+    it("still detects mlx by library_name and tags", () => {
+      assert.equal(isMlxRepo({ library_name: "mlx" }), true);
+      assert.equal(isMlxRepo({ tags: ["mlx"] }), true);
+      assert.equal(isMlxRepo({ tags: "mlx" }), false); // non-array tags
+    });
   });
 });

@@ -10,7 +10,7 @@ import { configureLocalProfile, configureManagedProfile } from "../profile-setup
 import { startInteractive, promptSelectModel, promptChoice, promptConfirm, theme, status } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
-import { runProfile } from "./run.mjs";
+import { runProfile } from "../launch.mjs";
 import { downloadHfGguf } from "../download.mjs";
 import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
@@ -55,7 +55,9 @@ async function showModelPicker(catalog) {
       return;
     }
     if (backendFor(profile.backend).type === "managed-server" && await serverReady(profile.baseUrl)) {
-      if (!(await modelAvailableOnServer(profile))) modelMissingIds.add(profile.id);
+      // null = couldn't reach the server — don't mark "missing" on a
+      // transient network blip (only on a confirmed absence). (H2)
+      if (await modelAvailableOnServer(profile) === false) modelMissingIds.add(profile.id);
     }
   }));
   for (const item of allItems) {

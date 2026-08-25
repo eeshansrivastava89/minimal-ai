@@ -258,6 +258,43 @@ describe("regressions", () => {
     });
   });
 
+  it("treats a transient /models/status failure as unreachable, not 'not loaded' (H2)", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { isProfileRunning, profileRuntimeStatus, modelLoadedOnServer } = await import("../src/process.mjs");
+
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") return jsonResponse({ data: [{ id: "Qwen3-4B-4bit" }] });
+      if (url === "http://127.0.0.1:8000/v1/models/status") throw new Error("socket hang up"); // transient blip
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      // modelLoadedOnServer returns null (unreachable), not false (confirmed-absent)
+      assert.equal(await modelLoadedOnServer(profile), null);
+      // isProfileRunning assumes running when the server is up but the
+      // status endpoint blipped — avoids a false "not running" flash.
+      assert.equal(await isProfileRunning(profile), true);
+      const status = await profileRuntimeStatus(profile);
+      assert.equal(status.ready, true);
+      assert.equal(status.reachable, true);
+      assert.equal(status.modelLoaded, null);
+      assert.equal(status.modelAvailable, true);
+      assert.equal(status.running, true);
+    });
+  });
+
+  it("propagates unreachable (server up, /models blip) for serverMatchesProfile (H2)", async () => {
+    const profile = managedProfile("omlx", "Qwen3-4B-4bit", "http://127.0.0.1:8000/v1");
+    const { serverMatchesProfile } = await import("../src/process.mjs");
+    await withMockedFetch(async (url) => {
+      if (url === "http://127.0.0.1:8000/v1/models") throw new Error("socket hang up");
+      throw new Error(`Unexpected fetch: ${url}`);
+    }, async () => {
+      const match = await serverMatchesProfile(profile);
+      assert.equal(match.matches, false);
+      assert.equal(match.reachable, false);
+      assert.match(match.reason, /couldn't reach/);
+    });
+  });
+
   it("unloads oMLX models with the discovered server model id", async () => {
     const profile = managedProfile("omlx", "qwen3-4b-4bit", "http://127.0.0.1:8000/v1");
     const { unloadModelFromServer } = await import("../src/process.mjs");

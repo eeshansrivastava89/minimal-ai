@@ -16,6 +16,7 @@ export {
   modelAvailableOnServer,
   profileRuntimeStatus,
   serverMatchesProfile,
+  runningProfiles,
   waitForReady,
   preflightInference,
   serverModelIds,

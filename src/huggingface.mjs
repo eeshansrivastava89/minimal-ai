@@ -30,6 +30,60 @@ export async function hasHfCli() {
   }
 }
 
+// ── Input validation: HF repo IDs and tree-entry paths are untrusted ──────
+// HF tree API JSON and user-typed repo IDs flow into `hf download` CLI
+// args and API URLs. Without validation a malicious repo (or a typo like
+// `--foo/bar`) can inject CLI flags or path-traversal segments. These
+// guards are the single chokepoint (H1/M2/M1 from the security audit).
+const REPO_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** True for a well-formed HF repo ID (`org/name`, two parts, safe chars). */
+export function isValidRepoId(repo) {
+  return typeof repo === "string" && REPO_ID_RE.test(repo);
+}
+
+/** Throw a clear error on a malformed repo ID — before it reaches `hf`
+ *  args or an API URL. */
+export function assertValidRepoId(repo) {
+  if (!isValidRepoId(repo)) {
+    throw new Error(`Invalid HuggingFace repo ID: "${repo}". Expected org/name (e.g. unsloth/Qwen3-8B-GGUF).`);
+  }
+  return repo;
+}
+
+/** True for a tree-entry path that is safe to pass to `hf download` and use
+ *  in URLs: a non-empty relative path with no `..` traversal, no leading
+ *  dash (flag-injection guard for `hf` CLI args), no absolute paths, no
+ *  backslashes. HF paths use `/` and never start with `-`. */
+export function isSafeRelativePath(p) {
+  return typeof p === "string"
+    && p.length > 0
+    && !p.startsWith("-")
+    && !p.startsWith("/")
+    && !p.includes("\\")
+    && !p.includes("..");
+}
+
+/** Size from a tree entry, coerced to a finite non-negative number (0 when
+ *  absent or malformed). Guards against fabricated/non-numeric sizes from
+ *  untrusted API JSON. */
+function finiteTreeSize(f) {
+  const s = f?.lfs?.size ?? f?.size;
+  return Number.isFinite(s) && s >= 0 ? s : 0;
+}
+
+/** Final-boundary guard before filenames reach `spawn("hf", ...)`. The tree
+ *  guards already reject these, but downloadModel is a public export — a
+ *  caller could pass unvalidated filenames. Rejects anything that could be
+ *  interpreted as a flag (leading `-`) or escape the download dir (`..`,
+ *  absolute paths, backslashes). (H1) */
+export function assertSafeHfFilename(name) {
+  if (!isSafeRelativePath(name)) {
+    throw new Error(`Refusing to download unsafe filename: "${name}". Must not start with '-', contain '..', be absolute, or use backslashes.`);
+  }
+  return name;
+}
+
 /** Parse a HuggingFace reference (URL, repo/filename, or repo ID). */
 export function parseHfRef(input) {
   const trimmed = input.trim();
@@ -39,16 +93,14 @@ export function parseHfRef(input) {
     const pathParts = url.pathname.split("/").filter(Boolean);
     const resolveIdx = pathParts.indexOf("resolve");
     if (resolveIdx > 0 && pathParts[resolveIdx + 1] === "main") {
-      return {
-        repo: pathParts.slice(0, resolveIdx).join("/"),
-        filename: pathParts.slice(resolveIdx + 2).join("/"),
-      };
+      const repo = pathParts.slice(0, resolveIdx).join("/");
+      assertValidRepoId(repo);
+      return { repo, filename: pathParts.slice(resolveIdx + 2).join("/") };
     }
     if (pathParts.length >= 2) {
-      return {
-        repo: pathParts.slice(0, 2).join("/"),
-        filename: pathParts.length > 2 ? pathParts.slice(2).join("/") : undefined,
-      };
+      const repo = pathParts.slice(0, 2).join("/");
+      assertValidRepoId(repo);
+      return { repo, filename: pathParts.length > 2 ? pathParts.slice(2).join("/") : undefined };
     }
     throw new Error(`Invalid HuggingFace URL: ${input}`);
   }
@@ -57,8 +109,10 @@ export function parseHfRef(input) {
   if (parts.length < 2) {
     throw new Error(`Invalid HuggingFace reference: "${input}". Expected at least org/name.`);
   }
+  const repo = parts.slice(0, 2).join("/");
+  assertValidRepoId(repo);
   return {
-    repo: parts.slice(0, 2).join("/"),
+    repo,
     filename: parts.length > 2 ? parts.slice(2).join("/") : undefined,
   };
 }
@@ -66,36 +120,42 @@ export function parseHfRef(input) {
 /** Resolve file metadata for a GGUF file from the HF tree API. */
 async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch, tree } = {}) {
   const { repo, filename } = parseHfRef(ref);
+  assertValidRepoId(repo);
+  if (!isSafeRelativePath(filename)) {
+    throw new Error(`Unsafe filename in reference: "${filename}".`);
+  }
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  const entry = resolvedTree.find((f) => f.path === filename && f.type === "file");
+  const entry = resolvedTree.find((f) => f?.type === "file" && f?.path === filename);
   if (!entry) throw new Error(`File '${filename}' not found in HuggingFace repo '${repo}'.`);
   return {
     repo,
     filename,
     url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
-    sizeBytes: entry.lfs?.size ?? entry.size ?? 0,
-    sha256: entry.lfs?.oid ?? "",
+    sizeBytes: finiteTreeSize(entry),
+    sha256: typeof entry.lfs?.oid === "string" ? entry.lfs.oid : "",
     relativePath: filename,
   };
 }
 
 /** Resolve all model files in an MLX repo from the HF tree API. */
 async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  assertValidRepoId(repo);
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
   const modelFiles = resolvedTree.filter(
-    (f) => f.type === "file" && !f.path.startsWith(".") && f.path !== ".gitattributes" && f.path !== "README.md",
+    (f) => f?.type === "file" && typeof f?.path === "string" && isSafeRelativePath(f.path) && !f.path.startsWith(".") && f.path !== ".gitattributes" && f.path !== "README.md",
   );
   return modelFiles.map((f) => ({
     repo,
     filename: f.path,
     url: `https://huggingface.co/${repo}/resolve/main/${f.path}`,
-    sizeBytes: f.lfs?.size ?? f.size ?? 0,
-    sha256: f.lfs?.oid ?? "",
+    sizeBytes: finiteTreeSize(f),
+    sha256: typeof f.lfs?.oid === "string" ? f.lfs.oid : "",
     relativePath: f.path,
   }));
 }
 
 export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch } = {}) {
+  assertValidRepoId(repo);
   const url = `https://huggingface.co/api/models/${repo}/tree/${branch}?recursive=true`;
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`HuggingFace API error: HTTP ${response.status} for ${repo}`);
@@ -104,12 +164,13 @@ export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.
 
 /** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors). */
 export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  assertValidRepoId(repo);
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
   return resolvedTree
-    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && !isDrafterFile(f.path) && !isMmprojFile(f.path))
+    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && !isDrafterFile(f.path) && !isMmprojFile(f.path))
     .map((f) => ({
       path: f.path,
-      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+      sizeBytes: finiteTreeSize(f),
     }))
     .sort((a, b) => a.sizeBytes - b.sizeBytes);
 }
@@ -134,12 +195,13 @@ function isMmprojFile(path) {
 
 /** List all mmproj (vision projector) GGUF files in a HuggingFace repo. */
 export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  assertValidRepoId(repo);
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
   return resolvedTree
-    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && isMmprojFile(f.path))
+    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && isMmprojFile(f.path))
     .map((f) => ({
       path: f.path,
-      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+      sizeBytes: finiteTreeSize(f),
     }));
 }
 
@@ -148,18 +210,20 @@ export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree
  *  them, so the two lists are complementary). Used to offer a drafter
  *  download alongside the main model (#2). */
 export async function listDrafterFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  assertValidRepoId(repo);
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
   return resolvedTree
-    .filter((f) => f.type === "file" && f.path.endsWith(".gguf") && isDrafterFile(f.path))
+    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && isDrafterFile(f.path))
     .map((f) => ({
       path: f.path,
-      sizeBytes: f.lfs?.size ?? f.size ?? 0,
+      sizeBytes: finiteTreeSize(f),
     }))
     .sort((a, b) => a.sizeBytes - b.sizeBytes);
 }
 
 /** Fetch model metadata from the HF API. */
 export async function getHfModelInfo(repo, { fetchImpl = globalThis.fetch } = {}) {
+  assertValidRepoId(repo);
   const url = `https://huggingface.co/api/models/${repo}`;
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`HuggingFace API error: HTTP ${response.status} for ${repo}`);
@@ -168,6 +232,7 @@ export async function getHfModelInfo(repo, { fetchImpl = globalThis.fetch } = {}
 
 /** Check if a repo is MLX-formatted based on its HF metadata. */
 export function isMlxRepo(modelInfo) {
+  if (!modelInfo || typeof modelInfo !== "object") return false;
   if (modelInfo.library_name === "mlx") return true;
   if (Array.isArray(modelInfo.tags) && modelInfo.tags.includes("mlx")) return true;
   return false;
@@ -182,6 +247,7 @@ export function isMlxRepo(modelInfo) {
 /** Fetch a repo's generation_config.json. Returns null when absent or
  *  unreadable (best-effort — callers swallow errors). */
 export async function getHfGenerationConfig(repo, { fetchImpl = globalThis.fetch } = {}) {
+  assertValidRepoId(repo);
   const url = `https://huggingface.co/${repo}/resolve/main/generation_config.json`;
   let response;
   try {
@@ -276,6 +342,8 @@ export async function downloadModel(model, options = {}) {
   if (model.format === "gguf") {
     // Single file to HF cache — scanner finds it there
     await mkdir(HF_HUB_DIR, { recursive: true });
+    assertSafeHfFilename(model.files[0].filename);
+    for (const file of options.extraFiles ?? []) assertSafeHfFilename(file);
     args.push(model.files[0].filename, "--cache-dir", HF_HUB_DIR);
     // Include additional files (e.g. vision projector) in the same download
     for (const file of options.extraFiles ?? []) {
@@ -340,7 +408,7 @@ export async function installHfCli() {
 
   // 1. Standalone installer (HF recommended — zero dependencies)
   try {
-    await execCommand("/bin/bash", ["-c", "curl -LsSf https://hf.co/cli/install.sh | bash"], { label: "hf standalone", verbose: true });
+    await execCommand("/bin/bash", ["-c", "curl -LsSf https://hf.co/cli/install.sh | bash"], { label: "hf standalone", verbose: true, timeout: 300000 });
     // The installer puts hf in ~/.local/bin — add to PATH for this process
     const localBin = join(homedir(), ".local", "bin");
     if (existsSync(localBin) && !process.env.PATH.includes(localBin)) {

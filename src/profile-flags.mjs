@@ -1,15 +1,20 @@
 import { baseUrlForFlags } from "./backends.mjs";
+import { GENERAL_SAMPLER_DEFAULTS, THINKING_SAMPLER_DEFAULTS } from "./autodetect.mjs";
 
+// These mirror the sampler defaults in autodetect.mjs (one source of truth —
+// computeFlags seeds the same values into fresh profiles). Derived here so a
+// default change in one place can't silently diverge from the other (M3).
+// Thinking adds the chat-template toggle on top of the sampler deltas.
 const GENERAL_DEFAULTS = {
-  topK: 20,
-  presencePenalty: 1.0,
-  repeatPenalty: 1.0,
+  topK: GENERAL_SAMPLER_DEFAULTS.topK,
+  presencePenalty: GENERAL_SAMPLER_DEFAULTS.presencePenalty,
+  repeatPenalty: GENERAL_SAMPLER_DEFAULTS.repeatPenalty,
 };
 
 const THINKING_DEFAULTS = {
-  topK: 64,
-  presencePenalty: 0,
-  repeatPenalty: 1.1,
+  topK: THINKING_SAMPLER_DEFAULTS.topK,
+  presencePenalty: THINKING_SAMPLER_DEFAULTS.presencePenalty,
+  repeatPenalty: THINKING_SAMPLER_DEFAULTS.repeatPenalty,
   chatTemplateKwargs: { enable_thinking: true },
 };
 

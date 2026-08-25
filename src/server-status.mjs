@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import { readState } from "./profiles.mjs";
+import { readState, loadProfiles } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
 import { ollamaLoadedModels } from "./ollama-runtime.mjs";
 import { execFileAsync, sleep } from "./exec.mjs";
-import { serverReady } from "./server-check.mjs";
+import { serverReady, stripTrailingSlash } from "./server-check.mjs";
 import { GB } from "./hardware.mjs";
 
 // ── Status checks ──────────────────────────────────────────────────────────
@@ -13,7 +13,11 @@ import { GB } from "./hardware.mjs";
 export async function isProfileRunning(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
-    return await serverReady(profile.baseUrl) && (await modelLoadedOnServer(profile));
+    if (!(await serverReady(profile.baseUrl))) return false;
+    // null = couldn't confirm (transient /models failure). The server is up
+    // (serverReady passed), so assume running rather than flashing "not
+    // running" on a network blip (H2).
+    return (await modelLoadedOnServer(profile)) !== false;
   }
   const state = await readState(profile.id);
   return Boolean(state?.pid && pidAlive(state.pid));
@@ -21,37 +25,48 @@ export async function isProfileRunning(profile) {
 
 export async function modelLoadedOnServer(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.id === "omlx") return modelIdsMatch(await omlxLoadedModelIds(profile), expectedModelIds(profile));
-  if (backend.id === "ollama") {
-    const loaded = await ollamaLoadedModels();
-    const expected = expectedModelIds(profile);
-    return loaded.some((name) => expected.some((e) => e.toLowerCase() === name.toLowerCase()));
+  if (backend.id === "omlx") {
+    const { ok, ids } = await omlxLoadedModelIds(profile);
+    if (!ok) return null;
+    return modelIdsMatch(ids, expectedModelIds(profile));
   }
-  const { matches } = await serverMatchesProfile(profile);
+  if (backend.id === "ollama") {
+    const { ok, ids } = await ollamaLoadedModels();
+    if (!ok) return null;
+    const expected = expectedModelIds(profile);
+    return ids.some((name) => expected.some((e) => e.toLowerCase() === name.toLowerCase()));
+  }
+  const { matches, reachable } = await serverMatchesProfile(profile);
+  if (!reachable) return null;
   return matches;
 }
 
 export async function modelAvailableOnServer(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.id === "omlx") {
-    // /v1/models lists discovered models; an ID must exist there to be usable.
-    return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
-  }
-  if (backend.id === "ollama") {
-    return modelIdsMatch(await serverModelIds(profile.baseUrl), expectedModelIds(profile));
+  if (backend.id === "omlx" || backend.id === "ollama") {
+    const { ok, ids } = await serverModelIds(profile.baseUrl);
+    if (!ok) return null;
+    return modelIdsMatch(ids, expectedModelIds(profile));
   }
   // Local servers are tied to a specific model file via their command argv.
   return true;
+}
+
+export async function runningProfiles() {
+  const profiles = await loadProfiles();
+  const statuses = await Promise.all(profiles.map(async (profile) => ({ profile, status: await profileRuntimeStatus(profile) })));
+  return statuses.filter((item) => item.status.running);
 }
 
 export async function profileRuntimeStatus(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
     const ready = await serverReady(profile.baseUrl);
-    const [modelLoaded, modelAvailable] = ready
-      ? await Promise.all([modelLoadedOnServer(profile), modelAvailableOnServer(profile)])
-      : [false, false];
-    return { state: null, pid: null, running: ready && modelLoaded, ready, serverUp: ready, modelLoaded, modelAvailable, rssBytes: null, startedAt: null };
+    if (!ready) {
+      return { state: null, pid: null, running: false, ready, reachable: false, serverUp: false, modelLoaded: null, modelAvailable: null, rssBytes: null, startedAt: null };
+    }
+    const [modelLoaded, modelAvailable] = await Promise.all([modelLoadedOnServer(profile), modelAvailableOnServer(profile)]);
+    return { state: null, pid: null, running: modelLoaded !== false, ready, reachable: true, serverUp: true, modelLoaded, modelAvailable, rssBytes: null, startedAt: null };
   }
   const state = await readState(profile.id);
   const running = Boolean(state?.pid && pidAlive(state.pid));
@@ -59,24 +74,28 @@ export async function profileRuntimeStatus(profile) {
     serverReady(profile.baseUrl),
     running ? pidRssBytes(state.pid) : Promise.resolve(null),
   ]);
-  return { state, pid: state?.pid ?? null, running, ready, rssBytes, startedAt: state?.startedAt ? new Date(state.startedAt) : null };
+  return { state, pid: state?.pid ?? null, running, ready, reachable: ready, rssBytes, startedAt: state?.startedAt ? new Date(state.startedAt) : null };
 }
 
 export async function serverMatchesProfile(profile) {
   const state = await readState(profile.id);
   if (state?.pid && pidAlive(state.pid) && state.baseUrl === profile.baseUrl) {
-    return { matches: true, reason: "tracked minimal-ai server" };
+    return { matches: true, reason: "tracked minimal-ai server", reachable: true };
   }
 
-  const ids = await serverModelIds(profile.baseUrl);
+  const { ok, ids } = await serverModelIds(profile.baseUrl);
+  if (!ok) {
+    return { matches: false, reachable: false, reason: `couldn't reach ${profile.baseUrl}/models to confirm the server (it may be starting up)` };
+  }
   const expected = expectedModelIds(profile);
   const normalizedIds = new Set(ids.map((id) => id.toLowerCase()));
   if (ids.length > 0 && expected.some((id) => normalizedIds.has(id.toLowerCase()))) {
-    return { matches: true, reason: `server reports ${ids.join(", ")}` };
+    return { matches: true, reason: `server reports ${ids.join(", ")}`, reachable: true };
   }
 
   return {
     matches: false,
+    reachable: true,
     reason: ids.length > 0
       ? `server reports ${ids.join(", ")}; expected ${expected.join(" or ")}`
       : "server is untracked and did not report a recognizable model id",
@@ -88,9 +107,7 @@ export async function waitForReady(profile, pid, rawLogPath) {
   if (backend.type === "managed-server") return;
   // Scale timeout by model size: large models take longer to load from disk.
   // Base 180s + 10s per GB, capped at 600s (10min).
-  let modelBytes = 0;
-  try { modelBytes = statSync(profile.modelPath).size; } catch { /* file not found */ }
-  const timeoutSec = Math.min(600, 180 + Math.floor(modelBytes / GB) * 10);
+  const timeoutSec = scaledTimeoutSec(profile, { baseSec: 180, perGbSec: 10, capSec: 600 });
   for (let i = 0; i < timeoutSec; i++) {
     if (await serverReady(profile.baseUrl)) return;
     if (pid && !pidAlive(pid)) {
@@ -104,6 +121,15 @@ export async function waitForReady(profile, pid, rawLogPath) {
 
 // ── Pre-flight inference test ──────────────────────────────────────────────
 
+/** Scale a timeout by model size (large models load slower from disk).
+ *  Shared by waitForReady and preflightInference so the two don't drift
+ *  apart (M5). Returns seconds. */
+function scaledTimeoutSec(profile, { baseSec, perGbSec, capSec }) {
+  let modelBytes = 0;
+  try { modelBytes = statSync(profile.modelPath).size; } catch { /* file not found */ }
+  return Math.min(capSec, baseSec + Math.floor(modelBytes / GB) * perGbSec);
+}
+
 /**
  * Send a minimal 1-token chat completion request to verify the model can
  * actually generate — not just that the server is listening.  Catches
@@ -114,14 +140,12 @@ export async function waitForReady(profile, pid, rawLogPath) {
  * loading, so the timeout is generous (120s).
  */
 export async function preflightInference(profile) {
-  const baseUrl = profile.baseUrl.replace(/\/+$/, "");
+  const baseUrl = stripTrailingSlash(profile.baseUrl);
   const modelId = profile.modelAlias ?? profile.id;
   // Scale timeout by model size: lazy-loaded managed models may need to
   // load from disk. Base 120s + 10s per GB, capped at 300s (5min).
-  let modelBytes = 0;
-  try { modelBytes = statSync(profile.modelPath).size; } catch { /* file not found */ }
-  const timeoutMs = Math.min(300000, 120000 + Math.floor(modelBytes / GB) * 10000);
-  const timeoutSec = Math.round(timeoutMs / 1000);
+  const timeoutSec = scaledTimeoutSec(profile, { baseSec: 120, perGbSec: 10, capSec: 300 });
+  const timeoutMs = timeoutSec * 1000;
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -151,11 +175,12 @@ export async function preflightInference(profile) {
 // ── Internals: HTTP + model-id + process + shell + timestamp ──────────────
 
 export async function serverModelIds(baseUrl) {
-  const data = await fetchJson(`${baseUrl.replace(/\/+$/u, "")}/models`);
-  if (!data) return [];
-  return (Array.isArray(data?.data) ? data.data : [])
+  const result = await fetchJson(`${stripTrailingSlash(baseUrl)}/models`);
+  if (!result.ok) return { ok: false, ids: [] };
+  const ids = (Array.isArray(result.data?.data) ? result.data.data : [])
     .map((model) => String(model?.id ?? "").trim())
     .filter(Boolean);
+  return { ok: true, ids };
 }
 
 export function apiRootUrl(baseUrl) {
@@ -221,32 +246,32 @@ export async function responseErrorDetail(response) {
 }
 
 async function omlxLoadedModelIds(profile) {
-  const statusData = await fetchJson(`${profile.baseUrl.replace(/\/+$/u, "")}/models/status`);
-  const fromStatus = statusData
-    ? (Array.isArray(statusData?.models) ? statusData.models : [])
-        .filter((model) => model?.loaded === true)
-        .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
-        .map((id) => String(id ?? "").trim())
-        .filter(Boolean)
-    : [];
-  if (!statusData || Number(statusData?.loaded_count) === 0) return fromStatus;
+  const statusResult = await fetchJson(`${stripTrailingSlash(profile.baseUrl)}/models/status`);
+  if (!statusResult.ok) return { ok: false, ids: [] };
+  const statusData = statusResult.data;
+  const fromStatus = (Array.isArray(statusData?.models) ? statusData.models : [])
+    .filter((model) => model?.loaded === true)
+    .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  if (Number(statusData?.loaded_count) === 0) return { ok: true, ids: fromStatus };
 
-  const summaryData = await fetchJson(`${apiRootUrl(profile.baseUrl)}/api/status`);
-  const fromSummary = summaryData
-    ? (Array.isArray(summaryData?.loaded_models) ? summaryData.loaded_models : [])
-        .map((id) => String(id ?? "").trim())
-        .filter(Boolean)
-    : [];
-  return [...fromStatus, ...fromSummary];
+  const summaryResult = await fetchJson(`${stripTrailingSlash(apiRootUrl(profile.baseUrl))}/api/status`);
+  if (!summaryResult.ok) return { ok: true, ids: fromStatus };
+  const summaryData = summaryResult.data;
+  const fromSummary = (Array.isArray(summaryData?.loaded_models) ? summaryData.loaded_models : [])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  return { ok: true, ids: [...fromStatus, ...fromSummary] };
 }
 
 async function fetchJson(url) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
+    if (!response.ok) return { ok: false, status: response.status };
+    return { ok: true, data: await response.json() };
+  } catch (err) {
+    return { ok: false, error: err?.message };
   }
 }
 

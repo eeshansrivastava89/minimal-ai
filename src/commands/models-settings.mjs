@@ -5,7 +5,7 @@ import { findLlamaServer, getModelScanDirs, addModelScanDir, removeModelScanDir,
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { stopOrUnload } from "../process.mjs";
 import { serverReady } from "../server-check.mjs";
-import { runningProfiles } from "./stop.mjs";
+import { runningProfiles } from "../process.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { configuredHarness, listHarnesses, harnessFor, setConfiguredHarness, syncAllProfiles } from "../harnesses.mjs";

@@ -205,7 +205,7 @@ export async function installOmlx() {
   console.log(status({ kind: "info", message: `Downloading oMLX ${release.tag_name} (${formatBytes(dmg.size)})...` }));
   console.log(theme.subtle("  This is a large download — it may take a few minutes.\n"));
   try {
-    await execCommand("curl", ["-L", "--progress-bar", "-o", tmpDmg, dmg.url], { label: "oMLX DMG", verbose: true });
+    await execCommand("curl", ["-L", "--progress-bar", "-o", tmpDmg, dmg.url], { label: "oMLX DMG", verbose: true, timeout: 1200000 });
   } catch (err) {
     console.log(status({ kind: "error", message: `Download failed: ${err.message}` }));
     return false;

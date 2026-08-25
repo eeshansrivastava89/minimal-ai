@@ -1,6 +1,6 @@
 import { ensureDirs } from "../config.mjs";
-import { readProfile, loadProfiles } from "../profiles.mjs";
-import { stopProfile, profileRuntimeStatus } from "../process.mjs";
+import { readProfile } from "../profiles.mjs";
+import { stopProfile, runningProfiles } from "../process.mjs";
 import { startInteractive, promptChoice, parseOptions, status, theme } from "../ui.mjs";
 
 export async function stopCommand(argv) {
@@ -48,11 +48,6 @@ async function stopAll() {
   for (const { profile } of running) await printStopResult(profile);
 }
 
-export async function runningProfiles() {
-  const profiles = await loadProfiles();
-  const statuses = await Promise.all(profiles.map(async (profile) => ({ profile, status: await profileRuntimeStatus(profile) })));
-  return statuses.filter((item) => item.status.running);
-}
 
 async function printStopResult(profile) {
   const result = await stopProfile(profile);

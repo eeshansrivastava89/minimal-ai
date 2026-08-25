@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadataSafe, resolveQuant } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES } from "./discovery-shared.mjs";
+import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES, drafterTargetHint } from "./discovery-shared.mjs";
 
 // ── Scan for GGUF models and MTP drafters ────────────────────────────────
 
@@ -127,30 +127,6 @@ export function isEmbeddingArchitecture(architecture, filename = "") {
 // e.g. "mtp-gemma-4-31B-it" matches "gemma-4-31B-it*"
 //      "gemma-4-31B-it-assistant-Q8_0" matches "gemma-4-31B-it*"
 //      "gemma-4-12b-it-MTP-Q8_0" matches "gemma-4-12b-it*"
-function drafterTargetHint(name) {
-  const lower = String(name).toLowerCase().replace(/\.gguf$/i, "");
-  // Strip quant tokens anywhere in the name (not just as a suffix), so a
-  // drafter like "gemma-4-E2B-it-Q8_0-MTP" — where the quant sits before the
-  // -MTP marker — strips to the same base as its main model
-  // "gemma-4-E2B-it-Q8_0". Suffix-only stripping left "...-q8_0" behind and
-  // the drafter never matched (#2).
-  let base = lower
-    .replace(/[-_]ud-[a-z0-9_]+/gi, "")
-    .replace(/[-_](?:bf|f)\d{2}\b/gi, "")
-    .replace(/[-_]q\d_k_[a-z]+/gi, "")
-    .replace(/[-_]q\d_[01]\b/gi, "");
-  // Now strip MTP/assistant/draft prefixes and suffixes to get the base model.
-  base = base
-    .replace(/^mtp[-_]/i, "")
-    .replace(/[-_]mtp$/i, "")
-    .replace(/[-_]assistant([-_].*)?$/i, "")
-    .replace(/[-_]draft([-_].*)?$/i, "");
-  // Collapse artifacts left by mid-string quant stripping (double dashes,
-  // trailing separators).
-  base = base.replace(/[-_]{2,}/g, "-").replace(/^[-_]+|[-_]+$/g, "");
-  return base;
-}
-
 export { drafterTargetHint };
 
 // Find a drafter that matches a given target model path/name.

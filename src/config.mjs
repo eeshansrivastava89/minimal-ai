@@ -3,9 +3,9 @@ import { existsSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import { theme } from "./ui.mjs";
 import { writeJson } from "./json.mjs";
 import { resolvedPathAllowMissingSync as resolvedDataDirPath } from "./paths.mjs";
+import { execFileAsync, commandExists } from "./exec.mjs";
 
 // ── Base directories ──────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ export async function loadConfig() {
       // Auto-create config.json with defaults so the user can find and edit it
       await mkdir(dirname(CONFIG_PATH), { recursive: true });
       await writeFile(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8").catch((err) => {
-        console.warn(theme.subtle(`Warning: could not create config at ${CONFIG_PATH}: ${err.message}`));
+        console.warn(`Warning: could not create config at ${CONFIG_PATH}: ${err.message}`);
       });
       return { ...DEFAULT_CONFIG };
     }
@@ -137,7 +137,6 @@ export async function removeModelScanDir(dir) {
 
 // ── Binary discovery ──────────────────────────────────────────────────────
 
-import { execFileAsync, commandExists } from "./exec.mjs";
 
 export async function findLlamaServer() {
   // 1. Env override
@@ -155,7 +154,7 @@ export async function findLlamaServer() {
   // A dangling managed link (e.g. data dir was moved/renamed) must not
   // silently fall through to PATH/brew — say so before continuing.
   if (isDanglingSymlink(MANAGED_LLAMA_SERVER)) {
-    console.warn(theme.subtle(`Warning: managed llama-server link is broken (${MANAGED_LLAMA_SERVER}). Run minimal-ai to reinstall the runtime; falling back to PATH/Homebrew for now.`));
+    console.warn(`Warning: managed llama-server link is broken (${MANAGED_LLAMA_SERVER}). Run minimal-ai to reinstall the runtime; falling back to PATH/Homebrew for now.`);
   }
 
   // 4. PATH

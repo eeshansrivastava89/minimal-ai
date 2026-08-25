@@ -19,11 +19,11 @@ export async function statusCommand() {
   const running = statuses.filter((item) => item.status.running);
   const managedUpMissing = statuses.filter((item) => {
     const backend = backendFor(item.profile.backend);
-    return backend.type === "managed-server" && item.status.serverUp && !item.status.modelAvailable;
+    return backend.type === "managed-server" && item.status.serverUp && item.status.modelAvailable === false;
   });
   const managedUpNotLoaded = statuses.filter((item) => {
     const backend = backendFor(item.profile.backend);
-    return backend.type === "managed-server" && item.status.serverUp && item.status.modelAvailable && !item.status.modelLoaded;
+    return backend.type === "managed-server" && item.status.serverUp && item.status.modelAvailable === true && item.status.modelLoaded === false;
   });
 
   const summaryRows = [

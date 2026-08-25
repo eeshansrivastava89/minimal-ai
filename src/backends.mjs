@@ -1,5 +1,4 @@
 import { findLlamaServer } from "./config.mjs";
-import { scanGgufModels } from "./scan.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
 import { scanOllamaModels, parseOllamaHost } from "./ollama-runtime.mjs";
@@ -28,7 +27,7 @@ export const BACKENDS = {
     defaultPort: LLAMA_CPP_PORT,
     defaultBaseUrl: baseUrlFor({ port: LLAMA_CPP_PORT }),
     needsCommandFile: true,
-    scanModels: async () => (await scanGgufModels()).models,
+    scanModels: async () => (await (await import("./scan.mjs")).scanGgufModels()).models,
     modelIdFields: ["modelAlias"],
   },
   "omlx": {
