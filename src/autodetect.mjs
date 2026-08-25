@@ -5,9 +5,40 @@ import { defaultFlagsForBackend } from "./backends.mjs";
 // backends). This module only turns detected facts + user choices into
 // llama-server flags.
 
+// Sampler defaults baked into every fresh llama.cpp profile (computeFlags).
+// Exported so the setup wizard can tell a user-customized value from a
+// never-touched default — that distinction is what lets us seed a
+// model-card recommendation only on uncustomized fields (#17) without
+// silently overriding a value the user deliberately set.
+export const GENERAL_SAMPLER_DEFAULTS = {
+  temperature: 0.6,
+  topP: 0.95,
+  topK: 20,
+  minP: 0,
+  presencePenalty: 1.0,
+  repeatPenalty: 1.0,
+};
+
+export const THINKING_SAMPLER_DEFAULTS = {
+  temperature: 0.6,
+  topP: 0.95,
+  topK: 64,
+  minP: 0,
+  presencePenalty: 0,
+  repeatPenalty: 1.1,
+};
+
+/** True when a saved sampler value still matches a fresh-profile default
+ *  (general OR thinking variant) — i.e. the user never changed it. */
+export function isUncustomizedSampler(field, value) {
+  return value === GENERAL_SAMPLER_DEFAULTS[field] || value === THINKING_SAMPLER_DEFAULTS[field];
+}
+
 export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath, flagOverrides = {}) {
   const { thinking, mtp, quant } = capabilities;
   const isLowMem = quant && /[Qq]4[_0]/i.test(quant);
+
+  const samplerDefaults = thinking ? THINKING_SAMPLER_DEFAULTS : GENERAL_SAMPLER_DEFAULTS;
 
   const flags = {
     ...defaultFlagsForBackend("llama-cpp"),
@@ -17,12 +48,12 @@ export function computeFlags(capabilities, modelPath, mmprojPath, draftModelPath
     cacheTypeK: isLowMem ? "f16" : "bf16",
     cacheTypeV: isLowMem ? "f16" : "bf16",
     jinja: true,
-    temperature: 0.6,
-    topP: 0.95,
-    topK: thinking ? 64 : 20,
-    minP: 0,
-    presencePenalty: thinking ? 0 : 1.0,
-    repeatPenalty: thinking ? 1.1 : 1.0,
+    temperature: samplerDefaults.temperature,
+    topP: samplerDefaults.topP,
+    topK: samplerDefaults.topK,
+    minP: samplerDefaults.minP,
+    presencePenalty: samplerDefaults.presencePenalty,
+    repeatPenalty: samplerDefaults.repeatPenalty,
     parallel: 1,
     batchSize: 512,
     specDraftNMax: 2,

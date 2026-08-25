@@ -14,6 +14,8 @@ import { matchDrafter, scanGgufModels } from "./scan.mjs";
 import { capabilitySummary } from "./model-summary.mjs";
 import { effectiveModelId } from "./profiles.mjs";
 import { applyRuntimeFlagOverrides, removeMtpDefaults, applyMtpDefaults, applyVisionDefaults, removeVisionDefaults, applyThinkingDefaults, removeThinkingDefaults } from "./profile-flags.mjs";
+import { hfRepoFromPath, getHfGenerationConfig, extractRecommendedSamplers } from "./huggingface.mjs";
+import { isUncustomizedSampler } from "./autodetect.mjs";
 
 const CACHE_CHOICES = [
   { value: "bf16", label: "bf16", hint: "16-bit · best quality · 2 bytes/elem" },
@@ -126,6 +128,75 @@ const DEFAULT_THINKING_BUDGET = 4096;
 function hint(text) {
   console.log(theme.subtle(`  ${text}`));
 }
+
+// ── Model-card sampler recommendations (#17) ─────────────────────────────
+// HF repos ship the lab's recommended sampling params in
+// generation_config.json. We fetch them lazily from the profile's HF repo
+// (derived from the cached model path) and use them as the prompt defaults
+// for uncustomized fields — never silently overwriting a value the user
+// already set. The fetched block (or null marker) is stored on the profile
+// so Reconfigure doesn't re-fetch.
+
+/** Fetch + extract recommended samplers for a llama.cpp profile's HF repo.
+ *  Returns { configured, recommended } — `configured` carries the stored
+ *  `recommendedSamplers` field (object or null); `recommended` is the
+ *  samplers object or null. */
+async function loadRecommendedSamplers(configured) {
+  if (configured.recommendedSamplers !== undefined) {
+    return { configured, recommended: configured.recommendedSamplers };
+  }
+  let recommended = null;
+  const repo = configured.modelPath ? hfRepoFromPath(configured.modelPath) : null;
+  if (repo) {
+    try {
+      const cfg = await getHfGenerationConfig(repo);
+      recommended = extractRecommendedSamplers(cfg);
+    } catch {
+      recommended = null;
+    }
+  }
+  return { configured: { ...configured, recommendedSamplers: recommended }, recommended };
+}
+
+/** Prompt default for a sampler field: the model-card recommendation when
+ *  one exists AND the saved value is still a fresh-profile default; otherwise
+ *  the user's saved value (never silently override a deliberate choice). */
+function samplerDefault(configured, field, recommended) {
+  const saved = configured.flags[field];
+  if (recommended && recommended[field] !== undefined && isUncustomizedSampler(field, saved)) {
+    return recommended[field];
+  }
+  return saved;
+}
+
+/** A "Model card recommends X" hint line, or null when there's no
+ *  recommendation for this field. */
+function recommendedHint(field, recommended) {
+  if (recommended && recommended[field] !== undefined) {
+    return `Model card recommends ${recommended[field]}`;
+  }
+  return null;
+}
+
+/** Print the base sampler hint, plus a "Model card recommends X" line when
+ *  the repo ships a recommendation for this field. */
+function samplerHints(baseHint, field, recommended) {
+  hint(baseHint);
+  const r = recommendedHint(field, recommended);
+  if (r) hint(r);
+}
+
+// ── KV-cache fidelity guardrail (#18) ─────────────────────────────────────
+// Low-bit (q4_0) KV cache at long context (32K+) degrades tool-call
+// fidelity in agentic runs (Level1Techs, Aug 2026). One-line hint, not a
+// block — surfaced on the q4_0 choice and once before the cache pick.
+const LONG_CONTEXT_KV_THRESHOLD = 32768;
+
+function lowBitKvWarning(ctxSize) {
+  return ctxSize > LONG_CONTEXT_KV_THRESHOLD;
+}
+
+const LOW_BIT_KV_HINT = "⚠ low-bit KV at 32K+ context can degrade tool-call fidelity — prefer q8_0+ for agentic runs";
 
 class CancelSetup extends Error {}
 
@@ -273,6 +344,12 @@ async function configureLocalProfileInner(profile) {
   const nGpuLayers = await ask(promptNumber({ message: "GPU layers", defaultValue: configured.flags.nGpuLayers ?? 99, min: 0, max: 999 }));
   configured = applyRuntimeFlagOverrides(configured, { nGpuLayers });
 
+  // Model-card sampler recommendations (#17) — fetched once, stored on the
+  // profile. `rec` is null when the repo has no generation_config.json or
+  // the model didn't come from the HF cache.
+  let rec;
+  ({ configured, recommended: rec } = await loadRecommendedSamplers(configured));
+
   const maxCtx = caps.contextLength;
   const availableRam = availableRamBytes();
   const prepared = prepareMemoryEstimate(profile.modelPath, profile.mmprojPath, drafterPath);
@@ -299,18 +376,22 @@ async function configureLocalProfileInner(profile) {
     }
     configured = applyRuntimeFlagOverrides(configured, { ctxSize });
 
+    if (lowBitKvWarning(ctxSize)) hint(LOW_BIT_KV_HINT);
+
     const cacheChoices = CACHE_CHOICES.map((c) => {
       const flags = { ...configured.flags, ctxSize, cacheTypeK: c.value, cacheTypeV: c.value };
+      const lowBitWarn = c.value === "q4_0" && lowBitKvWarning(ctxSize);
+      const hint = lowBitWarn ? `${c.hint} · ${LOW_BIT_KV_HINT}` : c.hint;
       try {
         const est = computeMemoryTotal(prepared, flags);
         const color = fitColor(est.totalBytes, availableRam);
         return {
           value: c.value,
           label: `${c.label.padEnd(6)} ${color(`~${formatBytes(est.totalBytes)}`)}`,
-          hint: c.hint,
+          hint,
         };
       } catch {
-        return { value: c.value, label: c.label, hint: c.hint };
+        return { value: c.value, label: c.label, hint };
       }
     });
     const cacheType = await ask(promptSelect({ message: "KV cache precision (K = V)", choices: cacheChoices, defaultValue: configured.flags.cacheTypeK }));
@@ -327,14 +408,26 @@ async function configureLocalProfileInner(profile) {
     const ctxSize = await ask(promptNumber({ message: "Context window tokens", defaultValue: configured.flags.ctxSize, min: 1024, max: maxCtx }));
     configured = applyRuntimeFlagOverrides(configured, { ctxSize });
 
+    if (lowBitKvWarning(ctxSize)) hint(LOW_BIT_KV_HINT);
+
+    const kChoices = CACHE_CHOICES.map((c) => ({
+      value: c.value,
+      label: c.label,
+      hint: c.value === "q4_0" && lowBitKvWarning(ctxSize) ? `${c.hint} · ${LOW_BIT_KV_HINT}` : c.hint,
+    }));
     console.log("");
     hint("KV cache precision · lower = less memory · bf16 best quality · q8_0 usually safe");
-    const cacheTypeK = await ask(promptSelect({ message: "K cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeK }));
+    const cacheTypeK = await ask(promptSelect({ message: "K cache precision", choices: kChoices, defaultValue: configured.flags.cacheTypeK }));
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeK });
 
+    const vChoices = CACHE_CHOICES.map((c) => ({
+      value: c.value,
+      label: c.label,
+      hint: c.value === "q4_0" && lowBitKvWarning(ctxSize) ? `${c.hint} · ${LOW_BIT_KV_HINT}` : c.hint,
+    }));
     console.log("");
     hint("Same tradeoff as K cache · some models are more sensitive to V precision");
-    const cacheTypeV = await ask(promptSelect({ message: "V cache precision", choices: CACHE_CHOICES, defaultValue: configured.flags.cacheTypeV }));
+    const cacheTypeV = await ask(promptSelect({ message: "V cache precision", choices: vChoices, defaultValue: configured.flags.cacheTypeV }));
     configured = applyRuntimeFlagOverrides(configured, { cacheTypeV });
   }
 
@@ -342,33 +435,33 @@ async function configureLocalProfileInner(profile) {
   console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
 
   console.log("");
-  hint("Randomness · 0 = deterministic · 0.6 balanced · 0.9+ creative");
-  const temperature = await ask(promptNumber({ message: "Temperature", defaultValue: configured.flags.temperature, min: 0, max: 2, float: true }));
+  samplerHints("Randomness · 0 = deterministic · 0.6 balanced · 0.9+ creative", "temperature", rec);
+  const temperature = await ask(promptNumber({ message: "Temperature", defaultValue: samplerDefault(configured, "temperature", rec), min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { temperature });
 
   console.log("");
-  hint("Token pool by probability mass · 0.9–0.95 good default");
-  const topP = await ask(promptNumber({ message: "Top-p", defaultValue: configured.flags.topP, min: 0, max: 1, float: true }));
+  samplerHints("Token pool by probability mass · 0.9–0.95 good default", "topP", rec);
+  const topP = await ask(promptNumber({ message: "Top-p", defaultValue: samplerDefault(configured, "topP", rec), min: 0, max: 1, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { topP });
 
   console.log("");
-  hint("Limits to top K tokens · 0 = off (uses top-p) · 20 chat · 40–64 thinking");
-  const topK = await ask(promptNumber({ message: "Top-k", defaultValue: configured.flags.topK, min: 0, max: 1000 }));
+  samplerHints("Limits to top K tokens · 0 = off (uses top-p) · 20 chat · 40–64 thinking", "topK", rec);
+  const topK = await ask(promptNumber({ message: "Top-k", defaultValue: samplerDefault(configured, "topK", rec), min: 0, max: 1000 }));
   configured = applyRuntimeFlagOverrides(configured, { topK });
 
   console.log("");
-  hint("Probability floor · 0 = off · 0.05–0.1 reduces hallucination");
-  const minP = await ask(promptNumber({ message: "Min-p", defaultValue: configured.flags.minP, min: 0, max: 1, float: true }));
+  samplerHints("Probability floor · 0 = off · 0.05–0.1 reduces hallucination", "minP", rec);
+  const minP = await ask(promptNumber({ message: "Min-p", defaultValue: samplerDefault(configured, "minP", rec), min: 0, max: 1, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { minP });
 
   console.log("");
-  hint("Penalizes any used token · 0 = off · 1.0–1.5 general chat");
-  const presencePenalty = await ask(promptNumber({ message: "Presence penalty", defaultValue: configured.flags.presencePenalty, min: 0, max: 2, float: true }));
+  samplerHints("Penalizes any used token · 0 = off · 1.0–1.5 general chat", "presencePenalty", rec);
+  const presencePenalty = await ask(promptNumber({ message: "Presence penalty", defaultValue: samplerDefault(configured, "presencePenalty", rec), min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { presencePenalty });
 
   console.log("");
-  hint("Multiplies down repeated tokens · 1.0 = no effect · 1.0–1.1 typical");
-  const repeatPenalty = await ask(promptNumber({ message: "Repeat penalty", defaultValue: configured.flags.repeatPenalty, min: 0, max: 2, float: true }));
+  samplerHints("Multiplies down repeated tokens · 1.0 = no effect · 1.0–1.1 typical", "repeatPenalty", rec);
+  const repeatPenalty = await ask(promptNumber({ message: "Repeat penalty", defaultValue: samplerDefault(configured, "repeatPenalty", rec), min: 0, max: 2, float: true }));
   configured = applyRuntimeFlagOverrides(configured, { repeatPenalty });
 
   console.log("");

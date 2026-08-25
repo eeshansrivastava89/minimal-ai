@@ -118,6 +118,7 @@ async function pickGgufQuant(repo, ggufFiles) {
       ["Your RAM", `${installedRamGB()} GB`],
       ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
       ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
+      ["Agentic", "8-bit (Q8_0) preserves tool-calling fidelity better than 4-bit at long context"],
     ]),
   }));
   console.log();

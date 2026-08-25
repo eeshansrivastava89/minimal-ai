@@ -158,6 +158,52 @@ export function isMlxRepo(modelInfo) {
   return false;
 }
 
+// ── generation_config.json: the lab's recommended sampling params ────────
+// HF repos ship the model card's recommended sampler settings here. Using
+// them as setup defaults (instead of our hardcoded 0.6 / 0.95) avoids the
+// "my Qwen loops inside its THINK output" class of bugs that come from
+// fighting the model with wrong temperature/top-p (#17).
+
+/** Fetch a repo's generation_config.json. Returns null when absent or
+ *  unreadable (best-effort — callers swallow errors). */
+export async function getHfGenerationConfig(repo, { fetchImpl = globalThis.fetch } = {}) {
+  const url = `https://huggingface.co/${repo}/resolve/main/generation_config.json`;
+  let response;
+  try {
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Pull the sampler fields minimal-ai prompts for out of a
+ *  generation_config.json blob. Returns only fields that are present and
+ *  finite; absent fields are simply omitted (caller falls back to
+ *  hardcoded defaults). Maps HF field names to our flag names. */
+export function extractRecommendedSamplers(config) {
+  if (!config || typeof config !== "object") return null;
+  const pick = (hfKey, flagKey) => {
+    const v = config[hfKey];
+    return Number.isFinite(v) ? [flagKey, v] : null;
+  };
+  const entries = [
+    pick("temperature", "temperature"),
+    pick("top_p", "topP"),
+    pick("top_k", "topK"),
+    pick("repetition_penalty", "repeatPenalty"),
+    pick("presence_penalty", "presencePenalty"),
+    pick("min_p", "minP"),
+  ].filter(Boolean);
+  if (entries.length === 0) return null;
+  return Object.fromEntries(entries);
+}
+
 /** Resolve a user-provided HF reference into a download plan. */
 export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch, tree } = {}) {
   const { repo, filename } = parseHfRef(input);
