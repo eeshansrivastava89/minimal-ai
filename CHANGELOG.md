@@ -4,6 +4,20 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [2.9.2] - 2026-08-25
+
+### Fixed
+- **Security:** hardened the HuggingFace download path against untrusted input. Repo IDs are validated (rejects flag-injection/traversal like `--foo/bar`) before reaching `hf download` args or API URLs; HF tree API JSON is guarded against path traversal, flag-injection filenames, and fabricated sizes; a final-boundary guard blocks filename flag-injection from a malicious repo before `spawn("hf", …)`.
+- **Hidden fallbacks:** a transient `/models` network blip no longer makes a running model appear unloaded or falsely blocks launch. `fetchJson`/`ollamaLoadedModels` now return a discriminated result so callers distinguish "server unreachable" from "not loaded/available" and surface the real cause. `installOllamaFlow` logs the curl error instead of silently falling through to Homebrew.
+- `execCommand` gains an optional timeout; the `curl | sh` installs and the oMLX DMG download now have hard caps so a stalled network can't hang the CLI indefinitely.
+- `commandExists` is now a portable PATH walk (no `which` dependency, works in minimal Linux containers).
+
+### Changed
+- **Architecture:** extracted `runProfile` into a shared service (`src/launch.mjs`). `benchmark.mjs` and other commands depend on the service instead of reaching into `commands/run.mjs`; `run.mjs` is now a thin CLI handler. `runningProfiles` moved from `commands/stop.mjs` to the service layer, removing lateral command couplings.
+- **DRY:** sampler defaults are now a single source of truth (`profile-flags.mjs` derives from `autodetect.mjs`); a shared `stripTrailingSlash` fixes inconsistent baseUrl normalization; `waitForReady`/`preflightInference` share `scaledTimeoutSec`; `drafterTargetHint` moved to `discovery-shared.mjs` (no more `download.mjs → scan.mjs` coupling); `resolvedLimits` collapsed to one return path.
+- `backends.mjs` loads the GGUF scanner lazily so its ~25 importers don't transitively pull in filesystem scanning.
+- `config.mjs` no longer imports `ui.mjs` (core data module decoupled from presentation); its mid-file import moved to the top.
+
 ## [2.9.1] - 2026-08-25
 
 ### Fixed
