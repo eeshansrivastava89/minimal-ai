@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { readJson, writeJson } from "./json.mjs";
 import { execCommand, commandExists } from "./exec.mjs";
 import { status, theme } from "./ui.mjs";
+import { currentPackageVersion } from "./updates.mjs";
 import {
   launchModel,
   modelDescriptor,
@@ -21,6 +22,7 @@ const PI_AGENT_DIR = join(PI_DIR, "agent");
 const PI_CONFIG = join(PI_AGENT_DIR, "models.json");
 const PI_SETTINGS = join(PI_AGENT_DIR, "settings.json");
 const PI_SKILLS_DIR = join(PI_AGENT_DIR, "skills");
+const PI_SKILLS_MARKER = join(PI_SKILLS_DIR, ".minimal-ai-bundled.json");
 const PI_WEB_SEARCH = join(PI_DIR, "web-search.json");
 
 const PI_PACKAGES = [
@@ -164,15 +166,39 @@ export const piHarness = {
     const bundledSkillsDir = join(RESOURCES_DIR, "skills");
     if (existsSync(bundledSkillsDir)) {
       try {
-        const skills = await readdir(bundledSkillsDir, { withFileTypes: true });
         await mkdir(PI_SKILLS_DIR, { recursive: true });
-        for (const entry of skills) {
-          if (!entry.isDirectory()) continue;
-          const src = join(bundledSkillsDir, entry.name);
-          const dest = join(PI_SKILLS_DIR, entry.name);
-          if (!existsSync(dest)) await cp(src, dest, { recursive: true });
+        const skills = (await readdir(bundledSkillsDir, { withFileTypes: true })).filter((s) => s.isDirectory());
+        const currentVersion = currentPackageVersion();
+        // Marker records which skills minimal-ai installed and at which version.
+        // We refresh only when minimal-ai's version moved on — and only
+        // overwrite skills we own, so a skill the user replaced via
+        // `pi install` (not in our marker's `skills` list) is left alone.
+        // Fixes the copy-once staleness from the big-picture audit (#10 / #2).
+        const marker = await readJson(PI_SKILLS_MARKER, null);
+        if (marker && marker.version === currentVersion) {
+          console.log(status({ kind: "success", message: `Pi skills up to date (v${currentVersion}, ${marker.skills?.length ?? 0} bundled)` }));
+        } else {
+          const ours = new Set(Array.isArray(marker?.skills) ? marker.skills : []);
+          const refreshed = [];
+          const skipped = [];
+          for (const entry of skills) {
+            const src = join(bundledSkillsDir, entry.name);
+            const dest = join(PI_SKILLS_DIR, entry.name);
+            // Ownership: ours if we marker'd it before, OR it doesn't exist
+            // yet, OR there's no marker (first install / upgrade from a
+            // pre-marker build — assume a prior minimal-ai put it there).
+            const owned = ours.has(entry.name) || !existsSync(dest) || !marker;
+            if (!owned) {
+              skipped.push(entry.name);
+              continue;
+            }
+            await cp(src, dest, { recursive: true });
+            refreshed.push(entry.name);
+          }
+          await writeJson(PI_SKILLS_MARKER, { version: currentVersion, skills: refreshed });
+          const skippedNote = skipped.length > 0 ? `, ${skipped.length} skipped (installed via \`pi install\`)` : "";
+          console.log(status({ kind: "success", message: `Pi skills refreshed to v${currentVersion} (${refreshed.length} bundled${skippedNote})` }));
         }
-        console.log(status({ kind: "success", message: `Pi skills installed (${skills.filter(s => s.isDirectory()).length} skills)` }));
         configured++;
       } catch (err) {
         console.log(status({ kind: "warning", message: `Could not copy Pi skills: ${err.message}` }));
