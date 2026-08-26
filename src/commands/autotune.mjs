@@ -221,10 +221,35 @@ async function writeResultsMd(runDir, { modelId, results, recommendation, runDir
 
 // ── ⑥⑦ Apply / Discard ──────────────────────────────────────────────────────
 
-async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation }) {
+/**
+ * Discard the sweep's settings changes. If the model had a prior settings
+ * entry, restore it exactly. If it had none (oMLX has no delete-entry API),
+ * reset to the clean all-off vanilla baseline — the closest honest
+ * approximation of "revert to pre-sweep" for a model the sweep created an
+ * entry for. Used at every post-sweep discard site.
+ */
+async function discardSweep(baseUrl, runDir, modelId, baselineSettings) {
+  const restore = await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+  if (restore.ok) {
+    console.log(status({ kind: "success", message: "Original settings restored." }));
+    return;
+  }
+  if (restore.reason === "no-entry-to-restore") {
+    const reset = await putOmlxModelSettings(apiRootUrl(baseUrl), modelId, baselineSettings);
+    if (reset.ok) {
+      console.log(status({ kind: "success", message: "No prior settings entry — reset to a clean all-off baseline (oMLX has no delete-entry API)." }));
+    } else {
+      console.log(status({ kind: "warning", message: `Could not reset to baseline: ${omlxSettingsFailureHint(reset)}` }));
+    }
+    return;
+  }
+  console.log(status({ kind: "warning", message: `Restore incomplete: ${restore.reason}` }));
+}
+
+async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings }) {
   if (!recommendation.ok) {
-    console.log(status({ kind: "warning", message: "No recommendation to apply. Restoring your original settings." }));
-    await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+    console.log(status({ kind: "warning", message: "No recommendation to apply. Discarding the sweep." }));
+    await discardSweep(baseUrl, runDir, modelId, baselineSettings);
     return;
   }
   const rec = recommendation.recommendation;
@@ -247,19 +272,12 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation }) {
       console.log(status({ kind: "success", message: `${verb}: ${rec.label} applied to ${modelId}.` }));
     } else {
       console.log(status({ kind: "error", message: `Apply failed: ${omlxSettingsFailureHint(result)}` }));
-      console.log(status({ kind: "warning", message: "Restoring your original settings." }));
-      await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+      console.log(status({ kind: "warning", message: "Discarding the sweep." }));
+      await discardSweep(baseUrl, runDir, modelId, baselineSettings);
     }
   } else {
     console.log(status({ kind: "info", message: "Discarding — restoring your original settings." }));
-    const restore = await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
-    if (!restore.ok && restore.reason === "no-entry-to-restore") {
-      console.log(theme.subtle("  (The model had no settings entry before the sweep; nothing to restore — the sweep's values remain.)"));
-    } else if (!restore.ok) {
-      console.log(status({ kind: "warning", message: `Restore incomplete: ${restore.reason}` }));
-    } else {
-      console.log(status({ kind: "success", message: "Original settings restored." }));
-    }
+    await discardSweep(baseUrl, runDir, modelId, baselineSettings);
   }
 }
 
@@ -302,6 +320,7 @@ export async function autotuneCommand(argv) {
 
     // ③ Dry-run plan.
     const rows = generateGrid(model, allModels);
+    const baselineSettings = rows.find((r) => r.id === "vanilla").settings;
     console.log(card({ title: "Dry-run plan", tone: "accent", body: formatGridTable(rows) }));
     const start = await promptConfirm({ message: "Start the sweep?", initialValue: true });
     if (!start) {
@@ -313,8 +332,8 @@ export async function autotuneCommand(argv) {
     // ④ Run.
     const sweep = await runSweep({ baseUrl, runDir, modelId, rows });
     if (sweep.aborted) {
-      console.log(status({ kind: "error", message: `Sweep aborted (${sweep.reason}). Restoring your original settings.` }));
-      await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+      console.log(status({ kind: "error", message: `Sweep aborted (${sweep.reason}). Discarding the sweep.` }));
+      await discardSweep(baseUrl, runDir, modelId, baselineSettings);
       return;
     }
 
@@ -336,7 +355,7 @@ export async function autotuneCommand(argv) {
     console.log(theme.subtle("  † = inside 2× noise (MAD); treat as a tie."));
 
     // ⑥⑦ Apply / discard.
-    await applyOrDiscard({ baseUrl, runDir, modelId, recommendation });
+    await applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings });
   } finally {
     await release();
   }
