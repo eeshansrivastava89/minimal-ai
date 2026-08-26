@@ -50,9 +50,10 @@ export function relativeImports(src) {
   return [...specs];
 }
 
-// Resolution extensions tried, in order, mirroring Node ESM resolution for
-// a package without an "exports" map. "" = exact path (already has extension).
-const RESOLVE_EXTS = ["", ".mjs", ".js", ".json", "/index.mjs", "/index.js"];
+// Resolution must match Node ESM exactly: only the literal specifier
+// (extension-inclusive) counts. Trying .mjs/.js/index.* fallbacks would let
+// the gate pass an import that crashes at install time — Node doesn't probe.
+const RESOLVE_EXTS = [""];
 
 /**
  * Given every module file in a tarball as `{ path, content }` (path is
@@ -93,10 +94,11 @@ export function packTarballFilename(packJsonOutput) {
 // ── Gate execution (only when invoked directly) ─────────────────────
 
 async function main() {
-  // Guard against recursive invocation: if we're already inside npm pack's
-  // prepack hook, skip the privacy gate to avoid infinite recursion.
-  if (process.env.npm_lifecycle_event === "prepack" && process.env.MINIMAL_PRIVACY_GATE_RUNNING === "1") {
-    console.log("Skipping privacy gate: already running inside npm pack lifecycle.");
+  // Recursion guard: the gate runs npm pack internally; the flag stops an
+  // inner prepack invocation from re-entering the gate. (--ignore-scripts on
+  // the inner pack is the primary defense; this is belt-and-suspenders.)
+  if (process.env.MINIMAL_PRIVACY_GATE_RUNNING === "1") {
+    console.log("Skipping privacy gate: already running inside an npm pack lifecycle.");
     return;
   }
   process.env.MINIMAL_PRIVACY_GATE_RUNNING = "1";

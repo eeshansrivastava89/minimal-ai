@@ -129,11 +129,12 @@ test("brokenRelativeImports", async (t) => {
     assert.equal(broken[0].spec, "../autotune/probe.mjs");
   });
 
-  await t.test("resolves extensionless imports via .mjs/.js/.json/index", () => {
+  await t.test("flags extensionless imports as broken (Node ESM needs the extension)", () => {
+    // The gate must not be more lenient than Node: these files exist, but
+    // Node would still fail these imports at runtime without the extension.
     const files = new Set([
       "src/foo.mjs",
       "src/bar.js",
-      "src/baz.json",
       "src/pkg/index.mjs",
     ]);
     const moduleFiles = [
@@ -142,14 +143,22 @@ test("brokenRelativeImports", async (t) => {
         content: `
           import "./foo";
           import "./bar";
-          import "./baz";
           import "./pkg";
         `,
       },
       { path: "src/foo.mjs", content: "" },
       { path: "src/bar.js", content: "" },
-      { path: "src/baz.json", content: "" },
       { path: "src/pkg/index.mjs", content: "" },
+    ];
+    const broken = brokenRelativeImports(moduleFiles, makeExists(files));
+    assert.deepEqual(broken.map((b) => b.spec).sort(), ["./bar", "./foo", "./pkg"]);
+  });
+
+  await t.test("extension-ful imports resolve exactly", () => {
+    const files = new Set(["src/foo.mjs", "src/data.json"]);
+    const moduleFiles = [
+      { path: "src/main.mjs", content: `import x from "./foo.mjs";` },
+      { path: "src/foo.mjs", content: "" },
     ];
     assert.deepEqual(brokenRelativeImports(moduleFiles, makeExists(files)), []);
   });
