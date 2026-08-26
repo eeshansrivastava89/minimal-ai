@@ -132,7 +132,7 @@ const FORBIDDEN_IN_TARBALL = [
   /^\.pi\//,
 ];
 
-const MAX_TARBALL_FILES = 80;
+const MAX_TARBALL_FILES = 90;
 const MAX_TARBALL_SIZE_MB = 5;
 
 try {

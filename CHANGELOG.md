@@ -4,6 +4,22 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.0.1] - 2026-08-25
+
+### Fixed
+- **3.0.0 was broken on install** — `minimal-ai` crashed immediately with
+  `ERR_MODULE_NOT_FOUND: Cannot find module .../src/autotune/probe.mjs`. The
+  new `src/autotune/` directory (probe/grid/sweep/recommend/safety) was never
+  added to the `package.json` `files` allowlist, so `commands/autotune.mjs`
+  shipped but its `../autotune/*` imports 404'd. Added `src/autotune/*.mjs` to
+  `files`.
+- Root-cause note: lint and tests run against the repo (where the imports
+  resolve), and CI's only tarball gate was a file-count cap — the broken 3.0.0
+  tarball was *under* the cap, so it shipped green. Raised the privacy-gate
+  tarball file-count cap from 80 to 90 to fit the new source directory. A
+  tarball import-resolution check is filed as a follow-up to catch this class
+  of bug directly.
+
 ## [3.0.0] - 2026-08-25
 
 ### Added
