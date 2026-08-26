@@ -17,7 +17,11 @@
 // user's prior settings (oMLX applies partial PUTs on top of existing state).
 // Knobs not under test are forced off here; the row's "on" knobs merge on top.
 
-const OFF = {
+// Exported as ALL_OFF_BASELINE for the safety layer: restore merges the
+// user's snapshot over this so sweep knobs the user's entry never had are
+// explicitly turned back OFF (oMLX PUTs are partial merges — restoring only
+// the snapshotted keys would leak the last sweep config).
+export const ALL_OFF_BASELINE = {
   mtp_enabled: false,
   dflash_enabled: false,
   enable_thinking: false,
@@ -25,6 +29,7 @@ const OFF = {
   qwen35_ane_prefill_enabled: false,
   turboquant_kv_enabled: false,
 };
+const OFF = ALL_OFF_BASELINE;
 
 // Thinking budget enforced only with DFlash off (trap #1); 4096 is the
 // reference doc's measured "bounded thinking" value (C4) and the predicted

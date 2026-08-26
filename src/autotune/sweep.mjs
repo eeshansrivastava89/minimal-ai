@@ -145,6 +145,19 @@ export function summarizeSamples(samples) {
 
 // ── Log tail reader ─────────────────────────────────────────────────────────
 
+/**
+ * Pick the MTP acceptance sample reported for a config: the most recent run
+ * that logged MTP stats, warm runs preferred (cold includes load effects).
+ * `warm` is the run-result array; `coldMeasurement` may be null. Returns the
+ * measurement.mtp object or null.
+ */
+export function pickMtpSample(warm, coldMeasurement) {
+  return [{ ok: true, measurement: coldMeasurement }, ...warm]
+    .filter((r) => r.ok && r.measurement?.mtp)
+    .map((r) => r.measurement.mtp)
+    .pop() ?? null;
+}
+
 async function logSize(path) {
   try {
     return (await stat(path)).size;
@@ -153,9 +166,19 @@ async function logSize(path) {
   }
 }
 
-/** Read the log from a byte offset; returns the new text and the new offset. */
+/**
+ * Read the log from a byte offset; returns the new text and the new offset.
+ * A missing log (ENOENT mid-sweep — rotation, manual cleanup) is not fatal:
+ * treated as "nothing new yet", fresh reads start at 0 like logSize does.
+ */
 export async function readLogSince(path, offsetBytes = 0) {
-  const fh = await open(path, "r");
+  let fh;
+  try {
+    fh = await open(path, "r");
+  } catch (err) {
+    if (err?.code === "ENOENT") return { text: "", offset: 0 };
+    throw err;
+  }
   try {
     const { size } = await fh.stat();
     if (size <= offsetBytes) return { text: "", offset: size };
@@ -279,14 +302,9 @@ export async function sweepConfig(baseUrl, runDir, modelId, row, options = {}) {
   }
   const warmOk = warm.filter((r) => r.ok).map((r) => r.measurement.tps);
   const summary = summarizeSamples(warmOk);
-
-  // MTP acceptance from the most recent run that logged it (warm preferred).
-  const mtpSample = [warm, [{ ok: true, measurement: cold.measurement }]]
-    .flat()
-    .filter((r) => r.ok && r.measurement?.mtp)
-    .map((r) => r.measurement.mtp)
-    .pop() ?? null;
-  summary.mtp = mtpSample;
+  // MTP acceptance from the most recent run that logged it (warm preferred —
+  // the cold run includes load effects and is the least representative).
+  summary.mtp = pickMtpSample(warm, cold.measurement);
 
   // TEARDOWN — unload + verify RAM recovered for the next config.
   const teardown = await ensureNothingLoaded(baseUrl);

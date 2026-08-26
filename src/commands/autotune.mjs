@@ -145,7 +145,10 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
       result = await sweepConfig(baseUrl, runDir, modelId, row);
     } catch (err) {
       console.log(status({ kind: "error", message: `  ${row.label} failed: ${err.message}` }));
-      throw err;
+      // Abort — do NOT rethrow: an uncaught exception here would skip
+      // discardSweep and leave the last PUT config live (H2). The abort
+      // branch below restores the snapshotted settings.
+      return { aborted: true, reason: "exception", detail: err.message };
     }
     if (!result.ok) {
       console.log(status({ kind: "error", message: `  ${row.label} failed: ${result.reason}` }));
@@ -270,7 +273,7 @@ async function writeResultsMd(runDir, { modelId, results, recommendation, runDir
  * entry for. Used at every post-sweep discard site.
  */
 async function discardSweep(baseUrl, runDir, modelId, baselineSettings) {
-  const restore = await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+  const restore = await restoreSettingsSnapshot(baseUrl, runDir);
   if (restore.ok) {
     console.log(status({ kind: "success", message: "Original settings restored." }));
     return;
@@ -439,7 +442,7 @@ export async function autotuneCommand(argv) {
       });
       if (!start) {
         console.log(theme.subtle("Sweep cancelled. Restoring your original settings."));
-        await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+        await restoreSettingsSnapshot(baseUrl, runDir);
         return;
       }
     }

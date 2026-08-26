@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const {
   parseChatCompletionLine,
@@ -8,6 +10,8 @@ const {
   median,
   mad,
   summarizeSamples,
+  pickMtpSample,
+  readLogSince,
   BENCHMARK_PROMPT,
 } = await import("../src/autotune/sweep.mjs");
 
@@ -21,6 +25,35 @@ const REAL_MTP_LINE =
 
 const REAL_MTP_CHAT_LINE =
   "2026-08-25 20:20:11,260 - omlx.server - INFO - [-] - Chat completion: model=Qwen3.8-27B-MTPLX-Optimized-Speed, 40 tokens in 6.61s (6.1 tok/s), prompt: 78, finish_reason=length, max_tokens=40, request_max_tokens=40";
+
+describe("pickMtpSample", () => {
+  const mtp = (acceptPct) => ({ acceptPct });
+  const run = (m) => ({ ok: true, measurement: { mtp: m } });
+
+  it("prefers the most recent warm run over the cold run", () => {
+    const warm = [run(mtp(80)), run(mtp(91))];
+    const picked = pickMtpSample(warm, { mtp: mtp(50) });
+    assert.equal(picked.acceptPct, 91);
+  });
+
+  it("falls back to the cold run when no warm run logged MTP", () => {
+    const warm = [{ ok: true, measurement: {} }];
+    const picked = pickMtpSample(warm, { mtp: mtp(50) });
+    assert.equal(picked.acceptPct, 50);
+  });
+
+  it("returns null when nothing logged MTP", () => {
+    assert.equal(pickMtpSample([{ ok: true, measurement: {} }], {}), null);
+    assert.equal(pickMtpSample([], null), null);
+  });
+});
+
+describe("readLogSince", () => {
+  it("treats a missing log as nothing-new (ENOENT, no throw)", async () => {
+    const missing = join(tmpdir(), `minimal-missing-${process.pid}.log`);
+    assert.deepEqual(await readLogSince(missing, 12345), { text: "", offset: 0 });
+  });
+});
 
 describe("parseChatCompletionLine", () => {
   it("parses the real captured format", () => {

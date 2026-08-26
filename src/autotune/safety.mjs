@@ -20,6 +20,7 @@ import { putOmlxModelSettings } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import { slugModelId } from "../benchmark.mjs";
 import { fetchOmlxAdminModels, inferenceLoadedIds } from "./probe.mjs";
+import { ALL_OFF_BASELINE } from "./grid.mjs";
 
 const LOCK_FILE = "autotune.lock";
 const JOURNAL_FILE = "sweep.jsonl";
@@ -163,11 +164,20 @@ export async function snapshotModelSettings(runDir, modelId) {
 }
 
 /**
- * Restore a previously snapshotted entry via an echo-verified PUT. Caveat:
- * the oMLX admin API has no "delete settings entry" — if the model had no
- * entry before the sweep (hadEntry=false), keys the sweep created remain at
- * their sweep-touched values; there's nothing to restore TO. Callers surface
- * that as a warning rather than pretending Discard was perfect.
+ * Restore a previously snapshotted entry via an echo-verified PUT. oMLX PUTs
+ * are partial merges layered on current state, so restoring only the
+ * snapshotted keys would leave sweep-touched keys (turboquant_kv_enabled,
+ * dflash_enabled, …) ON when the user's entry never had them. The PUT is
+ * therefore { ...ALL_OFF_BASELINE, ...snapshot.settings }: keys the user had
+ * are preserved exactly; sweep knobs they never had are forced explicitly
+ * off. (Data keys like dflash_draft_model may linger when they didn't exist
+ * before, but are inert behind their false boolean.) baseUrl accepts either
+ * the /v1 form or the root — it is normalized here, matching sweepConfig.
+ *
+ * Caveat: the oMLX admin API has no "delete settings entry" — if the model
+ * had no entry before the sweep (hadEntry=false), keys the sweep created
+ * remain at their sweep-touched values; callers surface that as a warning
+ * rather than pretending Discard was perfect.
  */
 export async function restoreSettingsSnapshot(baseUrl, runDir) {
   let snapshot;
@@ -179,7 +189,8 @@ export async function restoreSettingsSnapshot(baseUrl, runDir) {
   if (!snapshot.hadEntry) {
     return { ok: false, reason: "no-entry-to-restore", modelId: snapshot.modelId };
   }
-  const result = await putOmlxModelSettings(baseUrl, snapshot.modelId, snapshot.settings);
+  const settings = { ...ALL_OFF_BASELINE, ...snapshot.settings };
+  const result = await putOmlxModelSettings(apiRootUrl(baseUrl), snapshot.modelId, settings);
   return { ...result, modelId: snapshot.modelId };
 }
 

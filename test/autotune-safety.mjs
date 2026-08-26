@@ -157,6 +157,43 @@ describe("settings snapshot", () => {
     assert.equal(snapshot.hadEntry, true);
     assert.deepEqual(snapshot.settings, { mtp_enabled: true, enable_thinking: false });
   });
+
+  it("restore merges the all-off baseline under the user's snapshot (no key leak)", async () => {
+    const runDir = await createRunDir("Restore-Merge-4bit");
+    await writeFile(join(runDir, "settings-snapshot.json"), JSON.stringify({
+      modelId: "Restore-Merge-4bit",
+      capturedAt: new Date().toISOString(),
+      hadEntry: true,
+      settings: { mtp_enabled: true, enable_thinking: false },
+    }));
+
+    let putted = null;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+      putted = { url: String(url), method: opts.method, body: JSON.parse(opts.body) };
+      return { ok: true, status: 200, json: async () => ({ settings: putted.body }), text: async () => "" };
+    };
+    let restore;
+    try {
+      restore = await restoreSettingsSnapshot("http://127.0.0.1:9/v1", runDir);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(restore.ok, true);
+    // URL normalized: the /v1 form must be stripped before the admin path.
+    assert.ok(putted.url.startsWith("http://127.0.0.1:9/admin/api/models/"), putted.url);
+    // User keys are preserved exactly…
+    assert.equal(putted.body.mtp_enabled, true);
+    assert.equal(putted.body.enable_thinking, false);
+    // …and every sweep knob the user's entry lacked is explicitly forced OFF
+    // (oMLX PUTs are partial merges; sending only the snapshotted keys would
+    // leave e.g. turboquant_kv_enabled at its last sweep value).
+    assert.equal(putted.body.dflash_enabled, false);
+    assert.equal(putted.body.turboquant_kv_enabled, false);
+    assert.equal(putted.body.qwen35_ane_prefill_enabled, false);
+    assert.equal(putted.body.thinking_budget_enabled, false);
+  });
 });
 
 describe("journal", () => {
