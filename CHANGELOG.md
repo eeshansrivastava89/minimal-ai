@@ -4,6 +4,37 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.1.1] - 2026-08-26
+
+### Fixed
+- **autotune results card no longer makes the recommendation look wrong.**
+  Previously it sorted all configs by raw tps, so the beauty path (thinking on)
+  ranked first while the fast path (thinking off) was recommended — it read
+  like a bug. Now groups by path ("fast path — thinking off (raw output
+  speed)" / "beauty path — thinking on (includes reasoning tokens)"), marks
+  the recommended config with ★, and uses "≈ tie" (vs the opaque †) for
+  within-2×-MAD differences. The recommendation is self-evident.
+- **Recommender no longer dresses up a tie as a win.** If the fastest
+  thinking-off config is within 2× MAD of vanilla, it recommends vanilla and
+  flags `noChange`; the apply step restores your prior settings instead of
+  applying a no-op. The reasoning now explains when the beauty path's higher
+  raw tps is within noise of the fast path and counts thinking tokens (so not
+  a reliable speed gain). `isThinkingOn` is exported for reuse.
+- **autotune plan card no longer cuts off notes mid-phrase.** The notes column
+  was hardcoded to 38 chars, leaving the right of a wide card unused. It now
+  uses the full card inner width and truncates with an ellipsis only at
+  genuinely narrow terminals.
+- **autotune sweep progress no longer duplicates lines.** `withSpinner`
+  printed the full "config i/n · label (est)" label twice (start + end) plus a
+  third line repeating the label. Now one dim start line (index + estimate) +
+  one result line (tps).
+- autotune flow: collapsed the redundant "Tune mode" pick (only speed is
+  enabled in v1; quality is stubbed for #20) + "Start the sweep?" into a single
+  confirm after the plan, with blank-line spacing between sections.
+
+### Changed
+- `results.md` mirrors the new fast/beauty path grouping and "≈ tie" wording.
+
 ## [3.1.0] - 2026-08-25
 
 ### Added
