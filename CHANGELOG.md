@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.1.4] - 2026-08-26
+
+### Fixed
+- **Publish pipeline works with npm 12.** npm 12 changed `npm pack --json`
+  from an array to an object keyed by package name; the privacy gate's
+  tarball check crashed on the new shape, which — now that the gate fails
+  closed — blocked the 3.1.3 publish. The parser accepts both shapes. (The
+  3.1.3 tag never reached npm; its fixes ship here in 3.1.4.)
+
 ## [3.1.3] - 2026-08-26
 
 ### Fixed
