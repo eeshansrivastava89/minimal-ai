@@ -12,6 +12,7 @@ import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, nor
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "../launch.mjs";
 import { downloadHfGguf } from "../download.mjs";
+import { offerAutotuneAfterSetup } from "./autotune.mjs";
 import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { runtimeStatusFlow, discoveryPathsFlow, harnessFlow } from "./models-settings.mjs";
@@ -321,6 +322,7 @@ async function setupItem(item) {
     await saveProfile(configured);
     await (await configuredHarness()).syncConfig(configured);
     printProfileSaved(configured.id);
+    await offerAutotuneAfterSetup(configured);
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);

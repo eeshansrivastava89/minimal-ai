@@ -253,7 +253,9 @@ export async function sweepConfig(baseUrl, runDir, modelId, row, options = {}) {
   }
 
   // PUT config (echo-verified). Done while unloaded; the cold run reloads it.
-  const put = await putOmlxModelSettings(baseUrl, modelId, row.settings);
+  // putOmlxModelSettings builds its URL from baseUrl directly (no apiRootUrl),
+  // so normalize here — every sweep entry point then accepts the /v1 form.
+  const put = await putOmlxModelSettings(apiRootUrl(baseUrl), modelId, row.settings);
   if (!put.ok) {
     return { ok: false, configId: row.id, label: row.label, reason: "put", detail: put };
   }

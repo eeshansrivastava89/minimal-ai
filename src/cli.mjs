@@ -10,6 +10,7 @@ import { createCli, runCli, appHeader, section, infoCard, renderList, status, fo
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
 import { runCommand } from "./commands/run.mjs";
+import { autotuneCommand } from "./commands/autotune.mjs";
 import { statusCommand } from "./commands/status.mjs";
 import { stopCommand } from "./commands/stop.mjs";
 import { uninstallCommand } from "./commands/uninstall.mjs";
@@ -110,6 +111,7 @@ function buildProgram() {
       "minimal-ai",
       "minimal-ai run <profile-id>",
       "minimal-ai run <profile-id> --thinking low",
+      "minimal-ai autotune <profile-id>",
       "minimal-ai status",
       "minimal-ai update",
     ],
@@ -151,6 +153,13 @@ function buildProgram() {
           if (args.length === 0) return mainFlow();
           return runCommand(args);
         },
+      },
+      {
+        name: "autotune [profile]",
+        description: "Find the fastest oMLX settings for a model (speed tune)",
+        allowUnknownOption: true,
+        allowExcessArguments: true,
+        action: ({ args }) => autotuneCommand(args),
       },
       {
         name: "status",
