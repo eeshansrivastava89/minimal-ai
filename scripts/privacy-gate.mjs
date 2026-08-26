@@ -72,6 +72,24 @@ export function brokenRelativeImports(moduleFiles, exists) {
   return broken;
 }
 
+/**
+ * Extract the tarball filename from `npm pack --json` output. npm ≤ 11
+ * returns an array — [{ filename, ... }]; npm ≥ 12 returns an object keyed
+ * by package name — { "pkg": { filename, ... } }. Returns null when the
+ * shape holds no filename, so callers fail closed instead of crashing on
+ * undefined (that's what blocked the 3.1.3 publish, correctly).
+ */
+export function packTarballFilename(packJsonOutput) {
+  let parsed;
+  try {
+    parsed = JSON.parse(packJsonOutput);
+  } catch {
+    return null;
+  }
+  const entries = Array.isArray(parsed) ? parsed : Object.values(parsed ?? {});
+  return entries.find((e) => e && typeof e === "object" && typeof e.filename === "string")?.filename ?? null;
+}
+
 // ── Gate execution (only when invoked directly) ─────────────────────
 
 async function main() {
@@ -278,8 +296,9 @@ async function main() {
   try {
     // One pack + one extract serves both the import-resolution check and
     // the secret scan. --ignore-scripts avoids recursive prepack.
-    const packJson = JSON.parse(execSync("npm pack --json --ignore-scripts 2>/dev/null", { encoding: "utf-8" }));
-    _tarball = packJson[0].filename;
+    const packOutput = execSync("npm pack --json --ignore-scripts 2>/dev/null", { encoding: "utf-8" });
+    _tarball = packTarballFilename(packOutput);
+    if (!_tarball) throw new Error(`npm pack --json returned an unexpected shape: ${packOutput.slice(0, 200)}`);
     const tmpBase = join(homedir(), ".tmp");
     if (!existsSync(tmpBase)) mkdirSync(tmpBase, { recursive: true });
     _tmpDir = mkdtempSync(join(tmpBase, "minimal-scan-"));

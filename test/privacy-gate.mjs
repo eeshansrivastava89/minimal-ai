@@ -1,7 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { relativeImports, brokenRelativeImports } from "../scripts/privacy-gate.mjs";
+import { relativeImports, brokenRelativeImports, packTarballFilename } from "../scripts/privacy-gate.mjs";
+
+// ── packTarballFilename ────────────────────────────────────────────
+
+test("packTarballFilename", async (t) => {
+  await t.test("parses the npm <= 11 array shape", () => {
+    const out = JSON.stringify([{ id: "pkg@1.0.0", filename: "pkg-1.0.0.tgz", files: [] }]);
+    assert.equal(packTarballFilename(out), "pkg-1.0.0.tgz");
+  });
+
+  await t.test("parses the npm >= 12 object shape (keyed by package name)", () => {
+    const out = JSON.stringify({ "minimal-ai": { id: "minimal-ai@3.1.3", filename: "minimal-ai-3.1.3.tgz", files: [] } });
+    assert.equal(packTarballFilename(out), "minimal-ai-3.1.3.tgz");
+  });
+
+  await t.test("returns null for unexpected shapes (fail closed, not crash)", () => {
+    assert.equal(packTarballFilename("{}"), null);
+    assert.equal(packTarballFilename("[]"), null);
+    assert.equal(packTarballFilename("not json"), null);
+    assert.equal(packTarballFilename(JSON.stringify({ pkg: { name: "pkg" } })), null);
+  });
+});
 
 // ── relativeImports ─────────────────────────────────────────────────
 
