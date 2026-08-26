@@ -218,11 +218,14 @@ export function generateGrid(targetModel, allModels = []) {
   } else {
     const pick = pickDflashDraft(targetModel, drafts);
     if (pick.matched) {
-      const draftId = pick.draft.displayName || pick.draft.id;
+      // oMLX's engine consumes dflash_draft_model as a PATH (the dashboard
+      // uses m.model_path || m.id as the select value — verified against
+      // omlx/admin + engine_pool source). A display/repo name won't load.
+      const draftRef = pick.draft.modelPath || pick.draft.id;
       rows.push(makeRow(
         "dflash", "speculative", "DFlash on", true, null,
-        { ...OFF, dflash_enabled: true, dflash_draft_model: draftId },
-        `DFlash on — draft ${draftId}`,
+        { ...OFF, dflash_enabled: true, dflash_draft_model: draftRef },
+        `DFlash on — draft ${pick.draft.displayName || pick.draft.id}`,
       ));
     } else {
       rows.push(makeRow(
@@ -249,9 +252,13 @@ export function generateGrid(targetModel, allModels = []) {
     ));
   }
 
-  // 6 — ANE prefill (rc3 re-test; isolated on the vanilla baseline).
+  // 6 — ANE prefill (rc3 re-test; isolated on the vanilla baseline). The
+  // server fields are literally qwen35_* — a private Qwen3.5/3.6/3.8 (GDN)
+  // feature; on any other family the row would burn ~10m measuring a no-op.
+  const aneApplies = /qwen3\.[568]/i.test(targetModel.id);
   rows.push(makeRow(
-    "ane", "ane", "ANE prefill", true, null,
+    "ane", "ane", "ANE prefill", aneApplies,
+    aneApplies ? null : "ANE prefill is Qwen3.5/3.6/3.8-only (qwen35_ane_* server key)",
     { ...OFF, qwen35_ane_prefill_enabled: true },
     "ANE prefill on — rc3 re-test (memory-guard rationale obsolete)",
   ));

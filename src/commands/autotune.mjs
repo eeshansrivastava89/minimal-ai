@@ -21,7 +21,7 @@ import {
   parseOptions, status, theme, renderList, maxWidth, wrapText,
   promptConfirm, padEndVisible,
 } from "../ui.mjs";
-import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported } from "../autotune/probe.mjs";
+import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported, needsMtplxImport } from "../autotune/probe.mjs";
 import {
   acquireAutotuneLock, createRunDir, snapshotModelSettings,
   restoreSettingsSnapshot, readJournal,
@@ -51,7 +51,7 @@ function truncate(value, max) {
 
 /** Probe the model + ensure MTP is available. No lock/snapshot yet — safe to
  *  call for --dry-run. Returns { baseUrl, modelId, model, allModels } or throws. */
-async function probeForAutotune(profile, { nonInteractive = false } = {}) {
+async function probeForAutotune(profile, { nonInteractive = false, skipImport = false } = {}) {
   const baseUrl = profile.baseUrl;
   const modelId = effectiveModelId(profile);
 
@@ -86,14 +86,23 @@ async function probeForAutotune(profile, { nonInteractive = false } = {}) {
 
   // Auto-import an MTPLX side-car MTP head if the model ships one unimported
   // (oMLX doesn't auto-merge it; without this the MTP grid row would be
-  // skipped on otherwise-MTP-capable checkpoints). Non-destructive, idempotent.
-  const mtp = await ensureMtplxImported(baseUrl, probe.model);
-  const model = mtp.model;
-  if (mtp.attempted) {
-    if (mtp.flipped) {
-      console.log(status({ kind: "success", message: `Imported MTPLX side-car (${mtp.importResult.merged} MTP tensors) — MTP now available.` }));
-    } else {
-      console.log(status({ kind: "warning", message: `MTPLX side-car import did not flip MTP compatibility (${mtp.importResult?.reason ?? "re-probe unchanged"}); MTP row will be skipped.` }));
+  // skipped on otherwise-MTP-capable checkpoints). Non-destructive, idempotent
+  // — but it IS a server mutation, so --dry-run skips it (its "no settings
+  // changed" claim must be true).
+  let model = probe.model;
+  if (skipImport) {
+    if (needsMtplxImport(probe.model)) {
+      console.log(theme.subtle("Unimported MTPLX side-car detected — the real sweep imports it first, so an MTP row may appear then."));
+    }
+  } else {
+    const mtp = await ensureMtplxImported(baseUrl, probe.model);
+    model = mtp.model;
+    if (mtp.attempted) {
+      if (mtp.flipped) {
+        console.log(status({ kind: "success", message: `Imported MTPLX side-car (${mtp.importResult.merged} MTP tensors) — MTP now available.` }));
+      } else {
+        console.log(status({ kind: "warning", message: `MTPLX side-car import did not flip MTP compatibility (${mtp.importResult?.reason ?? "re-probe unchanged"}); MTP row will be skipped.` }));
+      }
     }
   }
 
@@ -190,8 +199,11 @@ function resultsTable(results, baseline, recommendation) {
   // Group by path so the recommendation (fastest thinking-off) is
   // self-evident, instead of the beauty path ranking first by raw tps.
   const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
-  const fast = results.filter((r) => !isThinkingOn(r)).sort((a, b) => b.summary.median - a.summary.median);
-  const beauty = results.filter(isThinkingOn).sort((a, b) => b.summary.median - a.summary.median);
+  // Null medians (failed configs) sort last — raw subtraction on null
+  // produces NaN and an unstable order.
+  const byMedianDesc = (a, b) => (b.summary.median ?? -Infinity) - (a.summary.median ?? -Infinity);
+  const fast = results.filter((r) => !isThinkingOn(r)).sort(byMedianDesc);
+  const beauty = results.filter(isThinkingOn).sort(byMedianDesc);
   const lines = [];
   if (fast.length) {
     lines.push(theme.bold("fast path — thinking off (raw output speed)"));
@@ -208,8 +220,11 @@ function resultsTable(results, baseline, recommendation) {
 async function writeResultsMd(runDir, { modelId, results, recommendation, runDir: rd }) {
   const baseline = results.find((r) => r.configId === "vanilla");
   const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
-  const fast = results.filter((r) => !isThinkingOn(r)).sort((a, b) => b.summary.median - a.summary.median);
-  const beauty = results.filter(isThinkingOn).sort((a, b) => b.summary.median - a.summary.median);
+  // Null medians (failed configs) sort last — raw subtraction on null
+  // produces NaN and an unstable order.
+  const byMedianDesc = (a, b) => (b.summary.median ?? -Infinity) - (a.summary.median ?? -Infinity);
+  const fast = results.filter((r) => !isThinkingOn(r)).sort(byMedianDesc);
+  const beauty = results.filter(isThinkingOn).sort(byMedianDesc);
   const lines = [];
   lines.push(`# Autotune report — ${modelId}`);
   lines.push("");
@@ -391,7 +406,7 @@ export async function autotuneCommand(argv) {
   }
   const profile = await readProfile(positional[0]);
 
-  const probed = await probeForAutotune(profile, { nonInteractive });
+  const probed = await probeForAutotune(profile, { nonInteractive, skipImport: dryRun });
   const { baseUrl, modelId, model, allModels } = probed;
   const rows = generateGrid(model, allModels);
   const baselineSettings = rows.find((r) => r.id === "vanilla").settings;

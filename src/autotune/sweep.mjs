@@ -11,7 +11,7 @@
 //   JOURNAL   append a config-done row (crash/Ctrl-C resumes here)
 //
 // The parser is pure and fixture-tested against real captured log lines; the
-// network orchestration (sweepConfig/sweepGrid) is thin glue validated live
+// network orchestration (sweepConfig) is thin glue validated live
 // in Phase 3, mirroring how the safety layer is tested.
 
 import { open, stat } from "node:fs/promises";
@@ -24,7 +24,6 @@ import {
   ramGate,
   waitForRam,
   appendJournal,
-  readJournal,
 } from "./safety.mjs";
 
 // ── Micro-benchmark prompt + params (reference doc "Speed methodology") ─────
@@ -332,44 +331,4 @@ export async function sweepConfig(baseUrl, runDir, modelId, row, options = {}) {
     summary,
   });
   return result;
-}
-
-// ── Grid sweep (with resume) ────────────────────────────────────────────────
-
-/**
- * Sweep every tested row in a grid, skipping configs already marked
- * config-done in the journal (crash/Ctrl-C resume). `onProgress`/`onResult`
- * are optional callbacks for the wizard's live UI. Stops on a precheck/put/
- * ram-gate failure (the invariant is broken); a per-run measurement failure
- * is recorded and the sweep continues.
- */
-export async function sweepGrid(baseUrl, runDir, modelId, rows, options = {}) {
-  const { onProgress, onResult, ...config } = options;
-  const tested = rows.filter((r) => r.tested);
-  const journal = await readJournal(runDir);
-  const done = new Set(
-    journal.filter((r) => r.event === "config-done").map((r) => r.configId),
-  );
-  const results = [];
-  for (const row of tested) {
-    if (done.has(row.id)) {
-      onProgress?.({ phase: "resume-skip", row });
-      continue;
-    }
-    onProgress?.({ phase: "start", row });
-    const result = await sweepConfig(baseUrl, runDir, modelId, row, config);
-    if (result.ok) {
-      results.push(result);
-      onResult?.(result);
-      continue;
-    }
-    onResult?.(result);
-    if (["precheck", "put", "ram-gate"].includes(result.reason)) {
-      // Invariant broken — stop the sweep; the wizard surfaces the reason.
-      return { ok: false, reason: result.reason, detail: result.detail, results };
-    }
-    // A measurement failure (cold-run/warm) is recorded but non-fatal.
-    results.push(result);
-  }
-  return { ok: true, results };
 }

@@ -201,13 +201,25 @@ export async function appendJournal(runDir, row) {
   await appendFile(join(runDir, JOURNAL_FILE), `${JSON.stringify({ ts: new Date().toISOString(), ...row })}\n`);
 }
 
-/** Read the journal back — used by resume to find the first incomplete row. */
+/**
+ * Read the journal back — used by resume to find the first incomplete row.
+ * Tolerant per line: one corrupt (crash-truncated) row is skipped, it does
+ * not wipe out the resumable state of every completed config.
+ */
 export async function readJournal(runDir) {
+  let text;
   try {
-    const text = await readFile(join(runDir, JOURNAL_FILE), "utf8");
-    return text.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+    text = await readFile(join(runDir, JOURNAL_FILE), "utf8");
   } catch {
     return [];
   }
+  const rows = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      rows.push(JSON.parse(line));
+    } catch { /* corrupt/truncated line — skip it, keep the rest */ }
+  }
+  return rows;
 }
 

@@ -21,6 +21,7 @@ function fixture(raw) {
 const dflashDraft = fixture({
   id: "Qwen3.8-27B-DFlash2",
   display_name: "z-lab/Qwen3.8-27B-DFlash2",
+  model_path: "/Users/x/.omlx/models/z-lab/Qwen3.8-27B-DFlash2",
   loaded: false,
   estimated_size: 4042655744,
   engine_type: "batched",
@@ -172,7 +173,15 @@ describe("generateGrid", () => {
     const dflash = generateGrid(refBase, allModels).find((r) => r.id === "dflash");
     assert.equal(dflash.tested, true);
     assert.equal(dflash.settings.dflash_enabled, true);
-    assert.equal(dflash.settings.dflash_draft_model, "z-lab/Qwen3.8-27B-DFlash2");
+    // oMLX consumes dflash_draft_model as a filesystem path (the dashboard
+    // sets model_path || id as the select value) — not a display name.
+    assert.equal(dflash.settings.dflash_draft_model, "/Users/x/.omlx/models/z-lab/Qwen3.8-27B-DFlash2");
+  });
+
+  it("falls back to the model id when the draft has no path", () => {
+    const noPathModels = allModels.map((m) => (m.displayName.includes("DFlash") ? { ...m, modelPath: null } : m));
+    const dflash = generateGrid(refBase, noPathModels).find((r) => r.id === "dflash");
+    assert.equal(dflash.settings.dflash_draft_model, "Qwen3.8-27B-DFlash2");
   });
 
   it("skips DFlash for a personality fine-tune with a mismatch reason (chimingw)", () => {
@@ -229,6 +238,21 @@ describe("generateGrid", () => {
     assert.equal(ane.settings.mtp_enabled, false);
     assert.equal(ane.settings.dflash_enabled, false);
     assert.equal(ane.settings.enable_thinking, false);
+  });
+
+  it("skips the ANE row for non-Qwen3.5/3.6/3.8 families (qwen35_ane_* is a private GDN feature)", () => {
+    const llama = fixture({
+      id: "Llama-3.3-8B-4bit",
+      display_name: "mlx-community/Llama-3.3-8B-4bit",
+      loaded: false,
+      engine_type: "vlm",
+      mtp_compatible: false,
+      dflash_compatible: false,
+      thinking_default: null,
+    });
+    const ane = generateGrid(llama, allModels).find((r) => r.id === "ane");
+    assert.equal(ane.tested, false);
+    assert.match(ane.skipReason, /Qwen3\.5\/3\.6\/3\.8-only/);
   });
 
   it("emits turboquant q4 and q8 rows with the right bits", () => {

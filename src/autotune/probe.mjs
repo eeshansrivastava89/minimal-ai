@@ -13,6 +13,7 @@ export function normalizeOmlxAdminModel(raw) {
   return {
     id: String(raw?.id ?? "").trim(),
     displayName: String(raw?.display_name ?? raw?.id ?? "").trim(),
+    modelPath: typeof raw?.model_path === "string" ? raw.model_path : null,
     loaded: raw?.loaded === true,
     isLoading: raw?.is_loading === true,
     estimatedSizeBytes: Number(raw?.estimated_size ?? 0) || 0,

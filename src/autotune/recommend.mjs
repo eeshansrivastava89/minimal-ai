@@ -121,7 +121,9 @@ export function recommendOptimal(results) {
   let recommendation = fastPath ?? beautyPath;
   let noChange = false;
   if (fastPath && baseline && baseline.configId !== fastPath.configId) {
-    if (compareReal(fastPath, baseline) === "noise") {
+    // "n/a" happens on an exact tie with zero measured noise (e.g. one warm
+    // sample each) — a tie must not be dressed up as a win either.
+    if (compareReal(fastPath, baseline) !== "real") {
       recommendation = baseline;
       noChange = true;
     }
