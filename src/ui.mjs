@@ -38,18 +38,17 @@ export function humanCapabilitySummary(caps = {}) {
 }
 
 export function renderMemoryEstimate(est, flags) {
-  try {
-    return renderList([
-      ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
-      ["Model", formatBytes(est.modelBytes)],
-      ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
-      ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
-      ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${flags.ctxSize.toLocaleString()} ctx, ${flags.cacheTypeK}/${flags.cacheTypeV})` : "unknown"],
-      ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
-    ]);
-  } catch {
-    return "Estimate unavailable for this model.";
-  }
+  // Only absent data is quiet here; a programming error should crash loudly
+  // (the previous blanket try/catch swallowed both — over-broad).
+  if (!est || !Number.isFinite(est.totalBytes)) return "Estimate unavailable for this model.";
+  return renderList([
+    ["Estimated total", pc.bold(`~${formatBytes(est.totalBytes)}`)],
+    ["Model", formatBytes(est.modelBytes)],
+    ...(est.mmprojBytes ? [["Vision projector", formatBytes(est.mmprojBytes)]] : []),
+    ...(est.draftBytes ? [["Drafter (MTP)", formatBytes(est.draftBytes)]] : []),
+    ["KV cache", est.kvBytes ? `~${formatBytes(est.kvBytes)} (${flags.ctxSize.toLocaleString()} ctx, ${flags.cacheTypeK}/${flags.cacheTypeV})` : "unknown"],
+    ...(est.note ? [["Note", pc.yellow(est.note)]] : []),
+  ]);
 }
 
 export function parseOptions(argv) {
