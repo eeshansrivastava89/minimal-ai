@@ -90,11 +90,59 @@ function formatInline(text) {
 }
 
 // Wrap one bullet paragraph (already joined across the markdown's hand-wrapped
-// lines) at the available width, with the "  - " prefix and 4-space
-// continuation indent.
-function renderBullet(text, width) {
-  const wrapped = wrapText(formatInline(text), width);
-  return wrapped.map((l, i) => (i === 0 ? `  - ${l}` : `    ${l}`));
+// lines) at the available width. Top-level bullets render "  - ", nested
+// bullets render with 4 more spaces of indent (`indent` = leading spaces in
+// the markdown source).
+function renderBullet(text, width, indent = 0) {
+  const wrapped = wrapText(formatInline(text), Math.max(8, width - indent));
+  const pad = " ".repeat(indent);
+  return wrapped.map((l, i) => (i === 0 ? `${pad}  - ${l}` : `${pad}    ${l}`));
+}
+
+/**
+ * Render one changelog entry's markdown body into wrapped, indented lines
+ * (pure — no printing). Nested bullets stay nested bullets; they are never
+ * absorbed into a parent paragraph as stray "- " fragments.
+ */
+export function renderEntryBody(entry, width = maxWidth() - 4) {
+  const inner = width;
+  const bulletWidth = inner - 4;   // "  - " prefix / 4-space continuation
+  const paraWidth = inner - 2;     // "  " indent for non-bullet paragraphs
+
+  const bodyLines = [];
+  const lines = entry.content.split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (line.startsWith("### ")) {
+      if (bodyLines.length > 0) bodyLines.push("");
+      bodyLines.push(theme.bold(theme.warning(line.replace(/^###\s+/u, ""))));
+      i++;
+      continue;
+    }
+    const bullet = line.match(/^(\s*)-\s+/u);
+    if (bullet) {
+      // A bullet is the "- " line plus its continuation lines (indented, but
+      // NOT another bullet). Join them into one paragraph before wrapping,
+      // so the markdown's own hand-wrapping isn't re-wrapped per line.
+      const indent = bullet[1].length;
+      const parts = [line.replace(/^\s*-\s+/u, "")];
+      i++;
+      while (i < lines.length) {
+        const next = lines[i];
+        if (!next.trim() || next.startsWith("### ") || /^\s*-\s/u.test(next)) break;
+        parts.push(next.replace(/^\s+/u, ""));
+        i++;
+      }
+      bodyLines.push(...renderBullet(parts.join(" ").trim(), bulletWidth, indent));
+      continue;
+    }
+    // Non-bullet, non-header paragraph (rare in our changelog).
+    bodyLines.push(...wrapText(formatInline(line), paraWidth).map((l) => `  ${l}`));
+    i++;
+  }
+  return bodyLines.join("\n");
 }
 
 export function printReleaseNotes(entries) {
@@ -104,43 +152,9 @@ export function printReleaseNotes(entries) {
   // not a hardcoded column count — otherwise the right of a wide card is just
   // empty padding and the text looks artificially narrow.
   const inner = maxWidth() - 4;
-  const bulletWidth = inner - 4;   // "  - " prefix / 4-space continuation
-  const paraWidth = inner - 2;     // "  " indent for non-bullet paragraphs
 
   for (const entry of entries) {
-    const bodyLines = [];
-    const lines = entry.content.split("\n");
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (!line.trim()) { i++; continue; }
-      if (line.startsWith("### ")) {
-        if (bodyLines.length > 0) bodyLines.push("");
-        bodyLines.push(theme.bold(theme.warning(line.replace(/^###\s+/u, ""))));
-        i++;
-        continue;
-      }
-      if (line.startsWith("- ")) {
-        // A bullet is the "- " line plus its indented continuation lines.
-        // Join them into one paragraph before wrapping, so the markdown's own
-        // hand-wrapping doesn't get re-wrapped per line (which produced the
-        // broken on)/a/+ fragments on their own lines).
-        const parts = [line.replace(/^-\s+/, "")];
-        i++;
-        while (i < lines.length) {
-          const next = lines[i];
-          if (!next.trim() || next.startsWith("### ") || next.startsWith("- ")) break;
-          parts.push(next.replace(/^\s+/, ""));
-          i++;
-        }
-        bodyLines.push(...renderBullet(parts.join(" ").trim(), bulletWidth));
-        continue;
-      }
-      // Non-bullet, non-header paragraph (rare in our changelog).
-      bodyLines.push(...wrapText(formatInline(line), paraWidth).map((l) => `  ${l}`));
-      i++;
-    }
-    console.log(card({ title: `v${entry.version}`, body: bodyLines.join("\n") }));
+    console.log(card({ title: `v${entry.version}`, body: renderEntryBody(entry, inner) }));
   }
   console.log("");
 }
