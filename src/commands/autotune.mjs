@@ -15,7 +15,8 @@ import { backendFor } from "../backends.mjs";
 import { readProfile, effectiveModelId } from "../profiles.mjs";
 import { serverReady } from "../server-check.mjs";
 import { apiRootUrl } from "../server-status.mjs";
-import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint } from "../omlx-runtime.mjs";
+import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
+import { sleep } from "../exec.mjs";
 import {
   parseOptions, status, theme, card,
   promptChoice, promptConfirm, withSpinner, padEndVisible,
@@ -281,6 +282,47 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
   }
 }
 
+// ── Reclaim: restart oMLX after a sweep to free process memory ────────────────
+//
+// oMLX frees model memory per load/unload (the one-model invariant holds),
+// but the server *process* grows over a sweep — macOS pushes its cold pages to
+// swap and they aren't returned. Only a restart drops the footprint back to
+// baseline. Applied settings persist to ~/.omlx/model_settings.json, so the
+// recommendation survives the restart.
+
+async function waitForServerReady(baseUrl, { timeoutMs = 60000, pollMs = 2000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await serverReady(baseUrl)) return true;
+    await sleep(pollMs);
+  }
+  return false;
+}
+
+async function reclaimSweepMemory(baseUrl, { nonInteractive }) {
+  if (nonInteractive) {
+    console.log(status({ kind: "info", message: "Restarting oMLX to reclaim memory freed by the sweep…" }));
+    const r = await restartOmlxServer();
+    if (!r.ok) {
+      console.log(status({ kind: "warning", message: `Could not auto-restart oMLX (${r.reason}). Run \`omlx restart\` to reclaim memory.` }));
+      return;
+    }
+    const ready = await waitForServerReady(baseUrl);
+    console.log(ready
+      ? status({ kind: "success", message: "oMLX restarted — memory reclaimed." })
+      : status({ kind: "warning", message: "oMLX restart sent, but the server is slow to come back. It will be ready shortly." }));
+    return;
+  }
+  // Interactive: offer (default yes) — the user may skip if a session is running.
+  const restarted = await offerOmlxRestart("to reclaim memory freed by the sweep (the server process grows over a sweep)");
+  if (!restarted) {
+    console.log(theme.subtle("The oMLX server process may hold GB of swap from the sweep. Run `omlx restart` later to reclaim it."));
+    return;
+  }
+  const ready = await waitForServerReady(baseUrl);
+  if (ready) console.log(status({ kind: "success", message: "oMLX restarted — memory reclaimed." }));
+}
+
 // ── Command entry point ──────────────────────────────────────────────────────
 
 export async function autotuneCommand(argv) {
@@ -335,6 +377,7 @@ export async function autotuneCommand(argv) {
   }
   console.log(theme.subtle(`Run dir: ${runDir} · snapshot ${snapshot.hadEntry ? "captured (restores on discard)" : "no prior entry (resets to baseline on discard)"}`));
 
+  let sweepRan = false;
   try {
     // ② Mode pick — speed-only in v1; quality stubbed. Skipped in --yes.
     if (!yes) {
@@ -359,6 +402,7 @@ export async function autotuneCommand(argv) {
 
     // ④ Run.
     const sweep = await runSweep({ baseUrl, runDir, modelId, rows });
+    sweepRan = true;
     if (sweep.aborted) {
       console.log(status({ kind: "error", message: `Sweep aborted (${sweep.reason}). Discarding the sweep.` }));
       await discardSweep(baseUrl, runDir, modelId, baselineSettings);
@@ -387,6 +431,10 @@ export async function autotuneCommand(argv) {
     await applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings, autoApply: yes });
   } finally {
     await lock.release();
+    // A sweep loaded/unloaded models repeatedly — oMLX freed the model memory
+    // each cycle, but the server process holds swap that only a restart
+    // returns. Reclaim it (skip if the sweep never ran, e.g. cancelled).
+    if (sweepRan) await reclaimSweepMemory(baseUrl, { nonInteractive: yes });
   }
 }
 

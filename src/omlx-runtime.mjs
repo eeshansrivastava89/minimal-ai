@@ -70,6 +70,25 @@ export async function startOmlxServer() {
 }
 
 /**
+ * Restart the oMLX server (non-interactive). Used by autotune to reclaim the
+ * process memory a sweep leaves behind: oMLX frees model memory per
+ * load/unload, but the server process's cold pages get pushed to swap by macOS
+ * and aren't returned — only a restart drops the footprint back to baseline.
+ * Settings persist to ~/.omlx/model_settings.json on every PUT, so an applied
+ * autotune recommendation survives the restart. Returns { ok, reason? }.
+ */
+export async function restartOmlxServer() {
+  const bin = await findOmlx();
+  if (!bin) return { ok: false, reason: "not-installed" };
+  try {
+    await execFileAsync(bin, ["restart"], { timeout: 30000 });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: "restart-failed", detail: err.message };
+  }
+}
+
+/**
  * PUT partial per-model settings to the oMLX admin API, then verify they
  * persisted. oMLX has no GET settings endpoint (405 since at least
  * 0.6.3rc2 — a GET-based verify would report a successful PUT as failed),
