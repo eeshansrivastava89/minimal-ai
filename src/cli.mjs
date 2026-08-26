@@ -157,6 +157,10 @@ function buildProgram() {
       {
         name: "autotune [profile]",
         description: "Find the fastest oMLX settings for a model (speed tune)",
+        options: [
+          { flags: "--yes", description: "Run non-interactively and apply the recommendation" },
+          { flags: "--dry-run", description: "Preview the sweep plan without running it" },
+        ],
         allowUnknownOption: true,
         allowExcessArguments: true,
         action: ({ args }) => autotuneCommand(args),

@@ -74,6 +74,8 @@ minimal-ai              # model picker — pick, configure, download, or manage 
 minimal-ai update       # update minimal-ai to the latest version
 minimal-ai status       # see if any model is running
 minimal-ai stop         # stop the running model
+minimal-ai autotune <profile>   # oMLX: find the fastest settings for a model (speed tune)
+minimal-ai autotune <profile> --dry-run   # preview the sweep plan without running it
 minimal-ai uninstall    # remove minimal-ai
 ```
 

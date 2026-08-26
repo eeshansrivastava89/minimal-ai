@@ -29,7 +29,7 @@ import { generateGrid, estimateGridMinutes } from "../autotune/grid.mjs";
 import { sweepConfig } from "../autotune/sweep.mjs";
 import { recommendOptimal, writeOptimalJson, resultsFromJournal, compareReal } from "../autotune/recommend.mjs";
 
-const COL_LABEL = 22;
+const COL_LABEL = 24;
 const COL_TPS = 10;
 const COL_ACCEPT = 9;
 const COL_DELTA = 10;
@@ -42,9 +42,16 @@ function fmtAccept(mtp) {
   return mtp?.acceptPct != null ? `${mtp.acceptPct.toFixed(1)}%` : "—";
 }
 
+function truncate(value, max) {
+  const str = String(value ?? "");
+  return str.length <= max ? str : `${str.slice(0, max - 1)}…`;
+}
+
 // ── ① Pre-flight ────────────────────────────────────────────────────────────
 
-async function preflight(profile) {
+/** Probe the model + ensure MTP is available. No lock/snapshot yet — safe to
+ *  call for --dry-run. Returns { baseUrl, modelId, model, allModels } or throws. */
+async function probeForAutotune(profile, { nonInteractive = false } = {}) {
   const baseUrl = profile.baseUrl;
   const modelId = effectiveModelId(profile);
 
@@ -54,8 +61,11 @@ async function preflight(profile) {
     );
   }
 
-  // Server up? Offer restart if not.
+  // Server up? Offer restart interactively; fail clearly non-interactively.
   if (!(await serverReady(baseUrl))) {
+    if (nonInteractive) {
+      throw new Error("oMLX server is not running. Start it with `omlx start` and try again.");
+    }
     console.log(status({ kind: "warning", message: "oMLX server is not running." }));
     const restarted = await offerOmlxRestart("to run the autotune sweep");
     if (!restarted) throw new Error("oMLX server is not running. Start it with `omlx start` and try again.");
@@ -87,17 +97,7 @@ async function preflight(profile) {
     }
   }
 
-  // Run dir + snapshot + lock.
-  const runDir = await createRunDir(modelId);
-  const snapshot = await snapshotModelSettings(runDir, modelId);
-  const lock = await acquireAutotuneLock({ modelId });
-  if (!lock.ok) {
-    throw new Error(
-      `Another autotune sweep is already running (pid ${lock.holder?.pid}, model ${lock.holder?.modelId}). One sweep at a time — the oMLX server has one GPU.`,
-    );
-  }
-
-  return { baseUrl, modelId, model, allModels: admin.models, runDir, snapshot, release: lock.release };
+  return { baseUrl, modelId, model, allModels: admin.models };
 }
 
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
@@ -106,10 +106,10 @@ function formatGridTable(rows) {
   const lines = [];
   for (const r of rows) {
     const mark = r.tested ? `${theme.success("✓")}` : `${theme.warning("✗")}`;
-    const note = r.tested ? r.notes : r.skipReason;
+    const note = truncate(r.tested ? r.notes : r.skipReason, 38);
     const est = r.tested ? `~${r.estMinutes}m` : "";
     lines.push(
-      `${padEndVisible(r.label, COL_LABEL)} ${mark}  ${padEndVisible(note ?? "", 34)} ${est}`,
+      `${padEndVisible(r.label, COL_LABEL)} ${mark}  ${padEndVisible(note, 38)} ${est}`,
     );
   }
   const total = estimateGridMinutes(rows);
@@ -246,7 +246,7 @@ async function discardSweep(baseUrl, runDir, modelId, baselineSettings) {
   console.log(status({ kind: "warning", message: `Restore incomplete: ${restore.reason}` }));
 }
 
-async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings }) {
+async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings, autoApply = false }) {
   if (!recommendation.ok) {
     console.log(status({ kind: "warning", message: "No recommendation to apply. Discarding the sweep." }));
     await discardSweep(baseUrl, runDir, modelId, baselineSettings);
@@ -264,7 +264,7 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
     ],
   }));
 
-  const apply = await promptConfirm({ message: "Apply these settings?", initialValue: true });
+  const apply = autoApply || await promptConfirm({ message: "Apply these settings?", initialValue: true });
   if (apply) {
     const result = await putOmlxModelSettings(apiRootUrl(baseUrl), modelId, rec.settings);
     if (result.ok) {
@@ -285,48 +285,76 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
 
 export async function autotuneCommand(argv) {
   await ensureDirs();
-  const { positional } = parseOptions(argv);
-  if (!positional[0]) throw new Error("Specify a profile: minimal-ai autotune <profile-id>");
+  const { positional, options } = parseOptions(argv);
+  if (!positional[0]) {
+    throw new Error("Specify a profile: minimal-ai autotune <profile-id> [--yes | --dry-run]");
+  }
+  const yes = Boolean(options.yes || options.y);
+  const dryRun = Boolean(options["dry-run"]);
+  const nonInteractive = yes || dryRun;
+  if (!nonInteractive && !process.stdin.isTTY) {
+    throw new Error(
+      "autotune is interactive. Run from a terminal, or pass --yes (run non-interactively and apply the recommendation) or --dry-run (preview the plan without sweeping).",
+    );
+  }
   const profile = await readProfile(positional[0]);
 
-  const pre = await preflight(profile);
-  const { baseUrl, modelId, model, allModels, runDir, release } = pre;
+  const probed = await probeForAutotune(profile, { nonInteractive });
+  const { baseUrl, modelId, model, allModels } = probed;
+  const rows = generateGrid(model, allModels);
+  const baselineSettings = rows.find((r) => r.id === "vanilla").settings;
+
+  console.log(card({
+    title: dryRun ? "Autotune — dry run" : "Autotune — speed tune",
+    tone: "accent",
+    body: `Model: ${modelId}`,
+    rows: [
+      ["MTP", model.mtpCompatible ? "compatible" : "not compatible"],
+      ["DFlash", model.dflashCompatible ? "compatible" : "not compatible"],
+      ["thinking default", String(model.thinkingDefault)],
+      ["tested configs", `${rows.filter((r) => r.tested).length}/${rows.length}`],
+      ["est. total", `~${estimateGridMinutes(rows)}m`],
+    ],
+  }));
+  console.log(card({ title: "Dry-run plan", tone: "accent", body: formatGridTable(rows) }));
+
+  // --dry-run: plan only, no sweep, no mutation.
+  if (dryRun) {
+    console.log(theme.subtle("Dry run — no sweep, no settings changed. Run without --dry-run to sweep."));
+    return;
+  }
+
+  // Run dir + snapshot + lock (only for a real sweep).
+  const runDir = await createRunDir(modelId);
+  const snapshot = await snapshotModelSettings(runDir, modelId);
+  const lock = await acquireAutotuneLock({ modelId });
+  if (!lock.ok) {
+    throw new Error(
+      `Another autotune sweep is already running (pid ${lock.holder?.pid}, model ${lock.holder?.modelId}). One sweep at a time — the oMLX server has one GPU.`,
+    );
+  }
+  console.log(theme.subtle(`Run dir: ${runDir} · snapshot ${snapshot.hadEntry ? "captured (restores on discard)" : "no prior entry (resets to baseline on discard)"}`));
 
   try {
-    console.log(card({
-      title: "Autotune — speed tune",
-      tone: "accent",
-      body: `Model: ${modelId}\nRun dir: ${runDir}`,
-      rows: [
-        ["MTP", model.mtpCompatible ? "compatible" : "not compatible"],
-        ["DFlash", model.dflashCompatible ? "compatible" : "not compatible"],
-        ["thinking default", String(model.thinkingDefault)],
-        ["snapshot", pre.snapshot.hadEntry ? "captured (will restore on discard)" : "no prior entry"],
-      ],
-    }));
-
-    // ② Mode pick — speed-only in v1; quality stubbed.
-    const mode = await promptChoice({
-      message: "Tune mode",
-      choices: [
-        { value: "speed", label: "Speed tune", hint: "~30-60 min" },
-        { value: "quality", label: "Speed + quality tune", hint: "coming in v2", disabled: true },
-      ],
-      defaultValue: "speed",
-    });
-    if (mode === "quality") {
-      console.log(status({ kind: "info", message: "Quality tune arrives in v2. Running speed tune." }));
-    }
-
-    // ③ Dry-run plan.
-    const rows = generateGrid(model, allModels);
-    const baselineSettings = rows.find((r) => r.id === "vanilla").settings;
-    console.log(card({ title: "Dry-run plan", tone: "accent", body: formatGridTable(rows) }));
-    const start = await promptConfirm({ message: "Start the sweep?", initialValue: true });
-    if (!start) {
-      console.log(theme.subtle("Sweep cancelled. Restoring your original settings."));
-      await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
-      return;
+    // ② Mode pick — speed-only in v1; quality stubbed. Skipped in --yes.
+    if (!yes) {
+      const mode = await promptChoice({
+        message: "Tune mode",
+        choices: [
+          { value: "speed", label: "Speed tune", hint: "~30-60 min" },
+          { value: "quality", label: "Speed + quality tune", hint: "coming in v2 (#20)", disabled: true },
+        ],
+        defaultValue: "speed",
+      });
+      if (mode === "quality") {
+        console.log(status({ kind: "info", message: "Quality tune arrives in v2 (#20). Running speed tune." }));
+      }
+      const start = await promptConfirm({ message: "Start the sweep?", initialValue: true });
+      if (!start) {
+        console.log(theme.subtle("Sweep cancelled. Restoring your original settings."));
+        await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
+        return;
+      }
     }
 
     // ④ Run.
@@ -353,11 +381,12 @@ export async function autotuneCommand(argv) {
       body: resultsTable(results, baseline),
     }));
     console.log(theme.subtle("  † = inside 2× noise (MAD); treat as a tie."));
+    console.log(theme.subtle(`  Full report: ${join(runDir, "results.md")}`));
 
     // ⑥⑦ Apply / discard.
-    await applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings });
+    await applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings, autoApply: yes });
   } finally {
-    await release();
+    await lock.release();
   }
 }
 
