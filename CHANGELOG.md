@@ -4,6 +4,56 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.0.0] - 2026-08-25
+
+### Added
+- **autotune** (#19): a first-class `minimal-ai autotune [profile]` workflow that
+  autonomously searches per-model oMLX settings for the fastest configuration.
+  oMLX-only in v1; speed-tune (a quality/judge engine is filed as #20 for v2).
+  - Capability probe (`probe.mjs`) inspects a model's MTP / DFlash / ANE /
+    turboquant support, and programmatically imports MTPLX side-car MTP heads
+    (some Qwen3.5/3.6 checkpoints ship `mtp.safetensors` unreferenced by the main
+    index; oMLX reports `mtp_compatible:false` until imported — autotune calls
+    `POST /admin/api/models/{id}/import-mtplx` for you, non-destructive and
+    idempotent).
+  - Speed engine: a trap-aware config grid (`grid.mjs` — MTP iff compatible,
+    DFlash iff a matching draft exists and the target isn't a personality
+    fine-tune, never stacks DFlash+MTP, thinking+budget forces DFlash off), a
+    per-config state machine (`sweep.mjs`: precheck → PUT → cold → warm →
+    teardown → journal) with a pure server.log parser and MAD confidence, and a
+    fast-path / beauty-path recommender (`recommend.mjs`) that writes
+    `optimal.json`. Sweeps resume from the journal on Ctrl-C/crash.
+  - Safety layer (`safety.mjs`): lockfile, RAM gate, one-model invariant,
+    settings snapshot/restore, and a journal — cancel/abort/apply-failure all
+    restore; the lock always releases.
+  - Wizard (`autotune.mjs`): pre-flight → mode pick → dry-run plan card →
+    per-config sweep → report (`results.md` + `optimal.json` + terminal card
+    with 2x-MAD noise flags) → apply (echo-verified PUT) / discard. After a new
+    oMLX profile is saved, `models.mjs` offers to autotune now (defaults no).
+  - `--yes` runs non-interactively and applies the recommendation (scripting/CI
+    and the post-download hook path); `--dry-run` probes + shows the plan with
+    no sweep, lock, or mutation; non-TTY without either errors clearly instead
+    of hanging on a prompt.
+
+### Fixed
+- autotune discard now resets to the clean all-off vanilla baseline when the
+  model had no settings entry before the sweep (oMLX has no delete-entry API),
+  so a sweep can't leave its last config applied on discard/abort/apply-failure.
+- autotune no longer aborts on builtin oMLX helpers like MarkItDown
+  (`engine_type "markitdown"`, always `loaded:true` but not in the engine pool —
+  unload 404s); helper engine types are excluded from the one-model invariant.
+
+### Changed
+- autotune restarts the oMLX server after a sweep to reclaim process memory:
+  macOS pushes the server's cold pages to swap over a sweep and they aren't
+  returned (a 9B+27B session left omlx-server at ~17 GB footprint with no model
+  loaded); `restartOmlxServer()` in the sweep's `finally` drops it back to
+  baseline. Applied settings persist to `~/.omlx/model_settings.json`, so the
+  recommendation survives the restart.
+- AGENTS.md documents the cross-repo visual benchmark harness
+  (minimal-ai launches, `~/dev/local-llm-visual-benchmark` is the gallery on
+  :4321) for future-agent context.
+
 ## [2.9.2] - 2026-08-25
 
 ### Fixed
