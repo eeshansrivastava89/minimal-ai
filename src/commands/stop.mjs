@@ -1,7 +1,7 @@
 import { ensureDirs } from "../config.mjs";
 import { readProfile } from "../profiles.mjs";
 import { stopProfile, runningProfiles } from "../process.mjs";
-import { startInteractive, promptChoice, parseOptions, status, theme } from "../ui.mjs";
+import { promptChoice, parseOptions, status, theme } from "../ui.mjs";
 
 export async function stopCommand(argv) {
   await ensureDirs();
@@ -22,7 +22,6 @@ export async function stopCommand(argv) {
     return;
   }
 
-  startInteractive();
   const choices = running.map(({ profile, status: s }) => ({ value: profile.id, label: profile.label, hint: `pid ${s.pid} · ${profile.baseUrl}` }));
   if (running.length > 1) choices.unshift({ value: "__all", label: "Stop all", hint: `${running.length} servers` });
   choices.push({ value: "__cancel", label: "Cancel" });

@@ -75,7 +75,3 @@ export function parseOptions(argv) {
   }
   return { positional, options };
 }
-
-export function startInteractive() {
-  if (process.stdin.isTTY) console.clear();
-}

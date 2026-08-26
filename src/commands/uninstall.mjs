@@ -4,7 +4,7 @@ import { DATA_DIR, DATA_DIR_MARKER, DATA_DIR_MARKER_CONTENT, isSafeDataDirPath, 
 import { removeInstallerPathEntries } from "../shell-path.mjs";
 import { stopProfile } from "../process.mjs";
 import { execCommand } from "../exec.mjs";
-import { startInteractive, promptChoice, parseOptions, status, theme, screenHeader } from "../ui.mjs";
+import { promptChoice, parseOptions, status, theme, screenHeader } from "../ui.mjs";
 import { runningProfiles } from "../process.mjs";
 
 export async function uninstallCommand(argv) {
@@ -21,7 +21,6 @@ export async function uninstallCommand(argv) {
     return;
   }
 
-  startInteractive();
   console.log(screenHeader({ title: "minimal-ai uninstall" }));
   const running = await runningProfiles();
   if (running.length > 0) {

@@ -7,7 +7,7 @@ import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { appHeader, status, startInteractive, theme, maxWidth, visibleLen } from "../ui.mjs";
+import { appHeader, status, theme, maxWidth, visibleLen } from "../ui.mjs";
 import { showReleaseNotesIfUpdated } from "../changelog.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
@@ -51,7 +51,6 @@ export async function mainFlow({ showReleaseNotes = false } = {}) {
   }
 
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  startInteractive();
   if (showReleaseNotes) await showReleaseNotesIfUpdated();
 
   console.log(appHeader({ name: "minimal-ai", version: currentPackageVersion() }));

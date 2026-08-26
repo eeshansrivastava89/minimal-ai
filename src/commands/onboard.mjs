@@ -3,12 +3,10 @@ import { configuredHarness } from "../harnesses.mjs";
 import { latestLlamaRelease, installLlamaRelease } from "../runtime.mjs";
 import { hasHfCli, installHfCli } from "../huggingface.mjs";
 import { execCommand } from "../exec.mjs";
-import { startInteractive, promptConfirm, status, theme, screenHeader, withSpinner } from "../ui.mjs";
+import { promptConfirm, status, theme, screenHeader, withSpinner } from "../ui.mjs";
 
 export async function onboardFlow() {
   await ensureDirs();
-  startInteractive();
-
   console.log(screenHeader({ title: "Welcome to minimal-ai!", subtitle: "Let's set up everything you need to run local models." }));
 
   const llamaBinary = await findLlamaServer();

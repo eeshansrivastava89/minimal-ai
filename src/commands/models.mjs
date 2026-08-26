@@ -7,7 +7,7 @@ import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
 import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { startInteractive, promptSelectModel, promptChoice, promptConfirm, theme, status } from "../ui.mjs";
+import { promptSelectModel, promptChoice, promptConfirm, theme, status } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "../launch.mjs";
@@ -26,7 +26,6 @@ export async function modelsCommand(argv) {
     return;
   }
 
-  if (process.stdin.isTTY) startInteractive();
   return await modelCommandCenter(catalog);
 }
 
@@ -38,7 +37,13 @@ export async function modelCommandCenter(initialCatalog) {
   }
 
   let catalog = initialCatalog.newModels ? initialCatalog : await loadModelCatalog();
-  await showModelPicker(catalog);
+  // One pass per iteration, then back to a freshly-scanned picker — like
+  // runtimeStatusFlow / discoveryPathsFlow. Esc (null selection) exits.
+  while (true) {
+    const result = await showModelPicker(catalog);
+    if (result !== "again") return;
+    catalog = await loadModelCatalog();
+  }
 }
 
 async function showModelPicker(catalog) {
@@ -145,56 +150,57 @@ async function showModelPicker(catalog) {
   }
 
   const selected = await promptSelectModel({ message: "Select a model", groups });
-  if (!selected) return;
+  if (!selected) return "back";
 
   if (selected === "__download_hf_gguf__") {
     await downloadHfGguf();
     console.log("");
-    return;
+    return "again";
   }
   if (selected === "__download_omlx__") {
     console.log(status({ kind: "info", message: "oMLX models are downloaded from the oMLX app." }));
     console.log(theme.subtle("Open oMLX, browse the model library, and download a model. It will appear here automatically.\n"));
-    return;
+    return "again";
   }
 
   if (selected === "__runtime_status__") {
     await runtimeStatusFlow();
     console.log("");
-    return;
+    return "again";
   }
   if (selected === "__discovery_paths__") {
     await discoveryPathsFlow();
     console.log("");
-    return;
+    return "again";
   }
 
   if (selected === "__harness__") {
     await harnessFlow();
     console.log("");
-    return;
+    return "again";
   }
 
   if (selected === "__install_omlx__") {
     await installOmlx();
     console.log("");
-    return;
+    return "again";
   }
 
   if (selected === "__install_ollama__") {
     await installOllama();
     console.log("");
-    return;
+    return "again";
   }
 
   const item = allItems.find((candidate) => itemKey(candidate) === selected);
-  if (!item) return;
+  if (!item) return "again";
 
   const actions = actionsForItem(item, { runningProfilesNow, harnessLabel: (await configuredHarness()).label });
   const action = await promptChoice({ message: item.label, choices: actions });
-  if (!action) return;
+  if (!action) return "again";
   await performAction(action, item);
   console.log("");
+  return "again";
 }
 
 function formatActions(rawActions) {
@@ -211,41 +217,23 @@ function formatActions(rawActions) {
 function actionsForItem(item, { runningProfilesNow = [], harnessLabel = "Pi" } = {}) {
   const missing = item.type === "profile" && item.missing;
   if (item.type === "profile") {
+    const profile = item.profile;
+    const isRunning = !missing && runningProfilesNow.some((p) => p.id === profile.id);
+    const unavailable = missing ? { dimmed: true } : {};
     const available = [
+      { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}`, ...unavailable },
+      ...(isRunning
+        ? [{ value: "stop", name: "Stop server", desc: "Stop and free memory" }]
+        : missing ? [] : [{ value: "server", name: "Start server", desc: `API only, no ${harnessLabel}` }]),
       { value: "inspect", name: "Details", desc: "Paths, ports, flags" },
+      ...(backendFor(profile.backend).id === "omlx" && !missing
+        ? [{ value: "autotune", name: "Autotune", desc: "Find the fastest oMLX settings (~30-60m)" }]
+        : []),
+      { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt", ...unavailable },
+      { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", ...unavailable },
+      { value: "remove_config", name: "Remove configuration", desc: "Delete this setup, keep model files" },
+      { value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" },
     ];
-    if (!missing) {
-      const profile = item.profile;
-      const isRunning = runningProfilesNow.some((p) => p.id === profile.id);
-      const serverActions = isRunning
-        ? [
-            { value: "stop", name: "Stop server", desc: "Stop and free memory" },
-            { value: "server", name: "Start server", desc: "Already running", dimmed: true, dimmedDesc: "Already running" },
-          ]
-        : [
-            { value: "server", name: "Start server", desc: `API only, no ${harnessLabel}` },
-          ];
-      available.unshift(
-        { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}` },
-        ...serverActions,
-      );
-      if (backendFor(profile.backend).id === "omlx") {
-        available.push({ value: "autotune", name: "Autotune", desc: "Find the fastest oMLX settings (~30-60m)" });
-      }
-      available.push(
-        { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt" },
-        { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
-      );
-    }
-    available.push({ value: "remove_config", name: "Remove configuration", desc: "Delete this setup, keep model files" });
-    available.push({ value: "delete_model", name: "Delete model", desc: "Permanently remove from disk" });
-    if (missing) {
-      available.unshift(
-        { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}`, dimmed: true },
-        { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt", dimmed: true },
-        { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings", dimmed: true },
-      );
-    }
     return formatActions(available);
   }
   if (item.type === "new") {
