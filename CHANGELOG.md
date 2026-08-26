@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.1.0] - 2026-08-25
+
+### Added
+- **Autotune is now reachable from the models menu for existing oMLX profiles.**
+  Selecting an installed oMLX model now lists an "Autotune — Find the fastest
+  oMLX settings (~30-60m)" action alongside Benchmark and Reconfigure, which
+  runs the same `autotune` workflow as the `minimal-ai autotune <profile>`
+  command and the post-download offer. Previously autotune was only reachable
+  via the explicit CLI command or the prompt right after downloading a new
+  managed model — there was no path to tune an already-installed model from
+  the UI (#19 follow-up). Non-oMLX profiles omit the entry (autotune v1 is
+  oMLX-only).
+
 ## [3.0.1] - 2026-08-25
 
 ### Fixed

@@ -12,7 +12,7 @@ import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, nor
 import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "../launch.mjs";
 import { downloadHfGguf } from "../download.mjs";
-import { offerAutotuneAfterSetup } from "./autotune.mjs";
+import { offerAutotuneAfterSetup, autotuneCommand } from "./autotune.mjs";
 import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { runtimeStatusFlow, discoveryPathsFlow, harnessFlow } from "./models-settings.mjs";
@@ -229,6 +229,9 @@ function actionsForItem(item, { runningProfilesNow = [], harnessLabel = "Pi" } =
         { value: "run", name: "Start chatting", desc: `Launch and open ${harnessLabel}` },
         ...serverActions,
       );
+      if (backendFor(profile.backend).id === "omlx") {
+        available.push({ value: "autotune", name: "Autotune", desc: "Find the fastest oMLX settings (~30-60m)" });
+      }
       available.push(
         { value: "benchmark", name: "Benchmark", desc: "Run a visual benchmark prompt" },
         { value: "reconfigure", name: "Reconfigure", desc: "Change context, MTP, settings" },
@@ -261,7 +264,7 @@ function actionsForItem(item, { runningProfilesNow = [], harnessLabel = "Pi" } =
 
 async function performAction(action, item) {
   const missing = item.type === "profile" && item.missing;
-  if (missing && ["run", "reconfigure", "benchmark"].includes(action)) {
+  if (missing && ["run", "reconfigure", "benchmark", "autotune"].includes(action)) {
     const backend = item.type === "profile" ? backendFor(item.profile.backend) : null;
     const reason = backend?.type === "managed-server" ? "model is no longer available on the server" : "model file is no longer on disk";
     console.log(status({ kind: "error", message: `This model's ${reason}. Remove the setup or restore the model.` }));
@@ -274,6 +277,7 @@ async function performAction(action, item) {
   }
   if (action === "run") return await runItem(item);
   if (action === "benchmark") return await benchmarkItem(item);
+  if (action === "autotune") return await autotuneCommand([item.profile.id]);
   if (action === "server") return await startServerItem(item);
   if (action === "stop") return await stopServerItem(item);
   if (action === "reconfigure" || action === "setup") return await setupItem(item);
