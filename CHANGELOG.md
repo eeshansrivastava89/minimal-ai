@@ -4,6 +4,52 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.2.0] - 2026-08-26
+
+### Changed
+- **The CLI has no more boxes.** Every screen — startup, status, settings,
+  download, onboarding, autotune, model details — now renders as plain,
+  readable output: a bold heading, clean indented key/value rows, and
+  ordinary padded tables wrapped to your terminal width. Nothing is cut
+  off, nothing misaligns, nothing wraps weirdly in narrow windows.
+- **The model picker is now a proper menu.** After any action (chat, stop,
+  setup, delete, install) you return to the freshly updated list instead
+  of the command exiting; press Esc to leave. Startup also no longer
+  clears your terminal scrollback.
+- **autotune asks before it touches anything.** The "Run dir created ·
+  snapshot captured" line used to appear before the confirmation prompt —
+  as if the sweep had already started. Confirmation now comes first, and
+  cancelling changes nothing. The plan is titled "Plan" on real runs, the
+  overview names the model being tuned, and the recommendation now
+  actually prints the numbers behind the pick.
+- **The bundled CLI UI toolkit lives in-repo now** (`src/ui/`). The
+  `@eeshans/cli-kit` dependency was inlined — one less package in the
+  install, nothing else changes.
+
+### Fixed
+- **Model details got one layout instead of three**, and long model names
+  in the picker are clipped with an ellipsis instead of wrapping
+  mid-row and breaking the columns. The duplicate "Thinking" row in the
+  setup summary is gone.
+- **Text wrapping no longer mangles styling** on narrow terminals and can
+  no longer hang on extremely tiny terminal widths (inherited bugs in the
+  UI toolkit).
+- **autotune dry runs truly change nothing** — `--dry-run` no longer sends
+  the MTPLX import to the server, so "no settings changed" is now
+  literally true.
+- **autotune resume is resilient to a truncated journal.** One corrupt
+  line (e.g. after a crash) used to wipe all recorded progress, forcing a
+  full re-sweep; now just that line is skipped.
+- **autotune never reports a tie as a win.** An exact tie with zero
+  measured noise (e.g. one warm sample per config) now keeps your current
+  settings instead of "recommending" them.
+- **DFlash sweeps pass the draft's real path.** The server expects a model
+  path, not a display name — verified against oMLX's own dashboard source.
+- **ANE prefill is only measured where it can work** — Qwen3.5/3.6/3.8
+  models. Other families no longer spend ~10 minutes measuring a no-op.
+- **The publish gate now matches Node's import rules exactly**, so it can
+  no longer pass an import that would crash after install.
+
 ## [3.1.4] - 2026-08-26
 
 ### Fixed
