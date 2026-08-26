@@ -92,3 +92,42 @@ One-time setup: `scc` must be on PATH. It is a static Go binary — download
 the darwin-arm64 build from https://github.com/boyter/scc/releases into
 `~/.local/bin` (on PATH), or `brew install scc` if Homebrew is healthy.
 `madge` and `jscpd` are fetched by `npx` on first use.
+
+## Visual benchmark harness (cross-repo)
+
+The visual benchmark spans two repos. **minimal-ai is the launcher**;
+**local-llm-visual-benchmark** (`~/dev/local-llm-visual-benchmark`, sibling)
+is the gallery (astro dev server on `:4321`). The gallery **never launches
+the agent** — it only prepares run slots and later captures/scores.
+
+**Launch chain** (`minimal-ai <profile> benchmark`): `benchmarkForProfile`
+(`src/benchmark.mjs`) → `prepareBenchmarkRun` (writes
+`runs/<benchmark-id>/<model-slug>/<run-id>/{metadata.json status=prepared,
+prompt.md}`) → `runProfile` (`src/commands/run.mjs`: ensure server up + model
+available, `preflightInference` 1-token, then `launchModel` → `spawn("pi",
+["--model", "<provider>/<alias>", "--thinking", <level>, "<prompt>"],
+{ stdio:"inherit", cwd: runDir })`). Thinking = `options.thinking ??
+profile.thinkingLevel`; if `profile.thinkingOff === true` the model config
+advertises no reasoning so pi's client kwargs can't override the server
+off-switch (`src/harness-pi.mjs`). When pi exits, the model unloads unless
+`--keep-server`.
+
+**Run status** (gallery): `prepared → completed/failed`. Status flips only on
+**capture** (Playwright `preview.png`/`preview.webm`/`preview.mp4`), not during
+the agent run. The gallery sees progress solely by stat-checking which files
+exist in the run dir (`src/lib/runs.ts: hydrateAssetAvailability`). It has no
+live generation monitoring; `src/lib/omlx.ts` only lists `/v1/models`.
+
+**Monitoring a live run** (the gallery can't help — do this directly):
+- `~/.omlx/logs/server.log` `Chat completion:` lines = each model request.
+  **The oMLX admin stats counter (`total_requests`/`completion_tokens`) ticks
+  on completion, not arrival.** A long in-flight first turn shows frozen
+  counters + high GPU = actively decoding, NOT stuck. The first turn
+  routinely takes ~8-10 min (pi boot + prefill + one large decode) before
+  the first `Chat completion:` line logs — do not call that a hang.
+- Run dir files: `index.html` (agent output), `screenshot1.png`…
+  (pi's Playwright review iterations); `preview.*` only after gallery
+  capture.
+- pi session JSONL: `~/.pi/agent/sessions/--<cwd-slug>--/`.
+- GPU % is noisy: high during prefill+decode, but a resident model holds
+  memory even when idle — not a verdict on its own.
