@@ -20,6 +20,14 @@ test("relativeImports", async (t) => {
     assert.deepEqual(relativeImports(src), ["../dyn/probe.mjs"]);
   });
 
+  await t.test("captures side-effect imports", () => {
+    const src = `
+      import "./polyfill.mjs";
+      export * from './all.mjs';
+    `;
+    assert.deepEqual(relativeImports(src).sort(), ["./all.mjs", "./polyfill.mjs"]);
+  });
+
   await t.test("ignores bare specifiers", () => {
     const src = `
       import picocolors from "picocolors";
@@ -123,6 +131,16 @@ test("brokenRelativeImports", async (t) => {
       { path: "src/pkg/index.mjs", content: "" },
     ];
     assert.deepEqual(brokenRelativeImports(moduleFiles, makeExists(files)), []);
+  });
+
+  await t.test("reports a side-effect import of a missing target", () => {
+    const files = new Set(["src/main.mjs"]);
+    const moduleFiles = [
+      { path: "src/main.mjs", content: `import "./polyfill.mjs";` },
+    ];
+    const broken = brokenRelativeImports(moduleFiles, makeExists(files));
+    assert.equal(broken.length, 1);
+    assert.equal(broken[0].spec, "./polyfill.mjs");
   });
 
   await t.test("resolves ../ that climbs above then back down", () => {

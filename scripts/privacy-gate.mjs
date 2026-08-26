@@ -28,24 +28,25 @@ import { homedir } from "node:os";
 
 const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
 // ── Pure helpers (exported for unit testing) ────────────────────────
 
 /**
  * Relative import/export specifiers (./ or ../) referenced in JS module
- * source. Captures both static `import/export ... from "..."` and dynamic
- * `import("...")`. Bare specifiers and non-relative paths are ignored.
- * Deduped per source string.
+ * source. Captures static `import/export ... from "..."`, dynamic
+ * `import("...")`, and side-effect `import "..."`. Bare specifiers and
+ * non-relative paths are ignored. Deduped per source string.
  */
 export function relativeImports(src) {
   const specs = new Set();
   const staticRe = /\bfrom\s*["'](\.{1,2}\/[^"']+)["']/g;
   const dynamicRe = /\bimport\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g;
+  const sideEffectRe = /\bimport\s*["'](\.{1,2}\/[^"']+)["']/g;
   let m;
   while ((m = staticRe.exec(src)) !== null) specs.add(m[1]);
   while ((m = dynamicRe.exec(src)) !== null) specs.add(m[1]);
+  while ((m = sideEffectRe.exec(src)) !== null) specs.add(m[1]);
   return [...specs];
 }
 
@@ -83,7 +84,6 @@ async function main() {
   process.env.MINIMAL_PRIVACY_GATE_RUNNING = "1";
 
   let failures = 0;
-  let warnings = 0;
 
   function fail(msg) {
     console.error(`${RED}FAIL${RESET} ${msg}`);
@@ -91,10 +91,6 @@ async function main() {
   }
   function pass(msg) {
     console.log(`${GREEN}PASS${RESET} ${msg}`);
-  }
-  function warn(msg) {
-    console.warn(`${YELLOW}WARN${RESET} ${msg}`);
-    warnings++;
   }
 
   // ── 1. Tracked files check ────────────────────────────────────────
@@ -251,8 +247,9 @@ async function main() {
       }
     }
   } catch (e) {
-    warn(`Could not run tarball content check: ${e.message}`);
-    warnings++;
+    // Failed tarball checks must FAIL the gate — a gate that degraded to
+    // warn-only here would let a broken pack sail through CI (fail-open).
+    fail(`Tarball content check could not run: ${e.message}`);
   }
 
   // ── 4. Tarball integrity: relative imports resolve + no secrets ───
@@ -332,8 +329,8 @@ async function main() {
       pass("No secrets found in tarball contents");
     }
   } catch (e) {
-    warn(`Could not run tarball integrity check: ${e.message}`);
-    warnings++;
+    // Same fail-closed rule as the content check above.
+    fail(`Tarball integrity check could not run: ${e.message}`);
   } finally {
     if (_tarball) rmSync(_tarball, { force: true });
     if (_tmpDir) rmSync(_tmpDir, { recursive: true, force: true });
@@ -343,10 +340,10 @@ async function main() {
 
   console.log("\n=== Summary ===\n");
   if (failures > 0) {
-    console.error(`${RED}${failures} failure(s)${RESET}, ${warnings} warning(s)`);
+    console.error(`${RED}${failures} failure(s)${RESET}`);
     process.exit(1);
   } else {
-    console.log(`${GREEN}All checks passed${RESET} (${warnings} warning(s))`);
+    console.log(`${GREEN}All checks passed${RESET}`);
     process.exit(0);
   }
 }
