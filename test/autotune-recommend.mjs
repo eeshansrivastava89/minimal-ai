@@ -1,0 +1,134 @@
+import { describe, it, after } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+// Sandbox a run dir for writeOptimalJson.
+const sandbox = await mkdtemp(join(tmpdir(), "minimal-autotune-recommend-"));
+after(() => rm(sandbox, { recursive: true, force: true }));
+
+const { recommendOptimal, writeOptimalJson, compareReal, resultsFromJournal } = await import("../src/autotune/recommend.mjs");
+
+// Helpers to build a result shape like sweepConfig returns.
+function result(configId, label, median, { mad = 0.1, family = "speculative", acceptPct = null, settings = {} } = {}) {
+  const mtp = acceptPct != null ? { acceptPct, tokPerCycle: 1.8, accepted: 76, total: 102 } : null;
+  return {
+    configId,
+    label,
+    family,
+    settings,
+    summary: { n: 4, median, mad, min: median - 0.1, max: median + 0.1, spread: 0.2, noiseRatio: mad / median, mtp },
+  };
+}
+
+describe("recommendOptimal", () => {
+  it("picks the highest-tps thinking-off config as the fast path", () => {
+    const results = [
+      result("vanilla", "vanilla", 10.1),
+      result("mtp", "MTP on", 11.8, { acceptPct: 74.5 }),
+      result("thinking", "thinking + budget", 9.5, { family: "thinking" }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.ok, true);
+    assert.equal(rec.fastPath.configId, "mtp");
+    assert.equal(rec.recommendation.configId, "mtp");
+  });
+
+  it("picks the highest-tps thinking-on config as the beauty path", () => {
+    const results = [
+      result("vanilla", "vanilla", 10.1),
+      result("mtp-thinking", "MTP + thinking + budget", 9.0, { family: "thinking", acceptPct: 70 }),
+      result("thinking", "thinking + budget", 8.5, { family: "thinking" }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.beautyPath.configId, "mtp-thinking");
+  });
+
+  it("reasoning cites tps, the delta vs vanilla, and the beauty path", () => {
+    const results = [
+      result("vanilla", "vanilla", 10.1),
+      result("mtp", "MTP on", 11.8, { acceptPct: 74.5 }),
+      result("mtp-thinking", "MTP + thinking + budget", 9.5, { family: "thinking" }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.match(rec.reasoning, /MTP on — 11\.8 tps/);
+    assert.match(rec.reasoning, /\+17% vs vanilla/);
+    assert.match(rec.reasoning, /Beauty path: MTP \+ thinking/);
+  });
+
+  it("falls back to the beauty path when no thinking-off config succeeded", () => {
+    const results = [result("thinking", "thinking + budget", 9.5, { family: "thinking" })];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.ok, true);
+    assert.equal(rec.fastPath, null);
+    assert.equal(rec.recommendation.configId, "thinking");
+  });
+
+  it("returns no-results when nothing has a median", () => {
+    const rec = recommendOptimal([{ configId: "vanilla", summary: { median: null } }]);
+    assert.equal(rec.ok, false);
+    assert.equal(rec.reason, "no-results");
+  });
+});
+
+describe("compareReal", () => {
+  it("flags a difference ≥ 2× noise as real", () => {
+    const a = result("vanilla", "vanilla", 10.1, { mad: 0.1 });
+    const b = result("mtp", "MTP on", 11.8, { mad: 0.1 });
+    // |11.8 - 10.1| = 1.7 >= 2 * 0.1 = 0.2 -> real
+    assert.equal(compareReal(a, b), "real");
+  });
+
+  it("flags a difference inside 2× noise as noise", () => {
+    const a = result("vanilla", "vanilla", 10.1, { mad: 1.0 });
+    const b = result("mtp", "MTP on", 10.4, { mad: 1.0 });
+    // |10.4 - 10.1| = 0.3 < 2 * 1.0 = 2.0 -> noise
+    assert.equal(compareReal(a, b), "noise");
+  });
+
+  it("returns n/a when a median is missing", () => {
+    assert.equal(compareReal({ summary: { median: null, mad: 0 } }, result("mtp", "MTP on", 11.8)), "n/a");
+  });
+});
+
+describe("resultsFromJournal", () => {
+  it("joins journal summaries with grid settings/family", () => {
+    const journal = [
+      { event: "config-done", configId: "mtp", label: "MTP on", summary: { median: 11.8, mad: 0.1, mtp: { acceptPct: 74.5 } } },
+      { event: "start", configId: "ignored" },
+      { event: "config-done", configId: "vanilla", label: "vanilla", summary: { median: 10.1, mad: 0.1, mtp: null } },
+    ];
+    const grid = [
+      { id: "mtp", family: "speculative", settings: { mtp_enabled: true } },
+      { id: "vanilla", family: "baseline", settings: {} },
+      { id: "dflash", family: "speculative", settings: { dflash_enabled: true } },
+    ];
+    const results = resultsFromJournal(journal, grid);
+    assert.equal(results.length, 2);
+    const mtp = results.find((r) => r.configId === "mtp");
+    assert.equal(mtp.family, "speculative");
+    assert.deepEqual(mtp.settings, { mtp_enabled: true });
+    assert.equal(mtp.summary.median, 11.8);
+  });
+});
+
+describe("writeOptimalJson", () => {
+  it("writes a payload with the recommendation, both paths, and reasoning", async () => {
+    const results = [
+      result("vanilla", "vanilla", 10.1, { family: "baseline" }),
+      result("mtp", "MTP on", 11.8, { acceptPct: 74.5, settings: { mtp_enabled: true } }),
+      result("mtp-thinking", "MTP + thinking + budget", 9.5, { family: "thinking", settings: { mtp_enabled: true, enable_thinking: true } }),
+    ];
+    const rec = recommendOptimal(results);
+    const payload = await writeOptimalJson(sandbox, rec);
+    assert.equal(payload.recommended.configId, "mtp");
+    assert.equal(payload.fastPath.configId, "mtp");
+    assert.equal(payload.beautyPath.configId, "mtp-thinking");
+    assert.match(payload.reasoning, /MTP on/);
+
+    const onDisk = JSON.parse(await readFile(join(sandbox, "optimal.json"), "utf8"));
+    assert.equal(onDisk.recommended.settings.mtp_enabled, true);
+    assert.equal(onDisk.beautyPath.configId, "mtp-thinking");
+  });
+});
