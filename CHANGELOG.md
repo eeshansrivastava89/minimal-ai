@@ -4,6 +4,35 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.1.3] - 2026-08-26
+
+### Fixed
+- **autotune Discard now actually restores everything.** oMLX applies
+  settings PUTs as partial merges on top of existing state, so restoring
+  only the settings you had before the sweep left sweep-touched knobs
+  (turboquant KV cache, DFlash, thinking budget, …) silently ON at their
+  last sweep value. Discard now restores your settings on top of an
+  explicit all-off baseline, so every knob the sweep touched returns to
+  off unless you had it on yourself.
+- **autotune no longer abandons mutated settings on a mid-sweep crash.**
+  A hiccup reading the oMLX server log (or any other per-config exception)
+  used to escape as an uncaught error, skipping cleanup entirely — the last
+  experimental config stayed live. Exceptions now abort the sweep through
+  the same restore path as an explicit Discard, and a missing server log is
+  treated as "nothing new" instead of crashing.
+- **MTP acceptance % now reports the warm runs.** A one-line ordering bug
+  made the reported acceptance come from the cold run (which includes load
+  effects and is the least representative sample) whenever it was logged.
+- **Release notes no longer garble nested bullets.** Changelog entries with
+  indented sub-bullets (the 3.0.0 notes, for example) were flattened into
+  run-on paragraphs with stray `-` markers; nested bullets now render as
+  indented bullets.
+- **Privacy gate now fails closed.** The publish-time tarball checks
+  (the safeguard built after the broken 3.0.0 release) used to degrade to a
+  warning if the pack/extract step itself errored — CI would stay green on
+  a gate that never ran. Those errors are now failures, and the import
+  scan also covers side-effect imports (`import "./x.mjs"`).
+
 ## [3.1.2] - 2026-08-26
 
 ### Fixed
