@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 const sandbox = await mkdtemp(join(tmpdir(), "minimal-autotune-recommend-"));
 after(() => rm(sandbox, { recursive: true, force: true }));
 
-const { recommendOptimal, writeOptimalJson, compareReal, resultsFromJournal } = await import("../src/autotune/recommend.mjs");
+const { recommendOptimal, writeOptimalJson, compareReal, resultsFromJournal, isThinkingOn } = await import("../src/autotune/recommend.mjs");
 
 // Helpers to build a result shape like sweepConfig returns.
 function result(configId, label, median, { mad = 0.1, family = "speculative", acceptPct = null, settings = {} } = {}) {
@@ -69,6 +69,47 @@ describe("recommendOptimal", () => {
     const rec = recommendOptimal([{ configId: "vanilla", summary: { median: null } }]);
     assert.equal(rec.ok, false);
     assert.equal(rec.reason, "no-results");
+  });
+
+  it("does not recommend a tie: fast path within noise of vanilla → noChange, recommend vanilla", () => {
+    // Fast path (mtp) is only +0.3 tps over vanilla, inside 2× MAD (1.0) →
+    // not a real improvement. The recommender must not dress up the tie as a win.
+    const results = [
+      result("vanilla", "vanilla", 10.1, { mad: 1.0 }),
+      result("mtp", "MTP on", 10.4, { mad: 1.0, acceptPct: 74.5 }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.ok, true);
+    assert.equal(rec.noChange, true);
+    assert.equal(rec.recommendation.configId, "vanilla");
+    assert.equal(rec.fastPath.configId, "mtp");
+    assert.match(rec.reasoning, /No config beat the clean baseline/);
+  });
+
+  it("flags the beauty path as within-noise of the fast path in the reasoning", () => {
+    // Reproduces the 3.x confusion: beauty path (thinking on) has higher raw
+    // tps but is within its own noise of the fast path, and counts thinking
+    // tokens. The reasoning must explain why the fast path is still the pick.
+    const results = [
+      result("vanilla", "vanilla", 56.0, { mad: 0.25 }),
+      result("ane", "ANE prefill", 57.45, { mad: 0.05, settings: { qwen35_ane_prefill_enabled: true } }),
+      result("thinking", "thinking + budget", 58.1, { mad: 0.7, family: "thinking", settings: { enable_thinking: true } }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.ok, true);
+    assert.equal(rec.recommendation.configId, "ane");
+    assert.match(rec.reasoning, /within noise of the fast path/);
+    assert.match(rec.reasoning, /counts thinking tokens/);
+  });
+});
+
+describe("isThinkingOn", () => {
+  it("flags thinking and mtp-thinking configs", () => {
+    assert.equal(isThinkingOn({ configId: "thinking" }), true);
+    assert.equal(isThinkingOn({ configId: "mtp-thinking" }), true);
+    assert.equal(isThinkingOn({ configId: "vanilla" }), false);
+    assert.equal(isThinkingOn({ configId: "mtp" }), false);
+    assert.equal(isThinkingOn({ configId: "ane" }), false);
   });
 });
 

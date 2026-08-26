@@ -19,7 +19,7 @@ import { join } from "node:path";
 const THINKING_CONFIGS = new Set(["thinking", "mtp-thinking"]);
 const REAL_DIFFERENCE_MULTIPLE = 2;
 
-function isThinkingOn(result) {
+export function isThinkingOn(result) {
   return THINKING_CONFIGS.has(result.configId);
 }
 
@@ -69,9 +69,11 @@ function fmtAccept(r) {
   return pct != null ? `, accept ${pct.toFixed(1)}%` : "";
 }
 
-function buildReasoning(fastPath, beautyPath, all) {
+function buildReasoning({ fastPath, beautyPath, baseline, noChange, beautyWithinNoise }) {
+  if (noChange) {
+    return "No config beat the clean baseline beyond measurement noise (2× MAD) — keeping your current settings.";
+  }
   const parts = [];
-  const baseline = all.find((r) => r.configId === "vanilla");
   if (fastPath) {
     parts.push(`${fastPath.label} — ${fmtTps(fastPath)}${fmtAccept(fastPath)}`);
     if (baseline && baseline.configId !== fastPath.configId && baseline.summary?.median) {
@@ -81,7 +83,14 @@ function buildReasoning(fastPath, beautyPath, all) {
     }
   }
   if (beautyPath) {
-    parts.push(`Beauty path: ${beautyPath.label} at ${fmtTps(beautyPath)}${fmtAccept(beautyPath)}`);
+    // When the beauty path's apparent edge is within noise of the fast path,
+    // say so — its higher tps also counts thinking tokens (not useful output),
+    // so it is not a reliable speed gain. This is the case that looked like a
+    // bug in 3.x: beauty path ranked first but fast path recommended.
+    const caveat = beautyWithinNoise
+      ? " — within noise of the fast path, and its tps counts thinking tokens, so not a reliable speed gain"
+      : "";
+    parts.push(`Beauty path: ${beautyPath.label} at ${fmtTps(beautyPath)}${fmtAccept(beautyPath)}${caveat}`);
   }
   return parts.join(" ");
 }
@@ -101,15 +110,34 @@ export function recommendOptimal(results) {
 
   const fastPath = fast[0] ?? null;
   const beautyPath = beauty[0] ?? null;
-  const recommendation = fastPath ?? beautyPath;
+  const baseline = valid.find((r) => r.configId === "vanilla") ?? null;
+
+  // The fast path is v1's recommendation — but only if it actually beats the
+  // clean baseline beyond measurement noise. If the fastest thinking-off
+  // config is within 2× MAD of vanilla, no feature measurably helps, so we
+  // report that honestly (noChange) instead of dressing up a tie as a win.
+  // The apply step then restores the user's prior settings rather than
+  // applying a no-op.
+  let recommendation = fastPath ?? beautyPath;
+  let noChange = false;
+  if (fastPath && baseline && baseline.configId !== fastPath.configId) {
+    if (compareReal(fastPath, baseline) === "noise") {
+      recommendation = baseline;
+      noChange = true;
+    }
+  }
   if (!recommendation) return { ok: false, reason: "no-results" };
+
+  const beautyWithinNoise =
+    Boolean(beautyPath) && Boolean(fastPath) && compareReal(beautyPath, fastPath) === "noise";
 
   return {
     ok: true,
     fastPath,
     beautyPath,
     recommendation,
-    reasoning: buildReasoning(fastPath, beautyPath, valid),
+    noChange,
+    reasoning: buildReasoning({ fastPath, beautyPath, baseline, noChange, beautyWithinNoise }),
   };
 }
 
@@ -123,6 +151,7 @@ export async function writeOptimalJson(runDir, recommendation) {
     recommended: slim(recommendation.recommendation),
     fastPath: slim(recommendation.fastPath),
     beautyPath: slim(recommendation.beautyPath),
+    noChange: Boolean(recommendation.noChange),
     reasoning: recommendation.reasoning,
   };
   await writeFile(join(runDir, "optimal.json"), JSON.stringify(payload, null, 2) + "\n");

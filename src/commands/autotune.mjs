@@ -18,8 +18,8 @@ import { apiRootUrl } from "../server-status.mjs";
 import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import {
-  parseOptions, status, theme, card,
-  promptChoice, promptConfirm, withSpinner, padEndVisible,
+  parseOptions, status, theme, card, maxWidth,
+  promptConfirm, padEndVisible,
 } from "../ui.mjs";
 import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported } from "../autotune/probe.mjs";
 import {
@@ -28,12 +28,11 @@ import {
 } from "../autotune/safety.mjs";
 import { generateGrid, estimateGridMinutes } from "../autotune/grid.mjs";
 import { sweepConfig } from "../autotune/sweep.mjs";
-import { recommendOptimal, writeOptimalJson, resultsFromJournal, compareReal } from "../autotune/recommend.mjs";
+import { recommendOptimal, writeOptimalJson, resultsFromJournal, compareReal, isThinkingOn } from "../autotune/recommend.mjs";
 
 const COL_LABEL = 24;
 const COL_TPS = 10;
 const COL_ACCEPT = 9;
-const COL_DELTA = 10;
 
 function fmtTps(median) {
   return median != null ? `${median.toFixed(1)} tps` : "—";
@@ -104,18 +103,22 @@ async function probeForAutotune(profile, { nonInteractive = false } = {}) {
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
 
 function formatGridTable(rows) {
+  // card inner width — matches cli-kit's card(): maxWidth() - 4 (borders+padding).
+  const inner = maxWidth() - 4;
   const lines = [];
   for (const r of rows) {
-    const mark = r.tested ? `${theme.success("✓")}` : `${theme.warning("✗")}`;
-    const note = truncate(r.tested ? r.notes : r.skipReason, 38);
+    const mark = r.tested ? theme.success("✓") : theme.warning("✗");
     const est = r.tested ? `~${r.estMinutes}m` : "";
+    // line layout: label[COL_LABEL] + " " + mark + "  " + note[N] + " " + est
+    const noteWidth = Math.max(16, inner - COL_LABEL - 1 - 1 - 2 - 1 - est.length);
+    const note = truncate(r.tested ? r.notes : r.skipReason, noteWidth);
     lines.push(
-      `${padEndVisible(r.label, COL_LABEL)} ${mark}  ${padEndVisible(note, 38)} ${est}`,
+      `${padEndVisible(r.label, COL_LABEL)} ${mark}  ${padEndVisible(note, noteWidth)} ${est}`,
     );
   }
   const total = estimateGridMinutes(rows);
   lines.push("");
-  lines.push(theme.subtle(`${" ".repeat(COL_LABEL)} total est. ~${total}m (tested configs only)`));
+  lines.push(theme.subtle(`${" ".repeat(COL_LABEL + 4)}total est. ~${total}m (tested configs only)`));
   return lines.join("\n");
 }
 
@@ -133,12 +136,19 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
       console.log(theme.subtle(`  ✓ ${row.label} — already measured (resumed)`));
       continue;
     }
-    const result = await withSpinner(
-      `config ${i}/${tested.length} · ${row.label} (est ~${row.estMinutes}m)`,
-      () => sweepConfig(baseUrl, runDir, modelId, row),
-    );
+    // One dim "measuring" line, then one result line — no duplicated label.
+    // The start line carries the index + estimate; the result line carries
+    // the tps. (Replaces withSpinner, which printed the full label twice.)
+    console.log(theme.subtle(`  → ${i}/${tested.length} ${row.label} (est ~${row.estMinutes}m)…`));
+    let result;
+    try {
+      result = await sweepConfig(baseUrl, runDir, modelId, row);
+    } catch (err) {
+      console.log(status({ kind: "error", message: `  ${row.label} failed: ${err.message}` }));
+      throw err;
+    }
     if (!result.ok) {
-      console.log(status({ kind: "error", message: `  ${row.label} failed: ${result.reason}`}));
+      console.log(status({ kind: "error", message: `  ${row.label} failed: ${result.reason}` }));
       if (["precheck", "put", "ram-gate"].includes(result.reason)) {
         return { aborted: true, reason: result.reason, detail: result.detail };
       }
@@ -146,37 +156,57 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
       continue;
     }
     fresh.push(result);
-    const vs = result.summary.median != null ? `→ ${fmtTps(result.summary.median)}` : "";
+    const vs = result.summary.median != null ? fmtTps(result.summary.median) : "—";
     const acc = fmtAccept(result.summary.mtp);
-    console.log(`  ${theme.success("✓")} ${padEndVisible(row.label, COL_LABEL)} ${padEndVisible(vs, COL_TPS + 2)} accept ${acc}`);
+    console.log(`  ${theme.success("✓")} ${padEndVisible(row.label, COL_LABEL)} ${padEndVisible(vs, COL_TPS)}  accept ${acc}`);
   }
   return { aborted: false, fresh };
 }
 
 // ── ⑤ Report ────────────────────────────────────────────────────────────────
 
-function resultsTable(results, baseline) {
+function resultRow(r, baseline, recId) {
+  const med = fmtTps(r.summary.median);
+  const acc = fmtAccept(r.summary.mtp);
+  let delta = "—";
+  if (r.configId === "vanilla") {
+    delta = "(baseline)";
+  } else if (baseline && baseline.summary.median && r.summary.median) {
+    const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
+    const sign = pct >= 0 ? "+" : "";
+    const real = compareReal(r, baseline);
+    delta = real === "noise" ? `${sign}${pct.toFixed(0)}%  ≈ tie` : `${sign}${pct.toFixed(0)}%`;
+  }
+  const isRec = r.configId === recId;
+  const prefix = isRec ? `${theme.success("★")} ` : "  ";
+  const label = isRec ? theme.bold(r.label) : r.label;
+  return `${prefix}${padEndVisible(label, COL_LABEL)} ${padEndVisible(med, COL_TPS)} ${padEndVisible(acc, COL_ACCEPT)} ${delta}`;
+}
+
+function resultsTable(results, baseline, recommendation) {
+  // Group by path so the recommendation (fastest thinking-off) is
+  // self-evident, instead of the beauty path ranking first by raw tps.
+  const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
+  const fast = results.filter((r) => !isThinkingOn(r)).sort((a, b) => b.summary.median - a.summary.median);
+  const beauty = results.filter(isThinkingOn).sort((a, b) => b.summary.median - a.summary.median);
   const lines = [];
-  for (const r of results) {
-    const med = fmtTps(r.summary.median);
-    const acc = fmtAccept(r.summary.mtp);
-    let delta = "—";
-    if (baseline && r.configId !== "vanilla" && baseline.summary.median && r.summary.median) {
-      const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
-      const sign = pct >= 0 ? "+" : "";
-      const real = compareReal(r, baseline);
-      const flag = real === "noise" ? " †" : "";
-      delta = `${sign}${pct.toFixed(0)}%${flag}`;
-    }
-    lines.push(
-      `${padEndVisible(r.label, COL_LABEL)} ${padEndVisible(med, COL_TPS)} ${padEndVisible(acc, COL_ACCEPT)} ${padEndVisible(delta, COL_DELTA)}`,
-    );
+  if (fast.length) {
+    lines.push(theme.bold("fast path — thinking off (raw output speed)"));
+    for (const r of fast) lines.push(resultRow(r, baseline, recId));
+  }
+  if (beauty.length) {
+    if (fast.length) lines.push("");
+    lines.push(theme.bold("beauty path — thinking on (includes reasoning tokens)"));
+    for (const r of beauty) lines.push(resultRow(r, baseline, recId));
   }
   return lines.join("\n");
 }
 
 async function writeResultsMd(runDir, { modelId, results, recommendation, runDir: rd }) {
   const baseline = results.find((r) => r.configId === "vanilla");
+  const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
+  const fast = results.filter((r) => !isThinkingOn(r)).sort((a, b) => b.summary.median - a.summary.median);
+  const beauty = results.filter(isThinkingOn).sort((a, b) => b.summary.median - a.summary.median);
   const lines = [];
   lines.push(`# Autotune report — ${modelId}`);
   lines.push("");
@@ -185,23 +215,33 @@ async function writeResultsMd(runDir, { modelId, results, recommendation, runDir
   lines.push("");
   lines.push("## Speed sweep");
   lines.push("");
-  lines.push("| config | median tps | accept | vs vanilla | noise |");
-  lines.push("|---|---|---|---|---|");
-  for (const r of results) {
-    const med = r.summary.median != null ? r.summary.median.toFixed(2) : "—";
-    const acc = r.summary.mtp?.acceptPct != null ? `${r.summary.mtp.acceptPct.toFixed(1)}%` : "—";
-    let delta = "—";
-    let noise = "";
-    if (baseline && r.configId !== "vanilla" && baseline.summary.median && r.summary.median) {
-      const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
-      const sign = pct >= 0 ? "+" : "";
-      delta = `${sign}${pct.toFixed(0)}%`;
-      noise = compareReal(r, baseline) === "noise" ? "noise" : "real";
+  const writeGroup = (heading, group) => {
+    if (!group.length) return;
+    lines.push(`### ${heading}`);
+    lines.push("");
+    lines.push("| config | median tps | accept | vs vanilla | noise | rec |");
+    lines.push("|---|---|---|---|---|---|");
+    for (const r of group) {
+      const med = r.summary.median != null ? r.summary.median.toFixed(2) : "—";
+      const acc = r.summary.mtp?.acceptPct != null ? `${r.summary.mtp.acceptPct.toFixed(1)}%` : "—";
+      let delta = "—";
+      let noise = "";
+      if (r.configId === "vanilla") {
+        delta = "(baseline)";
+      } else if (baseline && baseline.summary.median && r.summary.median) {
+        const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
+        const sign = pct >= 0 ? "+" : "";
+        delta = `${sign}${pct.toFixed(0)}%`;
+        noise = compareReal(r, baseline) === "noise" ? "tie" : "real";
+      }
+      const rec = r.configId === recId ? "★" : "";
+      lines.push(`| ${r.label} | ${med} | ${acc} | ${delta} | ${noise} | ${rec} |`);
     }
-    lines.push(`| ${r.label} | ${med} | ${acc} | ${delta} | ${noise} |`);
-  }
-  lines.push("");
-  lines.push("† = difference inside 2× the within-config noise (MAD); treat as a tie.");
+    lines.push("");
+  };
+  writeGroup("Fast path — thinking off (raw output speed)", fast);
+  writeGroup("Beauty path — thinking on (includes reasoning tokens)", beauty);
+  lines.push("≈ tie = difference inside 2× the within-config noise (MAD); not a real difference. ★ = recommended.");
   lines.push("");
   if (recommendation.ok) {
     lines.push("## Recommendation");
@@ -253,6 +293,14 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
     await discardSweep(baseUrl, runDir, modelId, baselineSettings);
     return;
   }
+  // No config beat the clean baseline beyond noise — don't dress up a tie as
+  // a win. Restore the user's prior settings and say so.
+  if (recommendation.noChange) {
+    console.log(card({ title: "Recommendation", tone: "accent", body: recommendation.reasoning }));
+    console.log(status({ kind: "info", message: "Nothing beat the baseline beyond noise — restoring your original settings." }));
+    await discardSweep(baseUrl, runDir, modelId, baselineSettings);
+    return;
+  }
   const rec = recommendation.recommendation;
   console.log(card({
     title: "Recommended",
@@ -265,7 +313,7 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
     ],
   }));
 
-  const apply = autoApply || await promptConfirm({ message: "Apply these settings?", initialValue: true });
+  const apply = autoApply || await promptConfirm({ message: `Apply ${rec.label}?`, initialValue: true });
   if (apply) {
     const result = await putOmlxModelSettings(apiRootUrl(baseUrl), modelId, rec.settings);
     if (result.ok) {
@@ -358,6 +406,7 @@ export async function autotuneCommand(argv) {
       ["est. total", `~${estimateGridMinutes(rows)}m`],
     ],
   }));
+  console.log("");
   console.log(card({ title: "Dry-run plan", tone: "accent", body: formatGridTable(rows) }));
 
   // --dry-run: plan only, no sweep, no mutation.
@@ -375,24 +424,19 @@ export async function autotuneCommand(argv) {
       `Another autotune sweep is already running (pid ${lock.holder?.pid}, model ${lock.holder?.modelId}). One sweep at a time — the oMLX server has one GPU.`,
     );
   }
+  console.log("");
   console.log(theme.subtle(`Run dir: ${runDir} · snapshot ${snapshot.hadEntry ? "captured (restores on discard)" : "no prior entry (resets to baseline on discard)"}`));
 
   let sweepRan = false;
   try {
-    // ② Mode pick — speed-only in v1; quality stubbed. Skipped in --yes.
+    // ② Confirm the sweep. v1 is speed-only; the quality tune is v2 (#20),
+    // so there is no mode pick — one confirm after the plan, with room to breathe.
     if (!yes) {
-      const mode = await promptChoice({
-        message: "Tune mode",
-        choices: [
-          { value: "speed", label: "Speed tune", hint: "~30-60 min" },
-          { value: "quality", label: "Speed + quality tune", hint: "coming in v2 (#20)", disabled: true },
-        ],
-        defaultValue: "speed",
+      const testedCount = rows.filter((r) => r.tested).length;
+      const start = await promptConfirm({
+        message: `Start the speed sweep? (~${estimateGridMinutes(rows)}m, ${testedCount} configs)`,
+        initialValue: true,
       });
-      if (mode === "quality") {
-        console.log(status({ kind: "info", message: "Quality tune arrives in v2 (#20). Running speed tune." }));
-      }
-      const start = await promptConfirm({ message: "Start the sweep?", initialValue: true });
       if (!start) {
         console.log(theme.subtle("Sweep cancelled. Restoring your original settings."));
         await restoreSettingsSnapshot(apiRootUrl(baseUrl), runDir);
@@ -422,10 +466,11 @@ export async function autotuneCommand(argv) {
     console.log(card({
       title: "Speed sweep results",
       tone: "accent",
-      body: resultsTable(results, baseline),
+      body: resultsTable(results, baseline, recommendation),
     }));
-    console.log(theme.subtle("  † = inside 2× noise (MAD); treat as a tie."));
+    console.log(theme.subtle("  ≈ = within 2× noise (MAD); not a real difference.  ★ = recommended (fastest thinking-off config)."));
     console.log(theme.subtle(`  Full report: ${join(runDir, "results.md")}`));
+    console.log("");
 
     // ⑥⑦ Apply / discard.
     await applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baselineSettings, autoApply: yes });
