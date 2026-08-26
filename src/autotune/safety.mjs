@@ -19,7 +19,7 @@ import { readOmlxModelSettings } from "../mlx-discovery.mjs";
 import { putOmlxModelSettings } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import { slugModelId } from "../benchmark.mjs";
-import { fetchOmlxAdminModels, loadedModelIds } from "./probe.mjs";
+import { fetchOmlxAdminModels, inferenceLoadedIds } from "./probe.mjs";
 
 const LOCK_FILE = "autotune.lock";
 const JOURNAL_FILE = "sweep.jsonl";
@@ -105,7 +105,7 @@ export async function waitForRam(minFreeBytes, { timeoutMs = 20000, pollMs = 150
 export async function ensureNothingLoaded(baseUrl, { timeoutMs = UNLOAD_TIMEOUT_MS } = {}) {
   const initial = await fetchOmlxAdminModels(baseUrl);
   if (!initial.ok) return initial;
-  const toUnload = loadedModelIds(initial.models);
+  const toUnload = inferenceLoadedIds(initial.models);
 
   for (const id of toUnload) {
     try {
@@ -114,8 +114,10 @@ export async function ensureNothingLoaded(baseUrl, { timeoutMs = UNLOAD_TIMEOUT_
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(timeoutMs),
       });
-      // 400 "not loaded" is success — the goal is unloaded, not the un-load.
-      if (!response.ok && !(response.status === 400 && /not loaded/i.test(await response.text().catch(() => "")))) {
+      // 400 "not loaded" and 404 "not found" are both success — the goal is
+      // unloaded, not the un-load. 404 means the model isn't in the engine pool
+      // (e.g. a helper that surfaced as loaded but isn't GPU-resident).
+      if (!response.ok && response.status !== 404 && !(response.status === 400 && /not loaded/i.test(await response.text().catch(() => "")))) {
         return { ok: false, reason: "http", detail: `unload ${id}: HTTP ${response.status}` };
       }
     } catch (err) {
@@ -124,14 +126,16 @@ export async function ensureNothingLoaded(baseUrl, { timeoutMs = UNLOAD_TIMEOUT_
   }
 
   // Verify with a fresh probe — the server reports truth, we don't assume it.
+  // Helper engines (MarkItDown) stay "loaded" but aren't GPU-resident, so they
+  // don't count against the one-model invariant.
   const deadline = Date.now() + timeoutMs;
   let verify = await fetchOmlxAdminModels(baseUrl);
-  while (verify.ok && loadedModelIds(verify.models).length > 0 && Date.now() < deadline) {
+  while (verify.ok && inferenceLoadedIds(verify.models).length > 0 && Date.now() < deadline) {
     await sleep(1000);
     verify = await fetchOmlxAdminModels(baseUrl);
   }
   if (!verify.ok) return verify;
-  const stillLoaded = loadedModelIds(verify.models);
+  const stillLoaded = inferenceLoadedIds(verify.models);
   if (stillLoaded.length > 0) {
     return { ok: false, reason: "still-loaded", detail: stillLoaded.join(", "), unloadedIds: toUnload };
   }

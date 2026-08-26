@@ -24,7 +24,32 @@ const {
   appendJournal,
   readJournal,
 } = await import("../src/autotune/safety.mjs");
-const { normalizeOmlxAdminModel, loadedModelIds } = await import("../src/autotune/probe.mjs");
+const { normalizeOmlxAdminModel, loadedModelIds, inferenceLoadedIds, needsMtplxImport } = await import("../src/autotune/probe.mjs");
+
+describe("needsMtplxImport", () => {
+  it("flags the side-car-not-imported state", () => {
+    const m = normalizeOmlxAdminModel({
+      id: "Qwen3.5-9B-MTPLX-Optimized-Speed",
+      mtp_compatible: false,
+      mtp_compatibility_reason: "MTPLX side-car detected but not imported. Import it to merge the MTP head into the checkpoint index.",
+    });
+    assert.equal(needsMtplxImport(m), true);
+  });
+
+  it("is false once MTP is compatible (post-import)", () => {
+    const m = normalizeOmlxAdminModel({ id: "X", mtp_compatible: true, mtp_compatibility_reason: "" });
+    assert.equal(needsMtplxImport(m), false);
+  });
+
+  it("is false for the stripped-weights case (no side-car to import)", () => {
+    const m = normalizeOmlxAdminModel({
+      id: "X-4bit",
+      mtp_compatible: false,
+      mtp_compatibility_reason: "Config declares MTP layers but the weight files contain neither mtp.* tensors nor native nextn layers.",
+    });
+    assert.equal(needsMtplxImport(m), false);
+  });
+});
 
 describe("autotune probe normalization", () => {
   it("normalizes a raw admin entry", () => {
@@ -57,6 +82,16 @@ describe("autotune probe normalization", () => {
       normalizeOmlxAdminModel({ id: "c" }),
     ];
     assert.deepEqual(loadedModelIds(models), ["a"]);
+  });
+
+  it("inferenceLoadedIds excludes non-GPU-resident helpers like MarkItDown", () => {
+    const models = [
+      normalizeOmlxAdminModel({ id: "Qwen3.5-9B", loaded: true, engine_type: "vlm" }),
+      normalizeOmlxAdminModel({ id: "MarkItDown", loaded: true, engine_type: "markitdown" }),
+      normalizeOmlxAdminModel({ id: "DFlash-draft", loaded: false, engine_type: "batched" }),
+    ];
+    assert.deepEqual(loadedModelIds(models), ["Qwen3.5-9B", "MarkItDown"]);
+    assert.deepEqual(inferenceLoadedIds(models), ["Qwen3.5-9B"]);
   });
 });
 

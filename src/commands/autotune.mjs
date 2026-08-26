@@ -20,7 +20,7 @@ import {
   parseOptions, status, theme, card,
   promptChoice, promptConfirm, withSpinner, padEndVisible,
 } from "../ui.mjs";
-import { probeOmlxModel, fetchOmlxAdminModels } from "../autotune/probe.mjs";
+import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported } from "../autotune/probe.mjs";
 import {
   acquireAutotuneLock, createRunDir, snapshotModelSettings,
   restoreSettingsSnapshot, readJournal,
@@ -74,6 +74,19 @@ async function preflight(profile) {
     );
   }
 
+  // Auto-import an MTPLX side-car MTP head if the model ships one unimported
+  // (oMLX doesn't auto-merge it; without this the MTP grid row would be
+  // skipped on otherwise-MTP-capable checkpoints). Non-destructive, idempotent.
+  const mtp = await ensureMtplxImported(baseUrl, probe.model);
+  const model = mtp.model;
+  if (mtp.attempted) {
+    if (mtp.flipped) {
+      console.log(status({ kind: "success", message: `Imported MTPLX side-car (${mtp.importResult.merged} MTP tensors) — MTP now available.` }));
+    } else {
+      console.log(status({ kind: "warning", message: `MTPLX side-car import did not flip MTP compatibility (${mtp.importResult?.reason ?? "re-probe unchanged"}); MTP row will be skipped.` }));
+    }
+  }
+
   // Run dir + snapshot + lock.
   const runDir = await createRunDir(modelId);
   const snapshot = await snapshotModelSettings(runDir, modelId);
@@ -84,7 +97,7 @@ async function preflight(profile) {
     );
   }
 
-  return { baseUrl, modelId, model: probe.model, allModels: admin.models, runDir, snapshot, release: lock.release };
+  return { baseUrl, modelId, model, allModels: admin.models, runDir, snapshot, release: lock.release };
 }
 
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
