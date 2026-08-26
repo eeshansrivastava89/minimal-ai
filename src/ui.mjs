@@ -1,9 +1,9 @@
 import pc from "picocolors";
 import { fitCheck } from "./hardware.mjs";
-import { renderList } from "@eeshans/cli-kit";
+import { renderList } from "./ui/index.mjs";
 
 export { pc };
-export * from "@eeshans/cli-kit";
+export * from "./ui/index.mjs";
 
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
