@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { execCommand, execFileAsync } from "./exec.mjs";
 import { isNewerVersion } from "./updates.mjs";
 import { readOmlxModelSettings } from "./mlx-discovery.mjs";
-import { formatBytes, status, theme, promptConfirm, screenHeader, card } from "./ui.mjs";
+import { formatBytes, status, theme, promptConfirm, screenHeader } from "./ui.mjs";
 
 const OMLX_CLI_SHIM = join(homedir(), ".omlx", "bin", "omlx");
 const RELEASES_API = "https://api.github.com/repos/jundot/omlx/releases";
@@ -195,10 +195,11 @@ function findAppInVolume(mountPoint) {
 
 export async function installOmlx() {
   console.log(screenHeader({ title: "oMLX", subtitle: "local LLM server for Apple Silicon" }));
-  console.log(card({
-    title: "About",
-    body: "Source: https://github.com/jundot/omlx (by jundot)\nRuns MLX models with continuous batching and tiered KV caching.\nAfter installation, the oMLX app will open — you can manage the server from its menubar icon. Once the server is running, close the app window and come back to minimal-ai to use your model.",
-  }));
+  console.log(theme.subtle("Source: https://github.com/jundot/omlx (by jundot)"));
+  console.log("Runs MLX models with continuous batching and tiered KV caching.");
+  console.log("After installation, the oMLX app will open — you can manage the server from its");
+  console.log("menubar icon. Once the server is running, close the app window and come back");
+  console.log(`to minimal-ai to use your model.\n`);
 
   const release = await latestStableOmlxRelease();
   if (!release) {

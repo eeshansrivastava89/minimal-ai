@@ -9,7 +9,7 @@ import { runningProfiles } from "../process.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { configuredHarness, listHarnesses, harnessFor, setConfiguredHarness, syncAllProfiles } from "../harnesses.mjs";
-import { card, renderList, status, theme, promptChoice, promptText } from "../ui.mjs";
+import { renderList, status, theme, promptChoice, promptText } from "../ui.mjs";
 
 export async function runtimeStatusFlow() {
   while (true) {
@@ -44,7 +44,8 @@ export async function runtimeStatusFlow() {
     runtimeRows.push([`${harness.label} (harness)`, harnessInstalled ? status({ kind: "success", message: "installed" }) : status({ kind: "error", message: "not found" })]);
 
     console.log();
-    console.log(card({ title: "Runtime status", body: renderList(runtimeRows) }));
+    console.log(theme.bold("Runtime status"));
+    console.log(renderList(runtimeRows));
 
     if (running.length > 0) {
       const runningRows = running.map(({ profile, status: s }) => {
@@ -53,7 +54,8 @@ export async function runtimeStatusFlow() {
         return [profile.label, `${backend.label} · ${state} · ${profile.baseUrl}`];
       });
       console.log();
-      console.log(card({ title: "Running models", body: renderList(runningRows) }));
+      console.log(theme.bold("Running models"));
+      console.log(renderList(runningRows));
     }
 
     console.log("");
@@ -100,7 +102,8 @@ export async function discoveryPathsFlow() {
     });
 
     console.log();
-    console.log(card({ title: "Discovery paths", body: renderList(pathRows) }));
+    console.log(theme.bold("Discovery paths"));
+    console.log(renderList(pathRows));
 
     console.log("");
 

@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileAsync } from "../exec.mjs";
-import { card, renderList, status, theme } from "../ui.mjs";
+import { renderList, status, theme } from "../ui.mjs";
 
 export async function statusCommand() {
   await ensureDirs();
@@ -40,7 +40,8 @@ export async function statusCommand() {
 
   summaryRows.push(["Next step", profiles.length > 0 ? "Run minimal-ai to start chatting" : status({ kind: "warning", message: "Run minimal-ai to set up a model" })]);
 
-  console.log(card({ title: "Status", body: renderList(summaryRows) }));
+  console.log(theme.bold("Status"));
+  console.log(renderList(summaryRows));
 
   const omlxCacheDir = join(homedir(), ".omlx", "cache");
   if (existsSync(omlxCacheDir)) {
@@ -48,10 +49,11 @@ export async function statusCommand() {
       const { stdout: duOutput } = await execFileAsync("du", ["-sh", omlxCacheDir], { encoding: "utf8" });
       const cacheSize = duOutput.split(/\s+/)[0];
       console.log("");
-      console.log(card({ title: "oMLX cache", body: renderList([
+      console.log(theme.bold("oMLX cache"));
+      console.log(renderList([
         ["Location", theme.subtle(omlxCacheDir)],
         ["Disk usage", theme.bold(cacheSize)],
-      ]) }));
+      ]));
     } catch (err) {
       console.log(theme.subtle(`  (disk usage unavailable: ${err.message})`));
     }
@@ -69,22 +71,26 @@ export async function statusCommand() {
       detailRows.push(["Server", `${backend.label} at ${profile.baseUrl}`]);
     }
     console.log("");
-    console.log(card({ title: "Managed servers", body: renderList(detailRows) }));
+    console.log(theme.bold("Managed servers"));
+    console.log(renderList(detailRows));
   }
 
   if (running.length === 0) return;
 
+  // No free-standing "Running" card for a single how-to-stop row — one
+  // inline hint is enough.
   console.log("");
-  console.log(card({ title: "Running", body: renderList([["Stop", "minimal-ai stop"]]) }));
+  console.log(theme.subtle(`  Stop: minimal-ai stop`));
   for (const { profile, status: s } of running) {
     const backend = backendFor(profile.backend);
     console.log("");
-    console.log(card({ title: profile.label, body: renderList([
+    console.log(theme.bold(profile.label));
+    console.log(renderList([
       ["Status", s.ready ? status({ kind: "success", message: "Ready" }) : status({ kind: "warning", message: "Starting up" })],
       ["Runs with", backend.label],
       ["Process", `pid ${s.pid}`],
       ["Server", profile.baseUrl],
-    ]) }));
+    ]));
   }
   console.log("");
 }

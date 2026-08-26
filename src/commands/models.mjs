@@ -101,7 +101,7 @@ async function showModelPicker(catalog) {
     const label = backendLabel === sourceLabel ? backendLabel : `${backendLabel} · ${sourceLabel}`;
     const sep = `${theme.bold(label)} ${theme.subtle(`(${items.length})`)}`;
     const groupItems = items.map((item) => {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
     groups.push({ separator: sep, items: groupItems });
@@ -109,7 +109,7 @@ async function showModelPicker(catalog) {
 
   if (setupItems.length > 0) {
     const groupItems = setupItems.map((item) => {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth, compact: true });
+      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
       return { value: opt.value, label: opt.label, description: opt.description };
     });
     groups.push({ separator: theme.warning(`Needs setup (${setupItems.length})`), items: groupItems });

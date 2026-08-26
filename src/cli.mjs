@@ -5,7 +5,7 @@ import { fetchRemoteChangelog, entriesBetween, printReleaseNotes } from "./chang
 import { checkLlamaUpdate, installLlamaRelease } from "./runtime.mjs";
 import { checkOmlxUpdate } from "./omlx-runtime.mjs";
 import { checkOllamaUpdate } from "./ollama-runtime.mjs";
-import { createCli, runCli, appHeader, section, infoCard, renderList, status, formatError, theme, promptConfirm } from "./ui.mjs";
+import { createCli, runCli, appHeader, sectionLine, maxWidth, renderList, status, formatError, theme, promptConfirm } from "./ui.mjs";
 
 import { mainFlow } from "./commands/main.mjs";
 import { modelsCommand } from "./commands/models.mjs";
@@ -20,7 +20,7 @@ async function offerUpdate() {
   if (!update) return false;
 
   console.log();
-  console.log(infoCard("Update available", `v${update.latest} is available (you have v${update.current}).\nRun: minimal-ai update`, { tone: "warning" }));
+  console.log(status({ kind: "warning", message: `Update available: v${update.latest} (you have v${update.current}) — run: minimal-ai update` }));
 
   const remoteEntries = await fetchRemoteChangelog(`v${update.latest}`);
   const notes = entriesBetween(remoteEntries, update.current, update.latest);
@@ -56,7 +56,9 @@ async function offerRuntimeUpdates() {
     rows.push([u.kind, `${u.latest} available (you have ${u.installed}) — ${EXTERNAL_UPDATE_HINTS[u.kind]}`]);
   }
   console.log();
-  console.log(theme.bold(theme.warning(section("Runtime updates available"))));
+  // sectionLine, styled once — section() already bolds+accents, and nesting
+  // it inside theme.warning here used to make one of the two styles dead.
+  console.log(theme.bold(theme.warning(sectionLine("Runtime updates available", maxWidth()))));
   console.log(renderList(rows));
 
   if (!llamaUpdate) return;

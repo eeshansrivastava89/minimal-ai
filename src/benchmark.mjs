@@ -17,7 +17,7 @@ import { loadConfig, saveConfig } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
 import { effectiveModelId } from "./profiles.mjs";
 import { parseModelName } from "./model-name.mjs";
-import { promptChoice, promptConfirm, promptText, card, status, theme } from "./ui.mjs";
+import { promptChoice, promptConfirm, promptText, renderList, status, theme } from "./ui.mjs";
 import { runProfile } from "./launch.mjs";
 import { configuredHarness } from "./harnesses.mjs";
 
@@ -219,15 +219,12 @@ export async function prepareBenchmarkRun({ repoPath, benchmark, profile, harnes
 
   console.log("");
   console.log(status({ kind: "success", message: "Run slot prepared" }));
-  console.log(card({
-    title: "Run",
-    rows: [
-      ["Directory", runDirectory],
-      ["Benchmark", benchmark.title],
-      ["Model", modelId],
-      ["Source", backendLabel],
-    ],
-  }));
+  console.log(renderList([
+    ["Directory", runDirectory],
+    ["Benchmark", benchmark.title],
+    ["Model", modelId],
+    ["Source", backendLabel],
+  ]));
 
   return runDirectory;
 }

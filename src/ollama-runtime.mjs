@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { execCommand, execFileAsync, commandExists, sleep } from "./exec.mjs";
-import { status, theme, screenHeader, card } from "./ui.mjs";
+import { status, theme, screenHeader } from "./ui.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { serverReady } from "./server-check.mjs";
 
@@ -128,10 +128,9 @@ async function installOllamaFlow() {
 
 export async function installOllama() {
   console.log(screenHeader({ title: "Ollama", subtitle: "local LLM runner" }));
-  console.log(card({
-    title: "About",
-    body: "Source: https://github.com/ollama/ollama\nManages model downloads, loading, and unloading automatically.\nOn Apple Silicon, uses MLX backend for MLX models and llama.cpp for GGUF.",
-  }));
+  console.log(theme.subtle("Source: https://github.com/ollama/ollama"));
+  console.log("Manages model downloads, loading, and unloading automatically.");
+  console.log("On Apple Silicon, uses MLX backend for MLX models and llama.cpp for GGUF.\n");
   return await installOllamaFlow();
 }
 

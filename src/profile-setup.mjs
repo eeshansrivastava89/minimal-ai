@@ -4,7 +4,7 @@ import { prepareMemoryEstimate, computeMemoryTotal } from "./estimate.mjs";
 import { availableRamBytes, installedRamGB } from "./hardware.mjs";
 import { findLlamaServer } from "./config.mjs";
 import { backendFor } from "./backends.mjs";
-import { formatBytes, formatCtxLabel, renderList, card, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber } from "./ui.mjs";
+import { formatBytes, formatCtxLabel, renderList, padEndVisible, fitColor, renderMemoryEstimate, theme, status, promptConfirm, promptSelect, promptNumber, maxWidth } from "./ui.mjs";
 import { execFileAsync } from "./exec.mjs";
 import { detectGgufCapabilities, detectCapabilities, mtpEnabledFor } from "./capabilities.mjs";
 import { readOmlxModelSettings } from "./mlx-discovery.mjs";
@@ -219,7 +219,13 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, availableRam) {
   }
   const parallel = baseFlags.parallel ?? 1;
 
-  const rows = presets.map((ctx) => {
+  const cacheLabels = HEATMAP_CACHE_TYPES.map((t) => {
+    const choice = CACHE_CHOICES.find((c) => c.value === t);
+    const bytesInfo = choice?.hint?.match(/([\d.]+ bytes\/elem)/)?.[1] ?? "";
+    return `${t} ${theme.subtle(bytesInfo ? `(${bytesInfo})` : "")}`;
+  });
+
+  const allRows = presets.map((ctx) => {
     const cells = HEATMAP_CACHE_TYPES.map((cacheType) => {
       try {
         return computeMemoryTotal(prepared, { ...baseFlags, ctxSize: ctx, cacheTypeK: cacheType, cacheTypeV: cacheType });
@@ -230,13 +236,29 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, availableRam) {
     return { ctx, cells };
   });
 
-  const cacheLabels = HEATMAP_CACHE_TYPES.map((t) => {
-    const choice = CACHE_CHOICES.find((c) => c.value === t);
-    const bytesInfo = choice?.hint?.match(/([\d.]+ bytes\/elem)/)?.[1] ?? "";
-    return `${t} ${theme.subtle(bytesInfo ? `(${bytesInfo})` : "")}`;
-  });
+  // Width ceiling: with no card chrome the table still has to fit the
+  // terminal — drop the largest context presets until it does (never the
+  // currently-selected one).
+  const widthFor = (rows) => {
+    const col0 = Math.max(stripVTControlCharacters("Context").length, ...rows.map((r) => formatCtxLabel(r.ctx).length), "Custom".length) + 3;
+    const cols = HEATMAP_CACHE_TYPES.map((_, colIdx) => {
+      const cellLens = rows.map((row) => {
+        const est = row.cells[colIdx];
+        return est.totalBytes ? `~${formatBytes(est.totalBytes)}`.length : 1;
+      });
+      return Math.max(...cellLens, stripVTControlCharacters(cacheLabels[colIdx]).length) + 3;
+    });
+    return col0 + cols.reduce((a, b) => a + b, 0);
+  };
+  let rows = allRows;
+  while (rows.length > 2 && widthFor(rows) > maxWidth() - 2) {
+    const removable = allRows.filter((r) => r.ctx !== currentCtx && rows.includes(r));
+    if (removable.length <= 1) break;
+    const largest = removable.reduce((a, b) => (b.ctx > a.ctx ? b : a));
+    rows = rows.filter((r) => r !== largest);
+  }
 
-  const ctxLabels = presets.map(formatCtxLabel);
+  const ctxLabels = rows.map((r) => formatCtxLabel(r.ctx));
   const col0Width = Math.max(stripVTControlCharacters("Context").length, ...ctxLabels.map((l) => l.length), "Custom".length) + 3;
   const colWidths = HEATMAP_CACHE_TYPES.map((_, colIdx) => {
     const cellLens = rows.map((row) => {
@@ -263,6 +285,9 @@ function renderContextCacheHeatmap(prepared, baseFlags, maxCtx, availableRam) {
     lines.push(ctxCell + memCells.join(""));
   }
   lines.push(theme.subtle(padEndVisible("Custom", col0Width) + colWidths.map((w) => padEndVisible("—", w)).join("")));
+  if (rows.length < allRows.length) {
+    lines.push(theme.subtle(`(larger presets hidden — terminal too narrow)`));
+  }
 
   return lines.join("\n");
 }
@@ -304,12 +329,13 @@ async function configureLocalProfileInner(profile) {
   }
 
   console.log("");
-  console.log(card({ title: "Model overview", body: renderList([
+  console.log(theme.bold("Model overview"));
+  console.log(renderList([
     ["Model", theme.bold(profile.label)],
     ["Detected", capabilitySummary(caps)],
     ["Backend", "llama.cpp (local server)"],
     ["Model file", profile.modelPath],
-  ]) }));
+  ]));
 
   if (caps.mtp) {
     console.log("");
@@ -360,7 +386,8 @@ async function configureLocalProfileInner(profile) {
 
   if (hasKvParams) {
     console.log("");
-    console.log(card({ title: "Context & KV cache", body: renderContextCacheHeatmap(prepared, configured.flags, maxCtx, availableRam) }));
+    console.log(theme.bold("Context & KV cache — total RAM by context window"));
+    console.log(renderContextCacheHeatmap(prepared, configured.flags, maxCtx, availableRam));
 
     const ctxPresets = CONTEXT_PRESETS.filter((ctx) => ctx <= maxCtx);
     const currentCtx = configured.flags.ctxSize;
@@ -435,7 +462,8 @@ async function configureLocalProfileInner(profile) {
   }
 
   console.log("");
-  console.log(card({ title: "Memory estimate", body: renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags) }));
+  console.log(theme.bold("Memory estimate"));
+  console.log(renderMemoryEstimate(computeMemoryTotal(prepared, configured.flags), configured.flags));
 
   console.log("");
   samplerHints("Randomness · 0 = deterministic · 0.6 balanced · 0.9+ creative", "temperature", rec);
@@ -490,7 +518,8 @@ async function configureLocalProfileInner(profile) {
   configured = await askThinkingLevel(configured, "llama-cpp");
 
   console.log("");
-  console.log(card({ title: "Configuration summary", body: renderList([
+  console.log(theme.bold("Configuration summary"));
+  console.log(renderList([
     ["Model", theme.bold(configured.label)],
     ["Backend", configured.backend],
     ["Endpoint", configured.baseUrl],
@@ -508,10 +537,11 @@ async function configureLocalProfileInner(profile) {
     ["Flash attention", configured.flags.flashAttention],
     ["Jinja", configured.flags.jinja ? "on" : "off"],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
+    // NOTE: thinking capability is folded into the single Thinking row
+    // above — a second "Thinking: enabled" row here was duplicate noise.
     ...(mtpEnabledFor(configured) ? [["MTP", `enabled (${configured.flags.specDraftNMax ?? 2} draft tokens)`]] : []),
     ...(configured.capabilities?.vision ? [["Vision", "enabled"]] : []),
-    ...(configured.capabilities?.thinking ? [["Thinking", "enabled"]] : []),
-  ]) }));
+  ]));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
   return configured;
@@ -550,12 +580,13 @@ async function configureOmlxProfile(profile) {
   const serverSettings = await readOmlxModelSettings(modelId);
 
   console.log("");
-  console.log(card({ title: "Model overview", body: renderList([
+  console.log(theme.bold("Model overview"));
+  console.log(renderList([
     ["Model", theme.bold(profile.label)],
     ["Detected", capabilitySummary(facts)],
     ["Backend", "oMLX (managed server)"],
     ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
-  ]) }));
+  ]));
 
   if (facts.mtp) {
     console.log("");
@@ -583,18 +614,18 @@ async function configureOmlxProfile(profile) {
     }
   }
 
+  // Summary repeats only what changed since the overview — Model/Backend/
+  // Context were already shown above.
   console.log("");
-  console.log(card({ title: "Model setup", body: renderList([
-    ["Model", theme.bold(profile.label)],
-    ["Backend", "oMLX"],
-    ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
+  console.log(theme.bold("Setup summary"));
+  console.log(renderList([
     ["Thinking", configured.thinkingOff
       ? "off entirely (server-side, hard)"
       : (configured.thinkingLevel ?? "harness default") + (dflashOn && facts.thinking ? " · soft steering on DFlash" : "")],
     ...(configured.thinkingBudget ? [["Thinking budget", `${configured.thinkingBudget.toLocaleString()} tokens`]] : []),
     ...(mtpEnabledFor(configured) && facts.mtp ? [["MTP", "enabled"]] : []),
     ...(facts.vision ? [["Vision", "yes"]] : []),
-  ]) }));
+  ]));
   console.log(theme.subtle("  Server settings (quant, KV cache, MTP internals) live in the oMLX dashboard."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;
@@ -615,25 +646,24 @@ async function configureOllamaProfile(profile) {
 
   if (facts) {
     console.log("");
-    console.log(card({ title: "Model overview", body: renderList([
+    console.log(theme.bold("Model overview"));
+    console.log(renderList([
       ["Model", theme.bold(profile.label)],
       ["Detected", capabilitySummary(facts)],
       ["Backend", "Ollama (managed server)"],
       ["Context", facts.contextLength ? formatCtxLabel(facts.contextLength) : "unknown"],
       ...(facts.tools ? [["Tools", "yes"]] : []),
-    ]) }));
+    ]));
   }
 
   configured = await askThinkingLevel(configured, "ollama");
 
   console.log("");
-  console.log(card({ title: "Model setup", body: renderList([
-    ["Model", theme.bold(profile.label)],
-    ["Backend", "Ollama"],
+  console.log(theme.bold("Setup summary"));
+  console.log(renderList([
     ["Model ID", modelId],
     ["Thinking", configured.thinkingLevel ?? "harness default"],
-    ...(facts ? [["Detected", [capabilitySummary(facts), facts.tools ? "tools" : null].filter(Boolean).join(" · ")]] : []),
-  ]) }));
+  ]));
   console.log(theme.subtle("  Server settings live in the Ollama app / OLLAMA_* environment."));
 
   if (!(await ask(promptConfirm({ message: "Save profile with these settings?", initialValue: true })))) return null;

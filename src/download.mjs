@@ -4,7 +4,7 @@ import { parseModelName } from "./model-name.mjs";
 import { HF_HUB_DIR } from "./config.mjs";
 import { drafterTargetHint } from "./discovery-shared.mjs";
 import { basename } from "node:path";
-import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, card, renderList } from "./ui.mjs";
+import { promptText, promptConfirm, promptSelect, formatBytes, status, theme, renderList } from "./ui.mjs";
 
 export async function downloadHfGguf() {
   console.log(theme.subtle("  Browse models at huggingface.co/models"));
@@ -188,15 +188,13 @@ async function pickGgufQuant(repo, ggufFiles) {
   const recommended = fitting[fitting.length - 1];
 
   console.log();
-  console.log(card({
-    title: "Select quantization",
-    body: renderList([
-      ["Your RAM", `${installedRamGB()} GB`],
-      ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
-      ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
-      ["Agentic", "8-bit (Q8_0) preserves tool-calling fidelity better than 4-bit at long context"],
-    ]),
-  }));
+  console.log(theme.bold("Select quantization"));
+  console.log(renderList([
+    ["Your RAM", `${installedRamGB()} GB`],
+    ["Available", `~${formatBytes(availableRam)} (free + reclaimable)`],
+    ["Rule", "Lower quant = smaller/faster · Higher = better quality"],
+    ["Agentic", "8-bit (Q8_0) preserves tool-calling fidelity better than 4-bit at long context"],
+  ]));
   console.log();
 
   const choices = sorted.map((file) => {

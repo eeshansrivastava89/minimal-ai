@@ -9,8 +9,6 @@ export {
   appHeader,
   screenHeader,
   section,
-  card,
-  infoCard,
   status,
   logStatus,
   withSpinner,

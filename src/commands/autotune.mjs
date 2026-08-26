@@ -1,8 +1,8 @@
 // `minimal-ai autotune [profile]` — the speed-tune wizard (v1).
 //
-// Flow: ① pre-flight (server up, probe, snapshot, lock) → ② mode pick
-// (speed-only in v1; quality stubbed) → ③ dry-run plan card → ④ run with
-// live per-config progress → ⑤ report (results.md + optimal.json + terminal
+// Flow: ① pre-flight (server up, probe) → ② overview + plan → confirm
+// (BEFORE any side effects) → ③ run dir + snapshot + lock → ④ run with live
+// per-config progress → ⑤ report (results.md + optimal.json + terminal
 // summary) → ⑥⑦ apply (echo-verified PUT) / discard (restore snapshot).
 //
 // oMLX-only: the sweep drives the oMLX admin API. Policy lives in code; the
@@ -18,7 +18,7 @@ import { apiRootUrl } from "../server-status.mjs";
 import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import {
-  parseOptions, status, theme, card, maxWidth,
+  parseOptions, status, theme, renderList, maxWidth, wrapText,
   promptConfirm, padEndVisible,
 } from "../ui.mjs";
 import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported } from "../autotune/probe.mjs";
@@ -103,8 +103,8 @@ async function probeForAutotune(profile, { nonInteractive = false } = {}) {
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
 
 function formatGridTable(rows) {
-  // card inner width — matches cli-kit's card(): maxWidth() - 4 (borders+padding).
-  const inner = maxWidth() - 4;
+  // Plain table, no box — clamp to the terminal width directly.
+  const inner = maxWidth() - 2;
   const lines = [];
   for (const r of rows) {
     const mark = r.tested ? theme.success("✓") : theme.warning("✗");
@@ -299,22 +299,21 @@ async function applyOrDiscard({ baseUrl, runDir, modelId, recommendation, baseli
   // No config beat the clean baseline beyond noise — don't dress up a tie as
   // a win. Restore the user's prior settings and say so.
   if (recommendation.noChange) {
-    console.log(card({ title: "Recommendation", tone: "accent", body: recommendation.reasoning }));
     console.log(status({ kind: "info", message: "Nothing beat the baseline beyond noise — restoring your original settings." }));
+    console.log(theme.subtle(`  ${recommendation.reasoning}`));
     await discardSweep(baseUrl, runDir, modelId, baselineSettings);
     return;
   }
   const rec = recommendation.recommendation;
-  console.log(card({
-    title: "Recommended",
-    tone: "accent",
-    body: recommendation.reasoning,
-    rows: [
-      ["config", rec.label],
-      ["median tps", fmtTps(rec.summary.median)],
-      ...(rec.summary.mtp?.acceptPct != null ? [["MTP accept", fmtAccept(rec.summary.mtp)]] : []),
-    ],
-  }));
+  // The reasoning (the numbers behind the pick) must actually print — the old
+  // card primitive silently dropped it when rows were present.
+  console.log(theme.bold(`Recommended: ${rec.label}`));
+  for (const line of wrapText(recommendation.reasoning, maxWidth() - 2)) {
+    console.log(theme.subtle(`  ${line}`));
+  }
+  if (rec.summary.mtp?.acceptPct != null) {
+    console.log(`  MTP accept ${fmtAccept(rec.summary.mtp)}`);
+  }
 
   const apply = autoApply || await promptConfirm({ message: `Apply ${rec.label}?`, initialValue: true });
   if (apply) {
@@ -397,20 +396,18 @@ export async function autotuneCommand(argv) {
   const rows = generateGrid(model, allModels);
   const baselineSettings = rows.find((r) => r.id === "vanilla").settings;
 
-  console.log(card({
-    title: dryRun ? "Autotune — dry run" : "Autotune — speed tune",
-    tone: "accent",
-    body: `Model: ${modelId}`,
-    rows: [
-      ["MTP", model.mtpCompatible ? "compatible" : "not compatible"],
-      ["DFlash", model.dflashCompatible ? "compatible" : "not compatible"],
-      ["thinking default", String(model.thinkingDefault)],
-      ["tested configs", `${rows.filter((r) => r.tested).length}/${rows.length}`],
-      ["est. total", `~${estimateGridMinutes(rows)}m`],
-    ],
-  }));
+  console.log(theme.bold(`Autotune — ${dryRun ? "dry run" : "speed tune"}: ${modelId}`));
+  console.log(renderList([
+    ["MTP", model.mtpCompatible ? "compatible" : "not compatible"],
+    ["DFlash", model.dflashCompatible ? "compatible" : "not compatible"],
+    ["thinking default", String(model.thinkingDefault)],
+    ["tested configs", `${rows.filter((r) => r.tested).length}/${rows.length}`],
+  ]));
   console.log("");
-  console.log(card({ title: "Dry-run plan", tone: "accent", body: formatGridTable(rows) }));
+  // "Plan", not "Dry-run plan" — the title previously said dry-run even
+  // during a real sweep. One estimate mention here; the confirm repeats it.
+  console.log(theme.bold(dryRun ? "Dry-run plan" : "Plan"));
+  console.log(formatGridTable(rows));
 
   // --dry-run: plan only, no sweep, no mutation.
   if (dryRun) {
@@ -418,7 +415,22 @@ export async function autotuneCommand(argv) {
     return;
   }
 
-  // Run dir + snapshot + lock (only for a real sweep).
+  // ② Confirm BEFORE any side effects — previously the run dir, settings
+  // snapshot, and experiment lock were all acquired before this prompt, so
+  // the "snapshot captured" line read like the sweep had already started.
+  if (!yes) {
+    const testedCount = rows.filter((r) => r.tested).length;
+    const start = await promptConfirm({
+      message: `Start the speed sweep? (~${estimateGridMinutes(rows)}m, ${testedCount} configs)`,
+      initialValue: true,
+    });
+    if (!start) {
+      console.log(theme.subtle("Sweep cancelled — nothing changed."));
+      return;
+    }
+  }
+
+  // Run dir + snapshot + lock (only for a confirmed real sweep).
   const runDir = await createRunDir(modelId);
   const snapshot = await snapshotModelSettings(runDir, modelId);
   const lock = await acquireAutotuneLock({ modelId });
@@ -432,21 +444,6 @@ export async function autotuneCommand(argv) {
 
   let sweepRan = false;
   try {
-    // ② Confirm the sweep. v1 is speed-only; the quality tune is v2 (#20),
-    // so there is no mode pick — one confirm after the plan, with room to breathe.
-    if (!yes) {
-      const testedCount = rows.filter((r) => r.tested).length;
-      const start = await promptConfirm({
-        message: `Start the speed sweep? (~${estimateGridMinutes(rows)}m, ${testedCount} configs)`,
-        initialValue: true,
-      });
-      if (!start) {
-        console.log(theme.subtle("Sweep cancelled. Restoring your original settings."));
-        await restoreSettingsSnapshot(baseUrl, runDir);
-        return;
-      }
-    }
-
     // ④ Run.
     const sweep = await runSweep({ baseUrl, runDir, modelId, rows });
     sweepRan = true;
@@ -466,11 +463,8 @@ export async function autotuneCommand(argv) {
     if (recommendation.ok) await writeOptimalJson(runDir, recommendation);
 
     console.log("");
-    console.log(card({
-      title: "Speed sweep results",
-      tone: "accent",
-      body: resultsTable(results, baseline, recommendation),
-    }));
+    console.log(theme.bold("Speed sweep results"));
+    console.log(resultsTable(results, baseline, recommendation));
     console.log(theme.subtle("  ≈ = within 2× noise (MAD); not a real difference.  ★ = recommended (fastest thinking-off config)."));
     console.log(theme.subtle(`  Full report: ${join(runDir, "results.md")}`));
     console.log("");

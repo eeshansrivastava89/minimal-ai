@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { card, wrapText, maxWidth, theme, screenHeader } from "./ui.mjs";
+import { wrapText, maxWidth, theme, screenHeader } from "./ui.mjs";
 import { compareVersions, currentPackageVersion } from "./updates.mjs";
 import { loadConfig, saveConfig } from "./config.mjs";
 
@@ -104,7 +104,7 @@ function renderBullet(text, width, indent = 0) {
  * (pure — no printing). Nested bullets stay nested bullets; they are never
  * absorbed into a parent paragraph as stray "- " fragments.
  */
-export function renderEntryBody(entry, width = maxWidth() - 4) {
+export function renderEntryBody(entry, width = maxWidth() - 2) {
   const inner = width;
   const bulletWidth = inner - 4;   // "  - " prefix / 4-space continuation
   const paraWidth = inner - 2;     // "  " indent for non-bullet paragraphs
@@ -148,15 +148,16 @@ export function renderEntryBody(entry, width = maxWidth() - 4) {
 export function printReleaseNotes(entries) {
   if (!entries || entries.length === 0) return;
 
-  // Wrap at the card's actual inner width (maxWidth - 4 for borders+padding),
-  // not a hardcoded column count — otherwise the right of a wide card is just
-  // empty padding and the text looks artificially narrow.
-  const inner = maxWidth() - 4;
+  // No box chrome — a bold version heading over the wrapped body, wrapped
+  // near the terminal width so the right of a wide terminal isn't empty
+  // padding.
+  const width = maxWidth() - 2;
 
   for (const entry of entries) {
-    console.log(card({ title: `v${entry.version}`, body: renderEntryBody(entry, inner) }));
+    console.log(theme.bold(`v${entry.version}${entry.date ? ` — ${entry.date}` : ""}`));
+    console.log(renderEntryBody(entry, width));
+    console.log("");
   }
-  console.log("");
 }
 
 export async function showReleaseNotesIfUpdated() {

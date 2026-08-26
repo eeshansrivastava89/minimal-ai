@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 const dataDir = await mkdtemp(join(tmpdir(), "minimal-presenters-"));
 process.env.MINIMAL_DIR = dataDir;
 
-const { modelSelectOption } = await import("../src/model-presenters.mjs");
+const { modelSelectOption, modelNameWidth, discoverySourceForItem } = await import("../src/model-presenters.mjs");
 
 function plain(opt) {
   return stripVTControlCharacters(opt.label);
@@ -25,7 +25,7 @@ function createSparseFile(path, size) {
 }
 
 describe("modelSelectOption", () => {
-  it("shows NEEDS SETUP for new models", () => {
+  it("new models show name · backend, quant, ctx, and size on one row", () => {
     const item = {
       type: "new",
       model: { label: "unsloth/Qwen3-27B", sizeBytes: 15e9, source: "lmstudio", format: "gguf" },
@@ -35,11 +35,12 @@ describe("modelSelectOption", () => {
       quant: "Q4_K_S",
     };
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /NEEDS SETUP/);
+    assert.match(plain(opt), /unsloth\/Qwen3-27B · llama\.cpp/);
     assert.match(plain(opt), /Q4_K_S/);
+    assert.match(plain(opt), /32k/);
   });
 
-  it("infers oMLX source for managed profiles without stored source", () => {
+  it("infers oMLX as the discovery source for managed profiles without stored source", () => {
     const item = {
       type: "profile",
       profile: { id: "omlx-qwen", label: "Qwen oMLX", backend: "omlx", omlxModel: "Qwen3.6-27B", flags: {} },
@@ -49,9 +50,7 @@ describe("modelSelectOption", () => {
       contextLength: null,
       quant: null,
     };
-    const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /READY\s+oMLX\s+oMLX/);
-    assert.doesNotMatch(plain(opt), /GGUF/);
+    assert.equal(discoverySourceForItem(item), "omlx");
   });
 
   it("displays pre-computed size for managed profiles", () => {
@@ -82,9 +81,21 @@ describe("modelSelectOption", () => {
       contextLength: null,
       quant: "Q8_0",
     };
+    assert.equal(discoverySourceForItem(item), "lmstudio");
     const opt = modelSelectOption(item, { runningProfilesNow: [], modelMissingIds: new Set(), nameWidth: 40 });
-    assert.match(plain(opt), /LM Studio/);
     assert.match(plain(opt), /11\.00\s*MB/);
     assert.match(plain(opt), /Q8_0/); // quant column
   });
 });
+
+describe("modelNameWidth", () => {
+  it("never exceeds the terminal width minus the other picker columns", () => {
+    const longName = "org/" + "x".repeat(200) + "-Q4_K_S.gguf";
+    const items = [{ type: "new", label: longName, model: { label: longName } }];
+    const width = modelNameWidth(items);
+    // maxWidth() is 80 in the non-TTY test env; columns beyond the name take
+    // ~39, so the name column must stay within 41.
+    assert.ok(width <= 80 - 39, `nameWidth ${width} overflows an 80-col terminal`);
+  });
+});
+

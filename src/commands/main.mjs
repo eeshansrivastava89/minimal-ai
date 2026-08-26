@@ -7,7 +7,7 @@ import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx } from "../omlx-runtime.mjs";
 import { hasOllama } from "../ollama-runtime.mjs";
 import { scanManagedModels } from "../managed.mjs";
-import { appHeader, card, status, startInteractive, theme } from "../ui.mjs";
+import { appHeader, status, startInteractive, theme, maxWidth, visibleLen } from "../ui.mjs";
 import { showReleaseNotesIfUpdated } from "../changelog.mjs";
 import { onboardFlow } from "./onboard.mjs";
 import { modelCommandCenter } from "./models.mjs";
@@ -105,6 +105,9 @@ function printStatusHeader({ llamaBinary, managedModels, harness, harnessInstall
     const total = `${profiles.length} model${profiles.length === 1 ? "" : "s"}`;
     parts.push(`${theme.bold(total)} ${theme.subtle("→")} ${breakdown}`);
   }
-  console.log(card({ title: "minimal-ai", body: parts.join("  \n") }));
+  // Plain status line(s), no box — one line when it fits, one per item when
+  // it doesn't.
+  const oneLine = parts.join("  ");
+  console.log(visibleLen(oneLine) <= maxWidth() ? oneLine : parts.join("\n"));
 }
 
