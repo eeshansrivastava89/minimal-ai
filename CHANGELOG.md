@@ -4,6 +4,18 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.1.2] - 2026-08-26
+
+### Fixed
+- **Release-notes card no longer leaves the right half empty.** The
+  changelog renderer wrapped text at a hardcoded 76 columns, then placed it
+  in a card whose inner width is the full terminal — so the right side was
+  just padding. It now wraps at the card's actual inner width. It also joins
+  each bullet's hand-wrapped markdown lines into one paragraph before
+  wrapping, which fixes the broken `on)` / `a` / `+` fragments that appeared
+  on their own lines when the markdown's own line breaks got re-wrapped per
+  line. `**bold**` and `` `code` `` spans are now styled.
+
 ## [3.1.1] - 2026-08-26
 
 ### Fixed
