@@ -6,13 +6,24 @@
  * Verifies:
  * 1. No forbidden files tracked in git
  * 2. No hardcoded user paths in source files
- * 3. No secrets in tarball contents
- * 4. Tarball content validation (size, count, no sensitive files)
+ * 3. Tarball content validation (size, count, no forbidden files)
+ * 4. Tarball integrity: every relative import resolves + no secrets
+ *
+ * Section 4 is the defense-in-depth check for the 3.0.0 class of bug
+ * (a source directory missing from the `files` allowlist): tests and lint
+ * run against the repo where imports resolve, so they cannot see it. This
+ * gate packs the real tarball, extracts it, and resolves every relative
+ * import (`./` / `../`) from every shipped module against the extracted
+ * tree. Bare specifiers (picocolors, etc.) are out of scope — those
+ * resolve via `npm install` at the user's end; only relative imports must
+ * be self-contained in the package.
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { dirname as posixDirname, join as posixJoin } from "node:path/posix";
+import { pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 
 const RED = "\x1b[31m";
@@ -20,257 +31,328 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
-// Guard against recursive invocation: if we're already inside npm pack's prepack hook,
-// skip the privacy gate to avoid infinite recursion.
-if (process.env.npm_lifecycle_event === "prepack" && process.env.MINIMAL_PRIVACY_GATE_RUNNING === "1") {
-  console.log("Skipping privacy gate: already running inside npm pack lifecycle.");
-  process.exit(0);
-}
-process.env.MINIMAL_PRIVACY_GATE_RUNNING = "1";
+// ── Pure helpers (exported for unit testing) ────────────────────────
 
-let failures = 0;
-let warnings = 0;
-
-function fail(msg) {
-  console.error(`${RED}FAIL${RESET} ${msg}`);
-  failures++;
-}
-
-function pass(msg) {
-  console.log(`${GREEN}PASS${RESET} ${msg}`);
+/**
+ * Relative import/export specifiers (./ or ../) referenced in JS module
+ * source. Captures both static `import/export ... from "..."` and dynamic
+ * `import("...")`. Bare specifiers and non-relative paths are ignored.
+ * Deduped per source string.
+ */
+export function relativeImports(src) {
+  const specs = new Set();
+  const staticRe = /\bfrom\s*["'](\.{1,2}\/[^"']+)["']/g;
+  const dynamicRe = /\bimport\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g;
+  let m;
+  while ((m = staticRe.exec(src)) !== null) specs.add(m[1]);
+  while ((m = dynamicRe.exec(src)) !== null) specs.add(m[1]);
+  return [...specs];
 }
 
-function warn(msg) {
-  console.warn(`${YELLOW}WARN${RESET} ${msg}`);
-  warnings++;
-}
+// Resolution extensions tried, in order, mirroring Node ESM resolution for
+// a package without an "exports" map. "" = exact path (already has extension).
+const RESOLVE_EXTS = ["", ".mjs", ".js", ".json", "/index.mjs", "/index.js"];
 
-// ── 1. Tracked files check ──────────────────────────────────────────
-
-console.log("\n=== Tracked Files Gate ===\n");
-
-const FORBIDDEN_TRACKED = [
-  /^\.env$/,
-  /^\.env\.local$/,
-  /^\.env\.production$/,
-  /\.db$/,
-  /\.db-journal$/,
-  /\.db-wal$/,
-  /\.db-shm$/,
-  /\/\.env$/,
-  /\/\.env\.local$/,
-];
-
-const trackedFiles = execSync("git ls-files", { encoding: "utf-8" }).trim().split("\n");
-
-let trackedForbiddenFound = false;
-for (const file of trackedFiles) {
-  for (const pattern of FORBIDDEN_TRACKED) {
-    if (pattern.test(file)) {
-      fail(`Forbidden file tracked in git: ${file}`);
-      trackedForbiddenFound = true;
+/**
+ * Given every module file in a tarball as `{ path, content }` (path is
+ * posix-relative to the tarball root) and an `exists(absPosixPath)` predicate,
+ * return `{ file, spec }` for each relative import whose target is not
+ * present in the tarball. Pure: no filesystem access.
+ */
+export function brokenRelativeImports(moduleFiles, exists) {
+  const broken = [];
+  for (const { path, content } of moduleFiles) {
+    for (const spec of relativeImports(content)) {
+      const base = posixJoin(posixDirname(path), spec);
+      const resolved = RESOLVE_EXTS.some((ext) => exists(base + ext));
+      if (!resolved) broken.push({ file: path, spec });
     }
   }
-}
-if (!trackedForbiddenFound) {
-  pass("No forbidden files tracked in git");
+  return broken;
 }
 
-// ── 2. Source path check ────────────────────────────────────────────
+// ── Gate execution (only when invoked directly) ─────────────────────
 
-console.log("\n=== Source Path Gate ===\n");
+async function main() {
+  // Guard against recursive invocation: if we're already inside npm pack's
+  // prepack hook, skip the privacy gate to avoid infinite recursion.
+  if (process.env.npm_lifecycle_event === "prepack" && process.env.MINIMAL_PRIVACY_GATE_RUNNING === "1") {
+    console.log("Skipping privacy gate: already running inside npm pack lifecycle.");
+    return;
+  }
+  process.env.MINIMAL_PRIVACY_GATE_RUNNING = "1";
 
-const USER_PATH_PATTERNS = [
-  /\/Users\/(?!test\b)\w+/,
-  /\/home\/(?!test\b)\w+/,
-  /C:\\Users\\\w+/,
-];
+  let failures = 0;
+  let warnings = 0;
 
-const sourceFiles = trackedFiles.filter(
-  (f) => /\.(mjs|js|ts)$/.test(f) && !f.includes("test") && !f.includes("node_modules"),
-);
+  function fail(msg) {
+    console.error(`${RED}FAIL${RESET} ${msg}`);
+    failures++;
+  }
+  function pass(msg) {
+    console.log(`${GREEN}PASS${RESET} ${msg}`);
+  }
+  function warn(msg) {
+    console.warn(`${YELLOW}WARN${RESET} ${msg}`);
+    warnings++;
+  }
 
-let userPathHits = [];
-for (const file of sourceFiles) {
-  try {
-    const content = readFileSync(file, "utf-8");
-    for (const pattern of USER_PATH_PATTERNS) {
-      if (pattern.test(content)) {
-        userPathHits.push(file);
-        break;
+  // ── 1. Tracked files check ────────────────────────────────────────
+
+  console.log("\n=== Tracked Files Gate ===\n");
+
+  const FORBIDDEN_TRACKED = [
+    /^\.env$/,
+    /^\.env\.local$/,
+    /^\.env\.production$/,
+    /\.db$/,
+    /\.db-journal$/,
+    /\.db-wal$/,
+    /\.db-shm$/,
+    /\/\.env$/,
+    /\/\.env\.local$/,
+  ];
+
+  const trackedFiles = execSync("git ls-files", { encoding: "utf-8" }).trim().split("\n");
+
+  let trackedForbiddenFound = false;
+  for (const file of trackedFiles) {
+    for (const pattern of FORBIDDEN_TRACKED) {
+      if (pattern.test(file)) {
+        fail(`Forbidden file tracked in git: ${file}`);
+        trackedForbiddenFound = true;
       }
     }
-  } catch {
-    // File may be new/unstaged — skip
   }
-}
-
-if (userPathHits.length > 0) {
-  for (const file of userPathHits) {
-    fail(`Hardcoded user path in source: ${file}`);
+  if (!trackedForbiddenFound) {
+    pass("No forbidden files tracked in git");
   }
-} else {
-  pass("No hardcoded user paths in source files");
-}
 
-// ── 3. Tarball content check ────────────────────────────────────────
+  // ── 2. Source path check ──────────────────────────────────────────
 
-console.log("\n=== Tarball Content Gate ===\n");
+  console.log("\n=== Source Path Gate ===\n");
 
-const FORBIDDEN_IN_TARBALL = [
-  /\.db$/,
-  /\.db-journal$/,
-  /\.db-wal$/,
-  /\.db-shm$/,
-  /\.env$/,
-  /\.env\.local$/,
-  /\.env\.production$/,
-  /^PLAN\.md$/,
-  /^Dockerfile$/,
-  /^\.dockerignore$/,
-  /^test-clean\.sh$/,
-  /^\.pi\//,
-];
+  const USER_PATH_PATTERNS = [
+    /\/Users\/(?!test\b)\w+/,
+    /\/home\/(?!test\b)\w+/,
+    /C:\\Users\\\w+/,
+  ];
 
-const MAX_TARBALL_FILES = 90;
-const MAX_TARBALL_SIZE_MB = 5;
-
-try {
-  // Use --ignore-scripts to avoid recursive prepack during dry-run.
-  // The actual tarball contents are identical; this just skips the prepack hook.
-  const packList = execSync("npm pack --dry-run --ignore-scripts 2>&1", { encoding: "utf-8" });
-  const lines = packList.split("\n").filter(
-    (l) =>
-      l.startsWith("npm notice") &&
-      !l.includes("Tarball") &&
-      !l.includes("name:") &&
-      !l.includes("version:") &&
-      !l.includes("filename:") &&
-      !l.includes("package size:") &&
-      !l.includes("unpacked size:") &&
-      !l.includes("shasum:") &&
-      !l.includes("integrity:") &&
-      !l.includes("total files:") &&
-      !l.includes("==="),
+  const sourceFiles = trackedFiles.filter(
+    (f) => /\.(mjs|js|ts)$/.test(f) && !f.includes("test") && !f.includes("node_modules"),
   );
 
-  let tarballForbiddenFound = false;
-  for (const line of lines) {
-    const match = line.match(/npm notice\s+[\d.]+[kMG]?B\s+(.+)/);
-    if (!match) continue;
-    const filePath = match[1].trim();
-    for (const pattern of FORBIDDEN_IN_TARBALL) {
-      if (pattern.test(filePath)) {
-        fail(`Forbidden file in npm tarball: ${filePath}`);
-        tarballForbiddenFound = true;
-      }
-    }
-  }
-
-  if (!tarballForbiddenFound) {
-    pass("No forbidden files in npm tarball");
-  }
-
-  // Check total file count and size
-  const totalFilesMatch = packList.match(/total files:\s*(\d+)/);
-  const sizeMatch = packList.match(/package size:\s*([\d.]+)\s*([kMG]?B)/);
-  if (totalFilesMatch) {
-    const totalFiles = Number(totalFilesMatch[1]);
-    if (totalFiles > MAX_TARBALL_FILES) {
-      fail(`Tarball has ${totalFiles} files (max ${MAX_TARBALL_FILES}) — likely includes dev files`);
-    } else {
-      pass(`Tarball file count OK (${totalFiles} <= ${MAX_TARBALL_FILES})`);
-    }
-  }
-  if (sizeMatch) {
-    const size = Number(sizeMatch[1]);
-    const unit = sizeMatch[2];
-    const sizeMB =
-      unit === "GB"
-        ? size * 1024
-        : unit === "MB"
-          ? size
-          : unit === "kB"
-            ? size / 1024
-            : size / (1024 * 1024);
-    if (sizeMB > MAX_TARBALL_SIZE_MB) {
-      fail(`Tarball is ${size} ${unit} (max ${MAX_TARBALL_SIZE_MB} MB)`);
-    } else {
-      pass(`Tarball size OK (${size} ${unit} <= ${MAX_TARBALL_SIZE_MB} MB)`);
-    }
-  }
-} catch (e) {
-  warn(`Could not run tarball content check: ${e.message}`);
-  warnings++;
-}
-
-// ── 4. Secret scan ──────────────────────────────────────────────────
-
-console.log("\n=== Secret Scan Gate ===\n");
-
-const SECRET_PATTERNS = [
-  { name: "OpenAI API key", pattern: /sk-proj-[a-zA-Z0-9_-]{20,}/ },
-  { name: "Anthropic API key", pattern: /sk-ant-api[0-9]+-[a-zA-Z0-9_-]+/ },
-];
-
-const walkFiles = (dir) => {
-  const results = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) results.push(...walkFiles(full));
-    else results.push(full);
-  }
-  return results;
-};
-
-let _tarball = null;
-let _tmpDir = null;
-try {
-  // Use --ignore-scripts for the secret scan pack too, for consistency.
-  const packJson = JSON.parse(execSync("npm pack --json --ignore-scripts 2>/dev/null", { encoding: "utf-8" }));
-  _tarball = packJson[0].filename;
-  const tmpBase = join(homedir(), ".tmp");
-  if (!existsSync(tmpBase)) mkdirSync(tmpBase, { recursive: true });
-  _tmpDir = mkdtempSync(join(tmpBase, "minimal-scan-"));
-  execSync(`tar -C "${_tmpDir}" -xzf "${_tarball}"`, { encoding: "utf-8" });
-
-  const allFiles = walkFiles(_tmpDir);
-  let secretsFound = false;
-
-  for (const file of allFiles) {
-    let content;
+  let userPathHits = [];
+  for (const file of sourceFiles) {
     try {
-      content = readFileSync(file, "utf-8");
+      const content = readFileSync(file, "utf-8");
+      for (const pattern of USER_PATH_PATTERNS) {
+        if (pattern.test(content)) {
+          userPathHits.push(file);
+          break;
+        }
+      }
     } catch {
-      continue; // binary file — skip
+      // File may be new/unstaged — skip
     }
-    for (const { name: secretName, pattern } of SECRET_PATTERNS) {
-      if (pattern.test(content)) {
-        const rel = file.slice(_tmpDir.length + 1);
-        fail(`Secret found in tarball (${secretName}) in: ${rel}`);
-        secretsFound = true;
+  }
+
+  if (userPathHits.length > 0) {
+    for (const file of userPathHits) {
+      fail(`Hardcoded user path in source: ${file}`);
+    }
+  } else {
+    pass("No hardcoded user paths in source files");
+  }
+
+  // ── 3. Tarball content check (size, count, forbidden files) ───────
+
+  console.log("\n=== Tarball Content Gate ===\n");
+
+  const FORBIDDEN_IN_TARBALL = [
+    /\.db$/,
+    /\.db-journal$/,
+    /\.db-wal$/,
+    /\.db-shm$/,
+    /\.env$/,
+    /\.env\.local$/,
+    /\.env\.production$/,
+    /^PLAN\.md$/,
+    /^Dockerfile$/,
+    /^\.dockerignore$/,
+    /^test-clean\.sh$/,
+    /^\.pi\//,
+  ];
+
+  const MAX_TARBALL_FILES = 90;
+  const MAX_TARBALL_SIZE_MB = 5;
+
+  try {
+    // Use --ignore-scripts to avoid recursive prepack during dry-run.
+    // The actual tarball contents are identical; this just skips the prepack hook.
+    const packList = execSync("npm pack --dry-run --ignore-scripts 2>&1", { encoding: "utf-8" });
+    const lines = packList.split("\n").filter(
+      (l) =>
+        l.startsWith("npm notice") &&
+        !l.includes("Tarball") &&
+        !l.includes("name:") &&
+        !l.includes("version:") &&
+        !l.includes("filename:") &&
+        !l.includes("package size:") &&
+        !l.includes("unpacked size:") &&
+        !l.includes("shasum:") &&
+        !l.includes("integrity:") &&
+        !l.includes("total files:") &&
+        !l.includes("==="),
+    );
+
+    let tarballForbiddenFound = false;
+    for (const line of lines) {
+      const match = line.match(/npm notice\s+[\d.]+[kMG]?B\s+(.+)/);
+      if (!match) continue;
+      const filePath = match[1].trim();
+      for (const pattern of FORBIDDEN_IN_TARBALL) {
+        if (pattern.test(filePath)) {
+          fail(`Forbidden file in npm tarball: ${filePath}`);
+          tarballForbiddenFound = true;
+        }
       }
     }
+
+    if (!tarballForbiddenFound) {
+      pass("No forbidden files in npm tarball");
+    }
+
+    const totalFilesMatch = packList.match(/total files:\s*(\d+)/);
+    const sizeMatch = packList.match(/package size:\s*([\d.]+)\s*([kMG]?B)/);
+    if (totalFilesMatch) {
+      const totalFiles = Number(totalFilesMatch[1]);
+      if (totalFiles > MAX_TARBALL_FILES) {
+        fail(`Tarball has ${totalFiles} files (max ${MAX_TARBALL_FILES}) — likely includes dev files`);
+      } else {
+        pass(`Tarball file count OK (${totalFiles} <= ${MAX_TARBALL_FILES})`);
+      }
+    }
+    if (sizeMatch) {
+      const size = Number(sizeMatch[1]);
+      const unit = sizeMatch[2];
+      const sizeMB =
+        unit === "GB"
+          ? size * 1024
+          : unit === "MB"
+            ? size
+            : unit === "kB"
+              ? size / 1024
+              : size / (1024 * 1024);
+      if (sizeMB > MAX_TARBALL_SIZE_MB) {
+        fail(`Tarball is ${size} ${unit} (max ${MAX_TARBALL_SIZE_MB} MB)`);
+      } else {
+        pass(`Tarball size OK (${size} ${unit} <= ${MAX_TARBALL_SIZE_MB} MB)`);
+      }
+    }
+  } catch (e) {
+    warn(`Could not run tarball content check: ${e.message}`);
+    warnings++;
   }
 
-  if (!secretsFound) {
-    pass("No secrets found in tarball contents");
+  // ── 4. Tarball integrity: relative imports resolve + no secrets ───
+
+  console.log("\n=== Tarball Integrity Gate ===\n");
+
+  const SECRET_PATTERNS = [
+    { name: "OpenAI API key", pattern: /sk-proj-[a-zA-Z0-9_-]{20,}/ },
+    { name: "Anthropic API key", pattern: /sk-ant-api[0-9]+-[a-zA-Z0-9_-]+/ },
+  ];
+
+  const MODULE_EXTS = [".mjs", ".js"];
+
+  const walkFiles = (dir) => {
+    const results = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) results.push(...walkFiles(full));
+      else results.push(full);
+    }
+    return results;
+  };
+
+  let _tarball = null;
+  let _tmpDir = null;
+  try {
+    // One pack + one extract serves both the import-resolution check and
+    // the secret scan. --ignore-scripts avoids recursive prepack.
+    const packJson = JSON.parse(execSync("npm pack --json --ignore-scripts 2>/dev/null", { encoding: "utf-8" }));
+    _tarball = packJson[0].filename;
+    const tmpBase = join(homedir(), ".tmp");
+    if (!existsSync(tmpBase)) mkdirSync(tmpBase, { recursive: true });
+    _tmpDir = mkdtempSync(join(tmpBase, "minimal-scan-"));
+    execSync(`tar -C "${_tmpDir}" -xzf "${_tarball}"`, { encoding: "utf-8" });
+
+    const allFiles = walkFiles(_tmpDir);
+
+    // 4a. Relative import resolution against the extracted tarball.
+    const exists = (posixPath) => {
+      try {
+        return statSync(join(_tmpDir, posixPath)).isFile();
+      } catch {
+        return false;
+      }
+    };
+    const moduleFiles = allFiles
+      .filter((f) => MODULE_EXTS.some((ext) => f.endsWith(ext)))
+      .map((f) => ({ path: f.slice(_tmpDir.length + 1), content: readFileSync(f, "utf-8") }));
+
+    const broken = brokenRelativeImports(moduleFiles, exists);
+    if (broken.length === 0) {
+      pass(`All relative imports resolve in tarball (${moduleFiles.length} module files checked)`);
+    } else {
+      for (const { file, spec } of broken) {
+        fail(`Broken relative import in tarball: ${file} imports "${spec}" — target not shipped (missing from package.json files allowlist?)`);
+      }
+    }
+
+    // 4b. Secret scan over every file in the tarball.
+    let secretsFound = false;
+    for (const file of allFiles) {
+      let content;
+      try {
+        content = readFileSync(file, "utf-8");
+      } catch {
+        continue; // binary file — skip
+      }
+      for (const { name: secretName, pattern } of SECRET_PATTERNS) {
+        if (pattern.test(content)) {
+          const rel = file.slice(_tmpDir.length + 1);
+          fail(`Secret found in tarball (${secretName}) in: ${rel}`);
+          secretsFound = true;
+        }
+      }
+    }
+    if (!secretsFound) {
+      pass("No secrets found in tarball contents");
+    }
+  } catch (e) {
+    warn(`Could not run tarball integrity check: ${e.message}`);
+    warnings++;
+  } finally {
+    if (_tarball) rmSync(_tarball, { force: true });
+    if (_tmpDir) rmSync(_tmpDir, { recursive: true, force: true });
   }
-} catch (e) {
-  warn(`Could not run tarball secret scan: ${e.message}`);
-  warnings++;
-} finally {
-  if (_tarball) rmSync(_tarball, { force: true });
-  if (_tmpDir) rmSync(_tmpDir, { recursive: true, force: true });
+
+  // ── Summary ───────────────────────────────────────────────────────
+
+  console.log("\n=== Summary ===\n");
+  if (failures > 0) {
+    console.error(`${RED}${failures} failure(s)${RESET}, ${warnings} warning(s)`);
+    process.exit(1);
+  } else {
+    console.log(`${GREEN}All checks passed${RESET} (${warnings} warning(s))`);
+    process.exit(0);
+  }
 }
 
-// ── Summary ─────────────────────────────────────────────────────────
-
-console.log("\n=== Summary ===\n");
-if (failures > 0) {
-  console.error(`${RED}${failures} failure(s)${RESET}, ${warnings} warning(s)`);
-  process.exit(1);
-} else {
-  console.log(`${GREEN}All checks passed${RESET} (${warnings} warning(s))`);
-  process.exit(0);
+// Run only when invoked directly, so tests can import the pure helpers
+// without triggering the gates or process.exit.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }
