@@ -4,6 +4,23 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.3.0] - 2026-08-27
+
+### Added
+- **Autotune renders the full config space as a grid.** The dry-run Plan and
+  the Speed sweep results are now real bordered tables (one per KV-quant
+  state, 36 combos in total): rows are the speculative path (none / MTP /
+  DFlash), columns are thinking × ANE prefill, and every cell is one
+  standardized token — `✓`/`–`/`NA` in the plan, `tps (delta)` in the
+  results, `★` on the recommendation. Impossible combos (DFlash + thinking,
+  DFlash + ANE) show `NA` instead of being silently absent.
+- **One table primitive** (`src/ui/table.mjs` on cli-table3): box-drawing
+  borders between every cell, ANSI-safe, and cells wrap at word boundaries —
+  never truncate — while columns shrink to fit the terminal width.
+- The results footer now explains *why* a faster-rated beauty path
+  (thinking on) isn't the pick: its tps counts reasoning tokens as output,
+  so wall-clock the thinking-off config wins; the quality call is v2's job.
+
 ## [3.2.3] - 2026-08-27
 
 ### Changed

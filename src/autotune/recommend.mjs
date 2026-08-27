@@ -83,12 +83,17 @@ function buildReasoning({ fastPath, beautyPath, baseline, noChange, beautyWithin
     }
   }
   if (beautyPath) {
-    // When the beauty path's apparent edge is within noise of the fast path,
-    // say so — its higher tps also counts thinking tokens (not useful output),
-    // so it is not a reliable speed gain. This is the case that looked like a
-    // bug in 3.x: beauty path ranked first but fast path recommended.
-    const caveat = beautyWithinNoise
-      ? " — within noise of the fast path, and its tps counts thinking tokens, so not a reliable speed gain"
+    // When the beauty path's apparent edge is within noise of the fast path —
+    // or when its RAW tps merely LOOKS higher — say why it's not the pick: its
+    // tps counts thinking tokens as if they were output, so wall-clock the
+    // thinking-off path wins. Without this, the screen reads "fastest config:
+    // 47.6, recommended: 38.8" with no explanation (the case that looked like
+    // a bug in 3.x).
+    const looksFaster = beautyWithinNoise || (fastPath && beautyPath.summary.median >= fastPath.summary.median);
+    const caveat = looksFaster
+      ? beautyWithinNoise
+        ? " — within noise of the fast path, and its tps counts thinking tokens as if they were output, so not a reliable speed gain"
+        : " — its tps counts thinking tokens as if they were output (wall-clock, the thinking-off path was faster), so it's a quality alternative, not a speed win"
       : "";
     parts.push(`Beauty path: ${beautyPath.label} at ${fmtTps(beautyPath)}${fmtAccept(beautyPath)}${caveat}`);
   }

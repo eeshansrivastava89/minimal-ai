@@ -101,6 +101,24 @@ describe("recommendOptimal", () => {
     assert.match(rec.reasoning, /within noise of the fast path/);
     assert.match(rec.reasoning, /counts thinking tokens/);
   });
+
+  it("explains when the beauty path's raw tps outranks the fast path but still loses wall-clock", () => {
+    // The 9B MTPLX case: MTP+thinking measured 47.6 tps vs MTP-on 38.8 — the
+    // beauty path's rate is really higher, yet thinking tokens make it the
+    // slower experience. Reasoning must say why the fast path is still the pick.
+    const results = [
+      result("vanilla", "vanilla", 31.6, { mad: 1.0 }),
+      result("mtp", "MTP on", 38.8, { mad: 0.5, settings: { mtp_enabled: true } }),
+      result("mtp-thinking", "MTP + thinking + budget", 47.6, { family: "thinking", mad: 0.5, settings: { mtp_enabled: true, enable_thinking: true } }),
+    ];
+    const rec = recommendOptimal(results);
+    assert.equal(rec.ok, true);
+    assert.equal(rec.recommendation.configId, "mtp");
+    assert.equal(rec.noChange, false);
+    assert.match(rec.reasoning, /counts thinking tokens/);
+    assert.match(rec.reasoning, /quality alternative, not a speed win/);
+    assert.match(rec.reasoning, /Beauty path: MTP \+ thinking \+ budget/);
+  });
 });
 
 describe("isThinkingOn", () => {

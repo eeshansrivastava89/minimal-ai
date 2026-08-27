@@ -5,6 +5,7 @@
 
 export { theme, icons } from "./theme.mjs";
 export { maxWidth, visibleLen, padEndVisible, padStartVisible, fillLine, wrapText, sectionLine } from "./layout.mjs";
+export { renderTable } from "./table.mjs";
 export {
   appHeader,
   screenHeader,

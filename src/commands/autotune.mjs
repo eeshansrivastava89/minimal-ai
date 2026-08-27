@@ -17,8 +17,8 @@ import { serverReady, apiRootUrl } from "../process.mjs";
 import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import {
-  parseOptions, status, theme, renderList, maxWidth, wrapText,
-  promptConfirm, padEndVisible, padStartVisible, visibleLen,
+  parseOptions, status, theme, renderList, maxWidth, wrapText, renderTable,
+  promptConfirm, padEndVisible, visibleLen,
 } from "../ui.mjs";
 import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported, needsMtplxImport } from "../autotune/probe.mjs";
 import {
@@ -29,6 +29,7 @@ import { generateGrid, estimateGridMinutes } from "../autotune/grid.mjs";
 import { sweepConfig } from "../autotune/sweep.mjs";
 import { recommendOptimal, writeOptimalJson, resultsFromJournal } from "../autotune/recommend.mjs";
 import { sweepBaseline, groupSweepResults, sweepRowDelta, recommendedId } from "../autotune/report.mjs";
+import { planMatrix, resultsMatrix, matrixHeaders } from "../autotune/matrix.mjs";
 
 
 function fmtTps(median) {
@@ -37,16 +38,6 @@ function fmtTps(median) {
 
 function fmtAccept(mtp) {
   return mtp?.acceptPct != null ? `${mtp.acceptPct.toFixed(1)}%` : "—";
-}
-
-/** Sweep-row column widths, measured from content (no fixed-width
- *  constants — labels and numbers set their own columns). */
-function sweepColumns(results) {
-  return {
-    labelW: Math.max(...results.map((r) => visibleLen(r.label))),
-    tpsW: Math.max(...results.map((r) => visibleLen(fmtTps(r.summary?.median)))),
-    accW: Math.max(...results.map((r) => visibleLen(fmtAccept(r.summary?.mtp)))),
-  };
 }
 
 // ── ① Pre-flight ────────────────────────────────────────────────────────────
@@ -113,42 +104,51 @@ async function probeForAutotune(profile, { nonInteractive = false, skipImport = 
 
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
 
-function formatGridTable(rows) {
-  // Columns size to CONTENT up to the real terminal width — no fixed cap:
-  // on wide terminals the full note text is visible, on narrow ones it
-  // wraps onto aligned continuation lines. Indent matches every other
-  // content block in this flow (lists, hints: two spaces).
-  const INDENT = "  ";
-  const data = rows.map((r) => ({
-    label: r.label,
-    tested: r.tested,
-    note: r.tested ? r.notes : r.skipReason,
-    est: r.tested ? `~${r.estMinutes}m` : "",
-  }));
-  const labelW = Math.max(...data.map((r) => visibleLen(r.label)));
-  const estW = Math.max(...data.map((r) => visibleLen(r.est)));
-  const noteW = Math.max(12, Math.min(
-    Math.max(...data.map((r) => visibleLen(r.note))),
-    maxWidth() - INDENT.length - labelW - 2 - 1 - 2 - 2 - estW,
-  ));
+/** Cell styling for the result/plan matrices (matrix.mjs stays plain text). */
+function styleCell(cell) {
+  switch (cell.kind) {
+    case "tick": return theme.success(cell.text);
+    case "na": return theme.error(cell.text);
+    case "empty": return theme.subtle(cell.text);
+    case "value-star": return `${theme.success("★")} ${cell.text}`;
+    default: return cell.text;
+  }
+}
+
+/** One KV-quant block of the matrix as a bordered table. */
+function renderMatrixBlock(headers, block) {
+  return renderTable({
+    headers: ["Speculative", ...headers],
+    rows: block.rows.map((row) => [row.label, ...row.cells.map(styleCell)]),
+  });
+}
+
+const MATRIX_FOOTNOTES = [
+  "MTP + DFlash are competing drafters — never stacked (separate rows).",
+  "NA on DFlash rows: ANE is a batched-engine prefill feature, and the thinking budget is not enforced on the DFlash path.",
+  "– = compatible, unmeasured: ANE + KV-quant run isolated on the vanilla baseline only (full cross-product ≈ 40 runs instead of 8).",
+];
+
+/** Numbered footnotes under the matrix, one per line. */
+function printFooter() {
+  for (const [index, note] of MATRIX_FOOTNOTES.entries()) {
+    console.log(theme.subtle(`${index + 1}. ${note}`));
+  }
+}
+
+function renderPlanMatrix(rows) {
+  const headers = matrixHeaders(rows);
   const lines = [];
-  const continuation = INDENT + " ".repeat(labelW + 2 + 1 + 2); // under the note column
-  for (const r of data) {
-    // Notes wrap onto continuation lines under the note column — nothing is
-    // ever truncated (the reason a row is skipped is the point of the row).
-    const noteLines = wrapText(r.note, noteW);
-    const mark = r.tested ? theme.success("✓") : theme.warning("✗");
-    const estCell = r.est ? theme.subtle(padStartVisible(r.est, estW)) : "";
-    const dim = (text) => (r.tested ? text : theme.subtle(text));
-    lines.push(`${INDENT}${dim(padEndVisible(r.label, labelW))}  ${mark}  ${dim(padEndVisible(noteLines[0] ?? "", noteW))}  ${estCell}`.trimEnd());
-    for (const extra of noteLines.slice(1)) {
-      lines.push(`${continuation}${dim(extra)}`);
-    }
+  for (const block of planMatrix(rows)) {
+    lines.push("");
+    lines.push(theme.bold(`KV-quant: ${block.kv}`));
+    lines.push(renderMatrixBlock(headers, block));
   }
   const total = estimateGridMinutes(rows);
   const testedCount = rows.filter((r) => r.tested).length;
   lines.push("");
-  lines.push(INDENT + theme.subtle(`estimated total ~${total}m across ${testedCount} tested configs`));
+  lines.push(theme.subtle(`estimated total ~${total}m across ${testedCount} tested configs`));
+  lines.push("");
   return lines.join("\n");
 }
 
@@ -159,7 +159,7 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
   const journal = await readJournal(runDir);
   const done = new Set(journal.filter((r) => r.event === "config-done").map((r) => r.configId));
   const fresh = [];
-  const labelW = sweepColumns(rows).labelW;
+  const labelW = Math.max(...rows.map((r) => visibleLen(r.label)));
   let i = 0;
   for (const row of tested) {
     i += 1;
@@ -199,35 +199,13 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
 
 // ── ⑤ Report ────────────────────────────────────────────────────────────────
 
-function resultRow(r, baseline, recId, cols) {
-  const med = padEndVisible(fmtTps(r.summary.median), cols.tpsW);
-  const acc = padEndVisible(fmtAccept(r.summary.mtp), cols.accW);
-  const d = sweepRowDelta(r, baseline);
-  const delta = d.isBaseline ? "(baseline)"
-    : d.pct == null ? "—"
-      : `${d.pct >= 0 ? "+" : ""}${d.pct.toFixed(0)}%${d.noise ? "  ≈ tie" : ""}`;
-  const isRec = r.configId === recId;
-  const prefix = isRec ? `${theme.success("★")} ` : "  ";
-  const label = isRec ? theme.bold(r.label) : r.label;
-  return `${prefix}${padEndVisible(label, cols.labelW)}  ${med}  ${acc}  ${delta}`;
-}
-
-function resultsTable(results, baseline, recommendation) {
-  // Group by path (shared with results.md via autotune/report.mjs — A3) so
-  // the recommendation (fastest thinking-off) is self-evident instead of the
-  // beauty path ranking first by raw tps.
-  const recId = recommendedId(recommendation);
-  const cols = sweepColumns(results);
-  const { fast, beauty } = groupSweepResults(results);
+function resultsTable(results, recommendation) {
+  const headers = matrixHeaders(results);
   const lines = [];
-  if (fast.length) {
-    lines.push(theme.bold("fast path — thinking off (raw output speed)"));
-    for (const r of fast) lines.push(resultRow(r, baseline, recId, cols));
-  }
-  if (beauty.length) {
-    if (fast.length) lines.push("");
-    lines.push(theme.bold("beauty path — thinking on (includes reasoning tokens)"));
-    for (const r of beauty) lines.push(resultRow(r, baseline, recId, cols));
+  for (const block of resultsMatrix(results, recommendation)) {
+    lines.push("");
+    lines.push(theme.bold(`KV-quant: ${block.kv}`));
+    lines.push(renderMatrixBlock(headers, block));
   }
   return lines.join("\n");
 }
@@ -437,7 +415,9 @@ export async function autotuneCommand(argv) {
   ]));
   console.log("");
   console.log(theme.bold("Plan"));
-  console.log(formatGridTable(rows));
+  console.log(renderPlanMatrix(rows));
+  printFooter();
+  console.log(theme.subtle("✓ will measure · – compatible, not measured · NA not possible · ≈ within 2× noise (MAD)"));
   console.log("");
 
   // --dry-run: plan only, no sweep, no mutation.
@@ -487,7 +467,6 @@ export async function autotuneCommand(argv) {
     // ⑤ Report — read the full result set from the journal (covers resume).
     const journal = await readJournal(runDir);
     const results = resultsFromJournal(journal, rows);
-    const baseline = results.find((r) => r.configId === "vanilla");
     const recommendation = recommendOptimal(results);
 
     await writeResultsMd(runDir, { modelId, results, recommendation, runDir });
@@ -495,8 +474,11 @@ export async function autotuneCommand(argv) {
 
     console.log("");
     console.log(theme.bold("Speed sweep results"));
-    console.log(resultsTable(results, baseline, recommendation));
-    console.log(theme.subtle("  ≈ = within 2× noise (MAD); not a real difference.  ★ = recommended (fastest thinking-off config)."));
+    console.log(resultsTable(results, recommendation));
+    console.log(theme.subtle("✓ measured · – compatible, not measured · NA not possible · ≈ within 2× noise (MAD)"));
+    const fastLabel = recommendation.ok ? recommendation.fastPath?.label : null;
+    console.log(theme.subtle(`★ recommended: ${fastLabel ?? "—"} (fastest thinking-off) — thinking-on rates count reasoning tokens as output; the quality call is deferred to v2`));
+    printFooter();
     console.log(theme.subtle(`  Full report: ${join(runDir, "results.md")}`));
     console.log("");
 
