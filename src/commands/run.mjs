@@ -34,5 +34,14 @@ export async function runCommand(argv) {
     options.thinking = level;
   }
 
-  return await runProfile(profile, options);
+  return await runProfile(profile, normalizeWithOption(options));
+}
+
+/** CLI boundary: `--with server` means "start the server only" — translate
+ *  to the explicit flag so the pseudo-harness string never propagates. */
+function normalizeWithOption(options) {
+  if (options.with !== "server") return options;
+  const rest = { ...options };
+  delete rest.with;
+  return { ...rest, serverOnly: true };
 }

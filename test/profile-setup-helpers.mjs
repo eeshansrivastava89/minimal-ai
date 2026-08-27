@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { samplerDefault, lowBitKvWarning, LONG_CONTEXT_KV_THRESHOLD } from "../src/profile-setup.mjs";
+import { samplerDefault, lowBitKvWarning, LONG_CONTEXT_KV_THRESHOLD } from "../src/profile-setup/index.mjs";
 
 // These tests cover the pure seeding/threshold logic behind #17/#18 without
 // driving the interactive prompt UI (which has no stdin-mocking harness).

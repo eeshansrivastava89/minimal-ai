@@ -3,20 +3,14 @@ import { closeSync, openSync } from "node:fs";
 import { writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { LOG_DIR } from "./config.mjs";
-import { writeState, readState, profileDir, effectiveModelId } from "./profiles.mjs";
+import { writeState, readState, profileDir } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
-import { startOmlxServer, putOmlxModelSettings, omlxSettingsFailureHint } from "./omlx-runtime.mjs";
-import { startOllamaServer, unloadOllamaModel } from "./ollama-runtime.mjs";
 import { sleep, execFileAsync } from "./exec.mjs";
 import { serverReady } from "./server-check.mjs";
 import { status, theme } from "./ui.mjs";
 import { computeServerCommand, buildStartScript, timestampForFile } from "./server-command.mjs";
-import { mtpEnabledFor } from "./capabilities.mjs";
-import { pidAlive, readProcessIdentity, processIdentityMatches, serverModelIds, apiRootUrl, responseErrorDetail } from "./server-status.mjs";
-
-// ── Start server ───────────────────────────────────────────────────────────
-
-export async function startServer(profile) {
+import { pidAlive, readProcessIdentity, processIdentityMatches } from "./server-status.mjs";
+import { managedActions } from "./managed-backends.mjs";export async function startServer(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
     return startManagedServer(profile, backend);
@@ -83,83 +77,31 @@ async function startLocalServer(profile) {
 }
 
 async function startManagedServer(profile, backend) {
-  if (await serverReady(profile.baseUrl)) {
-    // Apply per-model settings (MTP, thinking budget) even when the server
-    // is already running.
-    if (backend.id === "omlx") {
-      await ensureOmlxModelSettings(profile);
-    }
-    return writeManagedState(profile, backend);
-  }
-
-  // Try to start the managed server via CLI
-  if (backend.id === "omlx") {
-    try {
-      await startOmlxServer();
-    } catch (err) {
-      if (err.message.includes("not installed")) throw new Error(`${backend.label} is not installed. Run minimal-ai to install it, or download oMLX from https://github.com/jundot/omlx/releases`, { cause: err });
-      throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`omlx start\` manually.`, { cause: err });
-    }
-  }
-  if (backend.id === "ollama") {
-    try {
-      await startOllamaServer();
-    } catch (err) {
-      throw new Error(`${backend.label} could not be auto-started: ${err.message}. Run \`ollama serve\` manually.`, { cause: err });
-    }
-  }
-
-  // Wait for it to come up
-  for (let i = 0; i < 60; i++) {
-    await sleep(2000);
-    if (await serverReady(profile.baseUrl)) break;
-    process.stdout.write(".");
-  }
+  const actions = managedActions(backend);
   if (!(await serverReady(profile.baseUrl))) {
-    throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
+    // Adapter owns the CLI start + its failure wording (A2).
+    await actions.startManaged();
+
+    // Wait for it to come up
+    for (let i = 0; i < 60; i++) {
+      await sleep(2000);
+      if (await serverReady(profile.baseUrl)) break;
+      process.stdout.write(".");
+    }
+    if (!(await serverReady(profile.baseUrl))) {
+      throw new Error(`${backend.label} is not responding at ${profile.baseUrl}. Start it and try again.`);
+    }
   }
 
-  // Apply per-model settings (MTP, thinking budget) before the model is
-  // loaded. oMLX applies MTP patches at load time, so mtp_enabled must be
-  // in model_settings.json before any request triggers a load; the
-  // thinking budget is generation-time but applied here so the profile
-  // stays the source of truth.
-  if (backend.id === "omlx") {
-    await ensureOmlxModelSettings(profile);
-  }
+  // Push profile-owned settings to the server (MTP, thinking on/off, budget)
+  // whether the server was already up or just started. oMLX applies MTP
+  // patches at model load time, so mtp_enabled must be in
+  // model_settings.json before any request triggers a load; and because the
+  // writer diffs full desired state, it also fires when an already-running
+  // server drifted. ollama has no per-model settings adapter — skipped.
+  await actions.applyModelSettings?.(profile);
 
   return writeManagedState(profile, backend);
-}
-
-/**
- * Push profile-owned oMLX model settings (MTP toggle, thinking budget) to
- * the server via the admin API before loading. oMLX applies MTP patches at
- * model load time, so the setting must be persisted to model_settings.json
- * before any request triggers a load. If the model is already loaded, oMLX
- * uses MTP on next reload; thinking budget takes effect immediately.
- */
-async function ensureOmlxModelSettings(profile) {
-  const settings = {};
-  if (mtpEnabledFor(profile)) settings.mtp_enabled = true;
-  if (profile.thinkingOff === true) settings.enable_thinking = false;
-  if (Number.isFinite(profile.thinkingBudget)) {
-    settings.thinking_budget_enabled = true;
-    settings.thinking_budget_tokens = profile.thinkingBudget;
-  }
-  if (Object.keys(settings).length === 0) return;
-
-  const result = await putOmlxModelSettings(apiRootUrl(profile.baseUrl), effectiveModelId(profile), settings);
-  if (result.ok) {
-    const applied = [
-      settings.mtp_enabled ? "MTP enabled" : null,
-      settings.enable_thinking === false ? "thinking off" : null,
-      settings.thinking_budget_tokens ? `thinking budget ${settings.thinking_budget_tokens}` : null,
-    ].filter(Boolean).join(" + ");
-    const verb = result.verified === false ? "Applied (not independently verified)" : "Verified";
-    console.log(status({ kind: "success", message: `[omlx] ${verb}: ${applied} for ${effectiveModelId(profile)}` }));
-  } else {
-    console.log(status({ kind: "warning", message: `[omlx] Could not apply model settings: ${omlxSettingsFailureHint(result)}` }));
-  }
 }
 
 async function writeManagedState(profile, backend) {
@@ -173,8 +115,6 @@ async function writeManagedState(profile, backend) {
   await writeState(profile.id, state);
   return state;
 }
-
-// ── Stop server ────────────────────────────────────────────────────────────
 
 export async function stopProfile(profile) {
   const backend = backendFor(profile.backend);
@@ -243,17 +183,11 @@ async function processGone(pid, identity) {
 
 /** Ask a managed server to release the model; local servers return a reason. */
 export async function unloadModelFromServer(profile) {
-  const backend = backendFor(profile.backend);
-  if (backend.id === "omlx") return await unloadOmlxModel(profile);
-  if (backend.id === "ollama") return await unloadOllamaModelFromServer(profile);
-  return { unloaded: false, backend: backend.id, reason: "stop server to unload" };
+  const action = managedActions(backendFor(profile.backend));
+  if (action.unloadModel) return await action.unloadModel(profile);
+  return { unloaded: false, backend: backendFor(profile.backend).id, reason: "stop server to unload" };
 }
 
-/**
- * The single "stop this model" UX: local servers are killed (which unloads
- * the model); managed servers keep running and just release the model from
- * memory via their HTTP API. Prints the outcome either way.
- */
 export async function stopOrUnload(profile) {
   const backend = backendFor(profile.backend);
   if (backend.type === "managed-server") {
@@ -272,59 +206,3 @@ export async function stopOrUnload(profile) {
   return result;
 }
 
-async function unloadOllamaModelFromServer(profile) {
-  const modelId = effectiveModelId(profile);
-  try {
-    const ok = await unloadOllamaModel(modelId);
-    if (ok) return { unloaded: true, backend: "ollama", modelId };
-    return { unloaded: false, backend: "ollama", modelId, error: "Ollama did not confirm unload" };
-  } catch (err) {
-    return { unloaded: false, backend: "ollama", modelId, error: err.message };
-  }
-}
-
-async function unloadOmlxModel(profile) {
-  const adminUrl = `${apiRootUrl(profile.baseUrl)}/admin/api/models`;
-  const modelId = effectiveModelId(profile);
-
-  try {
-    const result = await serverModelIds(profile.baseUrl);
-    if (!result.ok) {
-      return { unloaded: false, backend: "omlx", modelId, error: `couldn't reach ${profile.baseUrl} to list loaded models for unload` };
-    }
-    const match = result.ids.find((id) => id.toLowerCase() === modelId.toLowerCase());
-    const targetId = match ?? modelId;
-
-    const response = await fetch(`${adminUrl}/${encodeURIComponent(targetId)}/unload`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (response.ok) {
-      return { unloaded: true, backend: "omlx", modelId: targetId };
-    }
-
-    const detail = await responseErrorDetail(response);
-
-    if (response.status === 400 && /not loaded/i.test(detail)) {
-      return { unloaded: true, backend: "omlx", modelId: targetId, reason: "model was not loaded" };
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      return {
-        unloaded: false,
-        backend: "omlx",
-        modelId: targetId,
-        error: "oMLX admin authentication required. Enable skip_api_key_verification in oMLX settings, or unload manually from the admin panel.",
-      };
-    }
-
-    return { unloaded: false, backend: "omlx", modelId: targetId, error: `HTTP ${response.status}: ${detail}` };
-  } catch (err) {
-    if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      return { unloaded: false, backend: "omlx", modelId, error: "Unload request timed out. The model may still be unloading in the background." };
-    }
-    return { unloaded: false, backend: "omlx", modelId, error: err.message };
-  }
-}

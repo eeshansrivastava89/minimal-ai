@@ -1,6 +1,8 @@
 // Barrel re-export — keeps external consumers stable while the implementation
 // lives in server-command.mjs, server-lifecycle.mjs, and server-status.mjs.
 
+export { serverReady } from "./server-check.mjs";
+
 export { computeServerCommand, buildStartScript } from "./server-command.mjs";
 
 export {

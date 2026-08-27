@@ -13,13 +13,12 @@ import { join } from "node:path";
 import { ensureDirs } from "../config.mjs";
 import { backendFor } from "../backends.mjs";
 import { readProfile, effectiveModelId } from "../profiles.mjs";
-import { serverReady } from "../server-check.mjs";
-import { apiRootUrl } from "../server-status.mjs";
+import { serverReady, apiRootUrl } from "../process.mjs";
 import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import {
-  parseOptions, status, theme, renderList, maxWidth, wrapText,
-  promptConfirm, padEndVisible,
+  parseOptions, status, theme, renderList, maxWidth, termWidth, wrapText,
+  promptConfirm, padEndVisible, padStartVisible, visibleLen,
 } from "../ui.mjs";
 import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported, needsMtplxImport } from "../autotune/probe.mjs";
 import {
@@ -28,11 +27,9 @@ import {
 } from "../autotune/safety.mjs";
 import { generateGrid, estimateGridMinutes } from "../autotune/grid.mjs";
 import { sweepConfig } from "../autotune/sweep.mjs";
-import { recommendOptimal, writeOptimalJson, resultsFromJournal, compareReal, isThinkingOn } from "../autotune/recommend.mjs";
+import { recommendOptimal, writeOptimalJson, resultsFromJournal } from "../autotune/recommend.mjs";
+import { sweepBaseline, groupSweepResults, sweepRowDelta, recommendedId } from "../autotune/report.mjs";
 
-const COL_LABEL = 24;
-const COL_TPS = 10;
-const COL_ACCEPT = 9;
 
 function fmtTps(median) {
   return median != null ? `${median.toFixed(1)} tps` : "—";
@@ -42,9 +39,14 @@ function fmtAccept(mtp) {
   return mtp?.acceptPct != null ? `${mtp.acceptPct.toFixed(1)}%` : "—";
 }
 
-function truncate(value, max) {
-  const str = String(value ?? "");
-  return str.length <= max ? str : `${str.slice(0, max - 1)}…`;
+/** Sweep-row column widths, measured from content (no fixed-width
+ *  constants — labels and numbers set their own columns). */
+function sweepColumns(results) {
+  return {
+    labelW: Math.max(...results.map((r) => visibleLen(r.label))),
+    tpsW: Math.max(...results.map((r) => visibleLen(fmtTps(r.summary?.median)))),
+    accW: Math.max(...results.map((r) => visibleLen(fmtAccept(r.summary?.mtp)))),
+  };
 }
 
 // ── ① Pre-flight ────────────────────────────────────────────────────────────
@@ -112,22 +114,41 @@ async function probeForAutotune(profile, { nonInteractive = false, skipImport = 
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
 
 function formatGridTable(rows) {
-  // Plain table, no box — clamp to the terminal width directly.
-  const inner = maxWidth() - 2;
+  // Columns size to CONTENT up to the real terminal width — anchoring the
+  // estimate to maxWidth()'s readability cap floated it into empty space
+  // and truncated notes on wide terminals. Indent matches every other
+  // content block in this flow (lists, hints: two spaces).
+  const INDENT = "  ";
+  const data = rows.map((r) => ({
+    label: r.label,
+    tested: r.tested,
+    note: r.tested ? r.notes : r.skipReason,
+    est: r.tested ? `~${r.estMinutes}m` : "",
+  }));
+  const labelW = Math.max(...data.map((r) => visibleLen(r.label)));
+  const estW = Math.max(...data.map((r) => visibleLen(r.est)));
+  const noteW = Math.max(12, Math.min(
+    Math.max(...data.map((r) => visibleLen(r.note))),
+    termWidth() - INDENT.length - labelW - 2 - 1 - 2 - 2 - estW,
+  ));
   const lines = [];
-  for (const r of rows) {
+  const continuation = INDENT + " ".repeat(labelW + 2 + 1 + 2); // under the note column
+  for (const r of data) {
+    // Notes wrap onto continuation lines under the note column — nothing is
+    // ever truncated (the reason a row is skipped is the point of the row).
+    const noteLines = wrapText(r.note, noteW);
     const mark = r.tested ? theme.success("✓") : theme.warning("✗");
-    const est = r.tested ? `~${r.estMinutes}m` : "";
-    // line layout: label[COL_LABEL] + " " + mark + "  " + note[N] + " " + est
-    const noteWidth = Math.max(16, inner - COL_LABEL - 1 - 1 - 2 - 1 - est.length);
-    const note = truncate(r.tested ? r.notes : r.skipReason, noteWidth);
-    lines.push(
-      `${padEndVisible(r.label, COL_LABEL)} ${mark}  ${padEndVisible(note, noteWidth)} ${est}`,
-    );
+    const estCell = r.est ? theme.subtle(padStartVisible(r.est, estW)) : "";
+    const dim = (text) => (r.tested ? text : theme.subtle(text));
+    lines.push(`${INDENT}${dim(padEndVisible(r.label, labelW))}  ${mark}  ${dim(padEndVisible(noteLines[0] ?? "", noteW))}  ${estCell}`.trimEnd());
+    for (const extra of noteLines.slice(1)) {
+      lines.push(`${continuation}${dim(extra)}`);
+    }
   }
   const total = estimateGridMinutes(rows);
+  const testedCount = rows.filter((r) => r.tested).length;
   lines.push("");
-  lines.push(theme.subtle(`${" ".repeat(COL_LABEL + 4)}total est. ~${total}m (tested configs only)`));
+  lines.push(INDENT + theme.subtle(`estimated total ~${total}m across ${testedCount} tested configs`));
   return lines.join("\n");
 }
 
@@ -138,6 +159,7 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
   const journal = await readJournal(runDir);
   const done = new Set(journal.filter((r) => r.event === "config-done").map((r) => r.configId));
   const fresh = [];
+  const labelW = sweepColumns(rows).labelW;
   let i = 0;
   for (const row of tested) {
     i += 1;
@@ -170,61 +192,50 @@ async function runSweep({ baseUrl, runDir, modelId, rows }) {
     fresh.push(result);
     const vs = result.summary.median != null ? fmtTps(result.summary.median) : "—";
     const acc = fmtAccept(result.summary.mtp);
-    console.log(`  ${theme.success("✓")} ${padEndVisible(row.label, COL_LABEL)} ${padEndVisible(vs, COL_TPS)}  accept ${acc}`);
+    console.log(`  ${theme.success("✓")} ${padEndVisible(row.label, labelW)}  ${vs}  accept ${acc}`);
   }
   return { aborted: false, fresh };
 }
 
 // ── ⑤ Report ────────────────────────────────────────────────────────────────
 
-function resultRow(r, baseline, recId) {
-  const med = fmtTps(r.summary.median);
-  const acc = fmtAccept(r.summary.mtp);
-  let delta = "—";
-  if (r.configId === "vanilla") {
-    delta = "(baseline)";
-  } else if (baseline && baseline.summary.median && r.summary.median) {
-    const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
-    const sign = pct >= 0 ? "+" : "";
-    const real = compareReal(r, baseline);
-    delta = real === "noise" ? `${sign}${pct.toFixed(0)}%  ≈ tie` : `${sign}${pct.toFixed(0)}%`;
-  }
+function resultRow(r, baseline, recId, cols) {
+  const med = padEndVisible(fmtTps(r.summary.median), cols.tpsW);
+  const acc = padEndVisible(fmtAccept(r.summary.mtp), cols.accW);
+  const d = sweepRowDelta(r, baseline);
+  const delta = d.isBaseline ? "(baseline)"
+    : d.pct == null ? "—"
+      : `${d.pct >= 0 ? "+" : ""}${d.pct.toFixed(0)}%${d.noise ? "  ≈ tie" : ""}`;
   const isRec = r.configId === recId;
   const prefix = isRec ? `${theme.success("★")} ` : "  ";
   const label = isRec ? theme.bold(r.label) : r.label;
-  return `${prefix}${padEndVisible(label, COL_LABEL)} ${padEndVisible(med, COL_TPS)} ${padEndVisible(acc, COL_ACCEPT)} ${delta}`;
+  return `${prefix}${padEndVisible(label, cols.labelW)}  ${med}  ${acc}  ${delta}`;
 }
 
 function resultsTable(results, baseline, recommendation) {
-  // Group by path so the recommendation (fastest thinking-off) is
-  // self-evident, instead of the beauty path ranking first by raw tps.
-  const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
-  // Null medians (failed configs) sort last — raw subtraction on null
-  // produces NaN and an unstable order.
-  const byMedianDesc = (a, b) => (b.summary.median ?? -Infinity) - (a.summary.median ?? -Infinity);
-  const fast = results.filter((r) => !isThinkingOn(r)).sort(byMedianDesc);
-  const beauty = results.filter(isThinkingOn).sort(byMedianDesc);
+  // Group by path (shared with results.md via autotune/report.mjs — A3) so
+  // the recommendation (fastest thinking-off) is self-evident instead of the
+  // beauty path ranking first by raw tps.
+  const recId = recommendedId(recommendation);
+  const cols = sweepColumns(results);
+  const { fast, beauty } = groupSweepResults(results);
   const lines = [];
   if (fast.length) {
     lines.push(theme.bold("fast path — thinking off (raw output speed)"));
-    for (const r of fast) lines.push(resultRow(r, baseline, recId));
+    for (const r of fast) lines.push(resultRow(r, baseline, recId, cols));
   }
   if (beauty.length) {
     if (fast.length) lines.push("");
     lines.push(theme.bold("beauty path — thinking on (includes reasoning tokens)"));
-    for (const r of beauty) lines.push(resultRow(r, baseline, recId));
+    for (const r of beauty) lines.push(resultRow(r, baseline, recId, cols));
   }
   return lines.join("\n");
 }
 
 async function writeResultsMd(runDir, { modelId, results, recommendation, runDir: rd }) {
-  const baseline = results.find((r) => r.configId === "vanilla");
-  const recId = recommendation?.ok ? recommendation.recommendation.configId : null;
-  // Null medians (failed configs) sort last — raw subtraction on null
-  // produces NaN and an unstable order.
-  const byMedianDesc = (a, b) => (b.summary.median ?? -Infinity) - (a.summary.median ?? -Infinity);
-  const fast = results.filter((r) => !isThinkingOn(r)).sort(byMedianDesc);
-  const beauty = results.filter(isThinkingOn).sort(byMedianDesc);
+  const baseline = sweepBaseline(results);
+  const recId = recommendedId(recommendation);
+  const { fast, beauty } = groupSweepResults(results);
   const lines = [];
   lines.push(`# Autotune report — ${modelId}`);
   lines.push("");
@@ -242,16 +253,11 @@ async function writeResultsMd(runDir, { modelId, results, recommendation, runDir
     for (const r of group) {
       const med = r.summary.median != null ? r.summary.median.toFixed(2) : "—";
       const acc = r.summary.mtp?.acceptPct != null ? `${r.summary.mtp.acceptPct.toFixed(1)}%` : "—";
-      let delta = "—";
-      let noise = "";
-      if (r.configId === "vanilla") {
-        delta = "(baseline)";
-      } else if (baseline && baseline.summary.median && r.summary.median) {
-        const pct = ((r.summary.median - baseline.summary.median) / baseline.summary.median) * 100;
-        const sign = pct >= 0 ? "+" : "";
-        delta = `${sign}${pct.toFixed(0)}%`;
-        noise = compareReal(r, baseline) === "noise" ? "tie" : "real";
-      }
+      const d = sweepRowDelta(r, baseline);
+      const delta = d.isBaseline ? "(baseline)"
+        : d.pct == null ? "—"
+          : `${d.pct >= 0 ? "+" : ""}${d.pct.toFixed(0)}%`;
+      const noise = d.noise == null ? "" : d.noise ? "tie" : "real";
       const rec = r.configId === recId ? "★" : "";
       lines.push(`| ${r.label} | ${med} | ${acc} | ${delta} | ${noise} | ${rec} |`);
     }
@@ -406,12 +412,23 @@ export async function autotuneCommand(argv) {
   }
   const profile = await readProfile(positional[0]);
 
+  // Fail before framing for the wrong backend; everything else (probe
+  // warnings, MTPLX import notes) lands UNDER the title so it has context.
+  if (backendFor(profile.backend).id !== "omlx") {
+    throw new Error(
+      `Autotune is an oMLX workflow (it drives the oMLX admin API). Profile "${profile.id}" uses the ${backendFor(profile.backend).label} backend.`,
+    );
+  }
+
+  console.log("");
+  console.log(theme.bold(`Autotune — ${dryRun ? "dry run" : "speed tune"}: ${profile.label}`));
+  console.log("");
+
   const probed = await probeForAutotune(profile, { nonInteractive, skipImport: dryRun });
   const { baseUrl, modelId, model, allModels } = probed;
   const rows = generateGrid(model, allModels);
   const baselineSettings = rows.find((r) => r.id === "vanilla").settings;
 
-  console.log(theme.bold(`Autotune — ${dryRun ? "dry run" : "speed tune"}: ${modelId}`));
   console.log(renderList([
     ["MTP", model.mtpCompatible ? "compatible" : "not compatible"],
     ["DFlash", model.dflashCompatible ? "compatible" : "not compatible"],
@@ -419,10 +436,9 @@ export async function autotuneCommand(argv) {
     ["tested configs", `${rows.filter((r) => r.tested).length}/${rows.length}`],
   ]));
   console.log("");
-  // "Plan", not "Dry-run plan" — the title previously said dry-run even
-  // during a real sweep. One estimate mention here; the confirm repeats it.
-  console.log(theme.bold(dryRun ? "Dry-run plan" : "Plan"));
+  console.log(theme.bold("Plan"));
   console.log(formatGridTable(rows));
+  console.log("");
 
   // --dry-run: plan only, no sweep, no mutation.
   if (dryRun) {

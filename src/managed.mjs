@@ -1,14 +1,13 @@
-import { BACKENDS } from "./backends.mjs";
+import { managedBackends } from "./backends.mjs";
 
 export async function scanManagedModels() {
   const results = [];
-  for (const backendId of ["omlx", "ollama"]) {
-    const backend = BACKENDS[backendId];
+  for (const backend of managedBackends()) {
     try {
       const models = await backend.scanModels();
-      results.push({ backendId, models, status: "ok" });
+      results.push({ backendId: backend.id, models, status: "ok" });
     } catch (error) {
-      results.push({ backendId, models: [], status: "unavailable", reason: error?.message ?? String(error) });
+      results.push({ backendId: backend.id, models: [], status: "unavailable", reason: error?.message ?? String(error) });
     }
   }
   return results;

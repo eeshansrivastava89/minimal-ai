@@ -1,12 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { statSync } from "node:fs";
-import { basename } from "node:path";
 import { readState, loadProfiles } from "./profiles.mjs";
 import { backendFor } from "./backends.mjs";
-import { ollamaLoadedModels } from "./ollama-runtime.mjs";
 import { execFileAsync, sleep } from "./exec.mjs";
 import { serverReady, stripTrailingSlash } from "./server-check.mjs";
 import { GB } from "./hardware.mjs";
+import { managedActions } from "./managed-backends.mjs";
+// HTTP + id helpers live in the leaf server-http.mjs; re-exported here so
+// the process.mjs barrel and older importers keep one stable home.
+export { serverModelIds, apiRootUrl, responseErrorDetail } from "./server-http.mjs";
+import { serverModelIds, expectedModelIds, modelIdsMatch, responseErrorDetail } from "./server-http.mjs";
 
 // ── Status checks ──────────────────────────────────────────────────────────
 
@@ -24,18 +27,8 @@ export async function isProfileRunning(profile) {
 }
 
 export async function modelLoadedOnServer(profile) {
-  const backend = backendFor(profile.backend);
-  if (backend.id === "omlx") {
-    const { ok, ids } = await omlxLoadedModelIds(profile);
-    if (!ok) return null;
-    return modelIdsMatch(ids, expectedModelIds(profile));
-  }
-  if (backend.id === "ollama") {
-    const { ok, ids } = await ollamaLoadedModels();
-    if (!ok) return null;
-    const expected = expectedModelIds(profile);
-    return ids.some((name) => expected.some((e) => e.toLowerCase() === name.toLowerCase()));
-  }
+  const action = managedActions(backendFor(profile.backend));
+  if (action?.modelLoaded) return await action.modelLoaded(profile);
   const { matches, reachable } = await serverMatchesProfile(profile);
   if (!reachable) return null;
   return matches;
@@ -43,7 +36,7 @@ export async function modelLoadedOnServer(profile) {
 
 export async function modelAvailableOnServer(profile) {
   const backend = backendFor(profile.backend);
-  if (backend.id === "omlx" || backend.id === "ollama") {
+  if (backend.type === "managed-server") {
     const { ok, ids } = await serverModelIds(profile.baseUrl);
     if (!ok) return null;
     return modelIdsMatch(ids, expectedModelIds(profile));
@@ -174,27 +167,6 @@ export async function preflightInference(profile) {
 
 // ── Internals: HTTP + model-id + process + shell + timestamp ──────────────
 
-export async function serverModelIds(baseUrl) {
-  const result = await fetchJson(`${stripTrailingSlash(baseUrl)}/models`);
-  if (!result.ok) return { ok: false, ids: [] };
-  const ids = (Array.isArray(result.data?.data) ? result.data.data : [])
-    .map((model) => String(model?.id ?? "").trim())
-    .filter(Boolean);
-  return { ok: true, ids };
-}
-
-export function apiRootUrl(baseUrl) {
-  try {
-    const url = new URL(baseUrl);
-    url.pathname = url.pathname.replace(/\/v1\/?$/u, "") || "/";
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/u, "");
-  } catch {
-    return String(baseUrl).replace(/\/v1\/?$/u, "").replace(/\/$/u, "");
-  }
-}
-
 export function pidAlive(pid) {
   try { process.kill(pid, 0); return true; }
   catch { return false; }
@@ -234,77 +206,4 @@ async function pidRssBytes(pid) {
   } catch { return null; }
 }
 
-export async function responseErrorDetail(response) {
-  const text = await response.text().catch(() => "");
-  if (!text) return "";
-  try {
-    const body = JSON.parse(text);
-    return body?.detail ?? body?.message ?? text;
-  } catch {
-    return text;
-  }
-}
 
-async function omlxLoadedModelIds(profile) {
-  const statusResult = await fetchJson(`${stripTrailingSlash(profile.baseUrl)}/models/status`);
-  if (!statusResult.ok) return { ok: false, ids: [] };
-  const statusData = statusResult.data;
-  const fromStatus = (Array.isArray(statusData?.models) ? statusData.models : [])
-    .filter((model) => model?.loaded === true)
-    .flatMap((model) => [model?.id, model?.name, model?.model, model?.alias])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-  if (Number(statusData?.loaded_count) === 0) return { ok: true, ids: fromStatus };
-
-  const summaryResult = await fetchJson(`${stripTrailingSlash(apiRootUrl(profile.baseUrl))}/api/status`);
-  if (!summaryResult.ok) return { ok: true, ids: fromStatus };
-  const summaryData = summaryResult.data;
-  const fromSummary = (Array.isArray(summaryData?.loaded_models) ? summaryData.loaded_models : [])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-  return { ok: true, ids: [...fromStatus, ...fromSummary] };
-}
-
-async function fetchJson(url) {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    if (!response.ok) return { ok: false, status: response.status };
-    return { ok: true, data: await response.json() };
-  } catch (err) {
-    return { ok: false, error: err?.message };
-  }
-}
-
-function modelIdsMatch(actualIds, expectedIds) {
-  const actual = normalizedModelIds(actualIds);
-  const expected = normalizedModelIds(expectedIds);
-  return [...expected].some((id) => actual.has(id));
-}
-
-function normalizedModelIds(ids) {
-  const normalized = new Set();
-  for (const id of ids) {
-    const value = normalizeModelId(id);
-    if (!value) continue;
-    normalized.add(value);
-    if (value.endsWith(":latest")) normalized.add(value.slice(0, -":latest".length));
-  }
-  return normalized;
-}
-
-function normalizeModelId(id) {
-  return String(id ?? "").trim().toLowerCase();
-}
-
-function expectedModelIds(profile) {
-  const fileName = profile.modelPath ? basename(profile.modelPath) : null;
-  return [
-    profile.ollamaModel,
-    profile.modelAlias,
-    profile.label,
-    profile.omlxModel,
-    profile.modelPath,
-    fileName,
-    fileName ? fileName.replace(/\.gguf$/iu, "") : null,
-  ].filter(Boolean).map(String);
-}

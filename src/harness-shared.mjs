@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { loadProfiles } from "./profiles.mjs";
+import { backendFor } from "./backends.mjs";
 import { status, theme } from "./ui.mjs";
 
 // ── Harness-neutral model/profile helpers ────────────────────────────────
@@ -57,14 +58,10 @@ export function resolvedLimits(profile) {
   return ctx ? { maxTokens: ctx, contextWindow: ctx } : { maxTokens: null, contextWindow: null };
 }
 
-/** Resolve the governing context window for a backend. The three backends
- *  differ only in which fact wins — extracted so resolvedLimits has one return
- *  path (L4). */
+/** Resolve the governing context window for a backend — the precedence
+ *  rules are adapter methods on BACKENDS (A2); this is one delegation. */
 function ctxForBackend(profile, caps) {
-  if (profile.backend === "ollama") return caps.servedContext ?? profile.flags?.ctxSize ?? caps.contextLength ?? null;
-  if (profile.backend === "omlx") return caps.contextLength ?? profile.flags?.ctxSize ?? null;
-  // llama.cpp: the configured context window governs the harness ceiling.
-  return profile.flags?.ctxSize ?? caps.contextLength ?? null;
+  return backendFor(profile.backend).contextWindowFor(profile, caps);
 }
 
 const FALLBACK_MAX_TOKENS = 16384;

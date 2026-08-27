@@ -16,8 +16,8 @@
 //   oMLX      → model config.json + safetensors index (+ server max_model_len)
 //   Ollama    → /api/show capabilities + model_info
 // The name-hint regex is the documented last resort for thinking — it lives
-// here and nowhere else. Consumers (picker, estimates, harness configs)
-// render the stored shape; they never re-derive.
+// in model-family.mjs with the other family heuristics. Consumers (picker,
+// estimates, harness configs) render the stored shape; they never re-derive.
 
 import { basename } from "node:path";
 import { existsSync } from "node:fs";
@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { readGgufMetadataSafe, numberMeta, resolveQuant } from "./gguf.mjs";
 import { findOmlxModelDir, readOmlxModelConfig, mlxModelHasMtpWeights } from "./mlx-discovery.mjs";
 import { ollamaModelInfo } from "./ollama-runtime.mjs";
+import { nameHintsThinking } from "./model-family.mjs";
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -41,13 +42,10 @@ export async function detectCapabilities(source) {
   return detectGgufCapabilities(source.modelPath, source.mmprojPath);
 }
 
-// ── Shared last resort ─────────────────────────────────────────────────────
-
-// Name-based thinking detection for models whose metadata can't be read
-// (managed oMLX/Ollama models without an authoritative answer).
-export function nameHintsThinking(hints) {
-  return /qwen3|qwen3\.\d|gemma-4|gemma4|deepseek-r[12]/i.test(String(hints).toLowerCase());
-}
+// The name-hint regex (documented last resort for thinking) lives in
+// model-family.mjs with the other family predicates; re-exported here so
+// existing consumers keep importing from the capability module.
+export { nameHintsThinking } from "./model-family.mjs";
 
 // ── llama.cpp adapter: GGUF metadata ───────────────────────────────────────
 

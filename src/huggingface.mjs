@@ -117,41 +117,63 @@ export function parseHfRef(input) {
   };
 }
 
-/** Resolve file metadata for a GGUF file from the HF tree API. */
-async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch, tree } = {}) {
-  const { repo, filename } = parseHfRef(ref);
-  assertValidRepoId(repo);
-  if (!isSafeRelativePath(filename)) {
-    throw new Error(`Unsafe filename in reference: "${filename}".`);
-  }
-  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  const entry = resolvedTree.find((f) => f?.type === "file" && f?.path === filename);
-  if (!entry) throw new Error(`File '${filename}' not found in HuggingFace repo '${repo}'.`);
-  return {
-    repo,
-    filename,
-    url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
-    sizeBytes: finiteTreeSize(entry),
-    sha256: typeof entry.lfs?.oid === "string" ? entry.lfs.oid : "",
-    relativePath: filename,
-  };
+/** True when a tree entry is a file entry. Untrusted API JSON — guard every field. */
+function isTreeFile(entry) {
+  return entry?.type === "file" && typeof entry?.path === "string";
 }
 
-/** Resolve all model files in an MLX repo from the HF tree API. */
-async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
-  assertValidRepoId(repo);
-  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  const modelFiles = resolvedTree.filter(
-    (f) => f?.type === "file" && typeof f?.path === "string" && isSafeRelativePath(f.path) && !f.path.startsWith(".") && f.path !== ".gitattributes" && f.path !== "README.md",
-  );
-  return modelFiles.map((f) => ({
+/** GGUF file entries that are safe to pass to `hf download` and use in URLs. */
+function isSafeGgufFile(entry) {
+  return isTreeFile(entry) && entry.path.endsWith(".gguf") && isSafeRelativePath(entry.path);
+}
+
+/** Full download metadata for a tree entry. */
+function fileMeta(repo) {
+  return (f) => ({
     repo,
     filename: f.path,
     url: `https://huggingface.co/${repo}/resolve/main/${f.path}`,
     sizeBytes: finiteTreeSize(f),
     sha256: typeof f.lfs?.oid === "string" ? f.lfs.oid : "",
     relativePath: f.path,
-  }));
+  });
+}
+
+const bySizeAsc = (a, b) => a.sizeBytes - b.sizeBytes;
+
+/** Shared shape behind the tree-query helpers (A9): validate the repo,
+ *  resolve (or reuse) the tree, then filter → map → sort. The public
+ *  wrappers below differ only in their predicate/select/sort. */
+async function queryTree(repo, { fetchImpl = globalThis.fetch, tree, where, select, sort } = {}) {
+  assertValidRepoId(repo);
+  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
+  const rows = resolvedTree.filter(where).map(select);
+  if (sort) rows.sort(sort);
+  return rows;
+}
+
+/** Resolve file metadata for a GGUF file from the HF tree API. */
+async function resolveGgufFile(ref, { fetchImpl = globalThis.fetch, tree } = {}) {
+  const { repo, filename } = parseHfRef(ref);
+  if (!isSafeRelativePath(filename)) {
+    throw new Error(`Unsafe filename in reference: "${filename}".`);
+  }
+  const found = await queryTree(repo, {
+    fetchImpl, tree,
+    where: (f) => isTreeFile(f) && f.path === filename,
+    select: fileMeta(repo),
+  });
+  if (found.length === 0) throw new Error(`File '${filename}' not found in HuggingFace repo '${repo}'.`);
+  return found[0];
+}
+
+/** Resolve all model files in an MLX repo from the HF tree API. */
+async function resolveMlxRepo(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+  return await queryTree(repo, {
+    fetchImpl, tree,
+    where: (f) => isTreeFile(f) && isSafeRelativePath(f.path) && !f.path.startsWith(".") && f.path !== ".gitattributes" && f.path !== "README.md",
+    select: fileMeta(repo),
+  });
 }
 
 export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.fetch } = {}) {
@@ -164,15 +186,12 @@ export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.
 
 /** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors). */
 export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
-  assertValidRepoId(repo);
-  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  return resolvedTree
-    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && !isDrafterFile(f.path) && !isMmprojFile(f.path))
-    .map((f) => ({
-      path: f.path,
-      sizeBytes: finiteTreeSize(f),
-    }))
-    .sort((a, b) => a.sizeBytes - b.sizeBytes);
+  return await queryTree(repo, {
+    fetchImpl, tree,
+    where: (f) => isSafeGgufFile(f) && !isDrafterFile(f.path) && !isMmprojFile(f.path),
+    select: (f) => ({ path: f.path, sizeBytes: finiteTreeSize(f) }),
+    sort: bySizeAsc,
+  });
 }
 
 /** Check if a GGUF file is an MTP drafter based on its path/name. */
@@ -195,14 +214,11 @@ function isMmprojFile(path) {
 
 /** List all mmproj (vision projector) GGUF files in a HuggingFace repo. */
 export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
-  assertValidRepoId(repo);
-  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  return resolvedTree
-    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && isMmprojFile(f.path))
-    .map((f) => ({
-      path: f.path,
-      sizeBytes: finiteTreeSize(f),
-    }));
+  return await queryTree(repo, {
+    fetchImpl, tree,
+    where: (f) => isSafeGgufFile(f) && isMmprojFile(f.path),
+    select: (f) => ({ path: f.path, sizeBytes: finiteTreeSize(f) }),
+  });
 }
 
 /** List all MTP drafter GGUF files in a HuggingFace repo (by filename
@@ -210,15 +226,12 @@ export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree
  *  them, so the two lists are complementary). Used to offer a drafter
  *  download alongside the main model (#2). */
 export async function listDrafterFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
-  assertValidRepoId(repo);
-  const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
-  return resolvedTree
-    .filter((f) => f?.type === "file" && typeof f?.path === "string" && f.path.endsWith(".gguf") && isSafeRelativePath(f.path) && isDrafterFile(f.path))
-    .map((f) => ({
-      path: f.path,
-      sizeBytes: finiteTreeSize(f),
-    }))
-    .sort((a, b) => a.sizeBytes - b.sizeBytes);
+  return await queryTree(repo, {
+    fetchImpl, tree,
+    where: (f) => isSafeGgufFile(f) && isDrafterFile(f.path),
+    select: (f) => ({ path: f.path, sizeBytes: finiteTreeSize(f) }),
+    sort: bySizeAsc,
+  });
 }
 
 /** Fetch model metadata from the HF API. */

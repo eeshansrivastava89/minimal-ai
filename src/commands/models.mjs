@@ -1,19 +1,17 @@
 import { ensureDirs } from "../config.mjs";
-import { stripVTControlCharacters } from "node:util";
 import { backendFor, BACKENDS } from "../backends.mjs";
 import { createProfileFromModel, readProfile, saveProfile, deleteProfile, profileJsonPath } from "../profiles.mjs";
-import { isProfileRunning, modelAvailableOnServer, stopProfile, stopOrUnload } from "../process.mjs";
+import { isProfileRunning, modelAvailableOnServer, stopProfile, stopOrUnload, serverReady } from "../process.mjs";
 import { configuredHarness } from "../harnesses.mjs";
 import { hasOmlx, installOmlx } from "../omlx-runtime.mjs";
 import { hasOllama, installOllama } from "../ollama-runtime.mjs";
-import { configureLocalProfile, configureManagedProfile } from "../profile-setup.mjs";
-import { promptSelectModel, promptChoice, promptConfirm, theme, status } from "../ui.mjs";
+import { configureLocalProfile, configureManagedProfile } from "../profile-setup/index.mjs";
+import { promptSelectModel, promptChoice, promptConfirm, theme, status, visibleLen } from "../ui.mjs";
 import { buildCatalogItems, createManagedProfile, itemKey, loadModelCatalog, normalizeCatalog } from "../model-catalog.mjs";
-import { modelSelectOption, modelNameWidth, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
+import { modelRowOptions, inferBackendId, formatSourceLabel, discoverySourceForItem, printGgufModelDetails, printManagedModelDetails, printProfileDetails } from "../model-presenters.mjs";
 import { runProfile } from "../launch.mjs";
 import { downloadHfGguf } from "../download.mjs";
 import { offerAutotuneAfterSetup, autotuneCommand } from "./autotune.mjs";
-import { serverReady } from "../server-check.mjs";
 import { deleteModelFromSource } from "./models-delete.mjs";
 import { runtimeStatusFlow, discoveryPathsFlow, harnessFlow } from "./models-settings.mjs";
 
@@ -72,7 +70,7 @@ async function showModelPicker(catalog) {
     }
   }
 
-  const nameWidth = modelNameWidth(allItems);
+  const rowOptions = modelRowOptions(allItems, { runningProfilesNow, modelMissingIds });
 
   const statusFor = (item) => {
     if (item.type === "profile") {
@@ -106,7 +104,7 @@ async function showModelPicker(catalog) {
     const label = backendLabel === sourceLabel ? backendLabel : `${backendLabel} · ${sourceLabel}`;
     const sep = `${theme.bold(label)} ${theme.subtle(`(${items.length})`)}`;
     const groupItems = items.map((item) => {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
+      const opt = rowOptions.get(itemKey(item));
       return { value: opt.value, label: opt.label, description: opt.description };
     });
     groups.push({ separator: sep, items: groupItems });
@@ -114,7 +112,7 @@ async function showModelPicker(catalog) {
 
   if (setupItems.length > 0) {
     const groupItems = setupItems.map((item) => {
-      const opt = modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth });
+      const opt = rowOptions.get(itemKey(item));
       return { value: opt.value, label: opt.label, description: opt.description };
     });
     groups.push({ separator: theme.warning(`Needs setup (${setupItems.length})`), items: groupItems });
@@ -205,10 +203,10 @@ async function showModelPicker(catalog) {
 
 function formatActions(rawActions) {
   const sep = theme.subtle("  │  ");
-  const maxName = Math.max(...rawActions.map((a) => stripVTControlCharacters(a.name).length));
-  const width = Math.max(17, maxName + 2);
+  const maxName = Math.max(...rawActions.map((a) => visibleLen(a.name)));
+  const width = maxName + 2;
   return rawActions.map((a) => {
-    const name = a.dimmed ? theme.subtle(a.name.padEnd(width).slice(0, width)) : theme.bold(a.name.padEnd(width).slice(0, width));
+    const name = a.dimmed ? theme.subtle(a.name.padEnd(width)) : theme.bold(a.name.padEnd(width));
     const desc = a.dimmed ? theme.error(a.dimmedDesc ?? "not available") : theme.subtle(a.desc);
     return { value: a.value, label: name + sep + desc };
   });
@@ -294,6 +292,16 @@ function printProfileSaved(id) {
   console.log(theme.subtle(`  Profile: ${profileJsonPath(id)}`));
 }
 
+/** Persist + sync + announce a configured profile, once (A7). The autotune
+ *  offer fires only for fresh managed setups: autotune is an oMLX-only
+ *  post-setup flow, not something to re-offer on every reconfigure. */
+async function persistConfiguredProfile(configured, { offerAutotune = false } = {}) {
+  await saveProfile(configured);
+  await (await configuredHarness()).syncConfig(configured);
+  printProfileSaved(configured.id);
+  if (offerAutotune) await offerAutotuneAfterSetup(configured);
+}
+
 async function setupItem(item) {
   if (item.type === "profile") {
     const profile = await readProfile(item.profile.id);
@@ -302,19 +310,14 @@ async function setupItem(item) {
       ? await configureManagedProfile(profile)
       : await configureLocalProfile(profile);
     if (!configured) return;
-    await saveProfile(configured);
-    await (await configuredHarness()).syncConfig(configured);
-    printProfileSaved(configured.id);
+    await persistConfiguredProfile(configured);
     return;
   }
   if (item.type === "managed") {
     const profile = createManagedProfile(item.model, item.backendId);
     const configured = await configureManagedProfile(profile);
     if (!configured) return;
-    await saveProfile(configured);
-    await (await configuredHarness()).syncConfig(configured);
-    printProfileSaved(configured.id);
-    await offerAutotuneAfterSetup(configured);
+    await persistConfiguredProfile(configured, { offerAutotune: true });
     return;
   }
   const profile = await createProfileFromModel(item.model, null, item.drafter?.path);
@@ -325,9 +328,7 @@ async function setupItem(item) {
   }
   const configured = await configureLocalProfile(profile);
   if (!configured) return;
-  await saveProfile(configured);
-  await (await configuredHarness()).syncConfig(configured);
-  printProfileSaved(configured.id);
+  await persistConfiguredProfile(configured);
 }
 
 async function removeProfileInteractive(id) {

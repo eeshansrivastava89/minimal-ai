@@ -1,16 +1,99 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import { backendFor } from "./backends.mjs";
 import { computeServerCommand, buildStartScript, isProfileRunning } from "./process.mjs";
 import { profileDir } from "./profiles.mjs";
-import { formatBytes, formatCtxLabel, renderList, padEndVisible, theme, status, maxWidth } from "./ui.mjs";
-import { capabilitySummary, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
+import { formatBytes, formatCtxLabel, renderList, padEndVisible, theme, status, visibleLen, promptContentWidth } from "./ui.mjs";
+import { capabilitySpecs, ggufDetailParts, isProfileFileMissing, profileDetailParts } from "./model-summary.mjs";
 import { itemKey } from "./model-catalog.mjs";
 
-const OPTION_SEPARATOR = "  ";
-const OPTION_QUANT_WIDTH = 10;
-const OPTION_CTX_WIDTH = 5;
+// ── Picker rows ────────────────────────────────────────────────────────────
+// Row = name + optional metadata columns + optional state tag. Rules:
+// - The name is never truncated — it IS the model's identity. If a window is
+//   narrower than the name, Clack wraps the row; we never cut it with "…".
+// - When the full row doesn't fit, metadata columns shed in shedRank order
+//   (the Details action always has the complete picture).
+// - Every width below is measured from content; the only fixed geometry is
+//   the separator and Clack's frame gutter (promptContentWidth from the kit).
+const SEP = "  ";
+
+const OPTIONAL_COLUMNS = [
+  { id: "quant", shedRank: 2, cell: (row) => row.quant, render: (cell, width) => padEndVisible(cell, width) },
+  { id: "ctx", shedRank: 0, cell: (row) => row.ctx, render: (cell, width) => padEndVisible(cell, width) },
+  { id: "size", shedRank: 1, cell: (row) => row.size, render: (cell, width) => theme.subtle(padEndVisible(cell, width)) },
+];
+
+function pickerRowData(item, { runningProfilesNow, modelMissingIds }) {
+  const row = {
+    item,
+    key: itemKey(item),
+    name: item.label ?? item.model?.label ?? item.profile?.label ?? "",
+    accent: item.type === "profile" ? "bold" : "warning",
+    quant: item.quant ?? "—",
+    ctx: item.contextLength != null ? formatCtxLabel(item.contextLength) : "—",
+    size: item.type === "profile" && item.fileMissing ? "—" : (item.sizeBytes ? formatBytes(item.sizeBytes) : "—"),
+    state: "",
+    hint: undefined,
+  };
+  if (item.type !== "profile") return row;
+  const profile = item.profile;
+  const running = runningProfilesNow.some((p) => p.id === profile.id);
+  const serverGone = !item.fileMissing && Boolean(modelMissingIds?.has(profile.id));
+  const drafterGone = Boolean(profile.drafterPath) && !existsSync(profile.drafterPath);
+  if (item.fileMissing || serverGone) row.state = "missing";
+  else if (running) row.state = "running";
+  if (drafterGone) row.hint = "MTP drafter missing — reconfigure";
+  else if (serverGone) row.hint = `${backendFor(profile.backend).label} model no longer available`;
+  return row;
+}
+
+/** Choose which metadata columns fit: shed lowest-priority columns until
+ *  every row (name + columns + state + hint) fits the prompt frame. */
+function fitRowLayout(rows, budget) {
+  const nameW = Math.max(...rows.map((r) => visibleLen(r.name)));
+  const stateW = Math.max(0, ...rows.map((r) => r.state.length));
+  const widths = new Map(OPTIONAL_COLUMNS.map((c) => [c.id, Math.max(...rows.map((r) => visibleLen(c.cell(r))))]));
+  const visible = new Set(OPTIONAL_COLUMNS.map((c) => c.id));
+  const rowWidth = (r) =>
+    nameW
+    + [...visible].reduce((sum, id) => sum + SEP.length + widths.get(id), 0)
+    + (stateW ? SEP.length + stateW : 0)
+    + (r.hint ? SEP.length + visibleLen(r.hint) : 0);
+  for (const col of [...OPTIONAL_COLUMNS].sort((a, b) => a.shedRank - b.shedRank)) {
+    if (rows.every((r) => rowWidth(r) <= budget)) break;
+    visible.delete(col.id);
+  }
+  return { nameW, stateW, widths, visible };
+}
+
+function renderPickerRow(row, layout) {
+  const name = row.accent === "warning"
+    ? theme.warning(theme.bold(padEndVisible(row.name, layout.nameW)))
+    : theme.bold(padEndVisible(row.name, layout.nameW));
+  const cells = [name];
+  for (const col of OPTIONAL_COLUMNS) {
+    if (!layout.visible.has(col.id)) continue;
+    cells.push(col.render(col.cell(row), layout.widths.get(col.id)));
+  }
+  if (row.state === "running") cells.push(theme.success(padEndVisible(row.state, layout.stateW)));
+  if (row.state === "missing") cells.push(theme.error(padEndVisible(row.state, layout.stateW)));
+  return cells.join(SEP);
+}
+
+/** Build picker options for every item in one pass: the column layout is
+ *  computed once from all items so rows share alignment (A7-style DRY —
+ *  callers used to thread nameWidth through every call). Returns a Map of
+ *  itemKey → { value, label, description? } ready for promptSelectModel. */
+export function modelRowOptions(items, { runningProfilesNow = [], modelMissingIds } = {}) {
+  const rows = items.map((item) => pickerRowData(item, { runningProfilesNow, modelMissingIds }));
+  if (rows.length === 0) return new Map();
+  const layout = fitRowLayout(rows, promptContentWidth());
+  return new Map(rows.map((row) => [row.key, {
+    value: row.key,
+    label: renderPickerRow(row, layout),
+    ...(row.hint ? { description: theme.error(row.hint) } : {}),
+  }]));
+}
 
 export function formatSourceLabel(sourceId) {
   if (!sourceId) return "unknown";
@@ -49,85 +132,6 @@ export function discoverySourceForItem(item) {
   return item.model?.source ?? null;
 }
 
-function optionQuantLabel(item) {
-  if (item.quant) return padEndVisible(item.quant, OPTION_QUANT_WIDTH);
-  return padEndVisible("—", OPTION_QUANT_WIDTH);
-}
-
-function optionCtxLabel(item) {
-  if (item.contextLength) return padEndVisible(formatCtxLabel(item.contextLength), OPTION_CTX_WIDTH);
-  return padEndVisible("—", OPTION_CTX_WIDTH);
-}
-
-function optionSizeLabel(item) {
-  if (item.type === "profile" && item.fileMissing) return "—";
-  if (item.sizeBytes) return formatBytes(item.sizeBytes);
-  return "—";
-}
-
-// A picker row is name + quant(10) + ctx(5) + size(~9) + state(7) +
-// 4 separators(8) ≈ nameWidth + 39. Cap the name column at the terminal
-// width, or long HF names overflow and Clack wraps mid-row.
-const ROW_OVERHEAD = OPTION_QUANT_WIDTH + OPTION_CTX_WIDTH + 9 + 7 + 4 * OPTION_SEPARATOR.length;
-
-export function modelNameWidth(items) {
-  const maxName = Math.max(...items.map((item) => {
-    const base = stripVTControlCharacters(item.label ?? item.model?.label ?? item.profile?.label ?? "");
-    if (item.type !== "profile") {
-      const backendLabel = backendFor(inferBackendId(item))?.label ?? "";
-      return base.length + 3 + backendLabel.length;
-    }
-    return base.length;
-  }));
-  return Math.min(Math.max(20, maxName + 2), Math.max(20, maxWidth() - ROW_OVERHEAD));
-}
-
-/** Clip to a visible width, ending with an ellipsis when cut. */
-function clip(str, width) {
-  if (stripVTControlCharacters(str).length <= width) return str;
-  return `${stripVTControlCharacters(str).slice(0, Math.max(1, width - 1))}…`;
-}
-
-export function modelSelectOption(item, { runningProfilesNow, modelMissingIds, nameWidth }) {
-  if (item.type === "profile") {
-    const running = runningProfilesNow.some((profile) => profile.id === item.profile.id);
-    const modelMissing = !item.fileMissing && modelMissingIds?.has(item.profile.id);
-    const statusTag = item.fileMissing || modelMissing ? "missing" : running ? "running" : "ready";
-    const backend = backendFor(item.profile.backend);
-    const drafterMissing = Boolean(item.profile.drafterPath) && !existsSync(item.profile.drafterPath);
-    const hint = drafterMissing ? "MTP drafter missing — reconfigure"
-      : modelMissing ? `${backend.label} model no longer available`
-      : undefined;
-
-    const stateTag = statusTag === "running" ? theme.success("running")
-      : statusTag === "missing" ? theme.error("missing")
-      : "";
-    return {
-      value: itemKey(item),
-      label: [
-        theme.bold(padEndVisible(clip(item.label, nameWidth), nameWidth)),
-        optionQuantLabel(item),
-        optionCtxLabel(item),
-        theme.subtle(optionSizeLabel(item)),
-        stateTag,
-      ].filter((part) => part !== "").join(OPTION_SEPARATOR),
-      ...(hint ? { description: theme.error(hint) } : {}),
-    };
-  }
-
-  const backendLabel = backendFor(inferBackendId(item))?.label;
-  const full = backendLabel ? `${item.label} · ${backendLabel}` : item.label;
-  return {
-    value: itemKey(item),
-    label: [
-      theme.warning(theme.bold(padEndVisible(clip(full, nameWidth), nameWidth))),
-      optionQuantLabel(item),
-      optionCtxLabel(item),
-      theme.subtle(optionSizeLabel(item)),
-    ].join(OPTION_SEPARATOR),
-  };
-}
-
 export function inferBackendId(item) {
   if (item.type === "profile") return item.profile.backend;
   if (item.type === "managed") return item.backendId;
@@ -153,7 +157,7 @@ export async function printProfileDetails(profile) {
     ["Server", fileMissing ? status({ kind: "error", message: profile.baseUrl }) : profile.baseUrl],
     ["Setup ID", profile.id],
     ["Model alias", profile.modelAlias],
-    ...(profile.capabilities ? [["Detected", capabilitySummary(profile.capabilities)]] : []),
+    ...(profile.capabilities ? [["Detected", capabilitySpecs(profile.capabilities)]] : []),
   ];
   if (!isManaged) {
     rows.push(
@@ -192,7 +196,7 @@ export function printGgufModelDetails(model, drafter) {
     ["Details", parts.join(theme.subtle(" · "))],
     ["Local file", model.path],
     ["Vision file", model.mmprojPath ?? "none"],
-    ["Detected", capabilitySummary(caps)],
+    ["Detected", capabilitySpecs(caps)],
     ["Quant", model.quant ?? "unknown"],
   ];
   if (drafter) rows.push(["Drafter", drafter.path], ["Drafter size", formatBytes(drafter.sizeBytes)]);

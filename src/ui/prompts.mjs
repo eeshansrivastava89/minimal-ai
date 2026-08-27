@@ -14,6 +14,17 @@ import {
   formatInstructionFooter,
 } from "@clack/prompts";
 import { SelectPrompt, settings, wrapTextWithPrefix } from "@clack/core";
+import { visibleLen, termWidth } from "./layout.mjs";
+
+// Frame overhead of the clack select frame: left bar + gap + option marker
+// + gap. Derived from Clack's own symbols so picker rows can be sized to
+// exactly the space the frame leaves them (no magic numbers).
+const FRAME_GUTTER = visibleLen(`${S_BAR}  `) + visibleLen(`${S_RADIO_ACTIVE} `);
+
+/** Columns available to option content inside the select frame. */
+export function promptContentWidth() {
+  return Math.max(20, termWidth() - FRAME_GUTTER);
+}
 
 function guard(value) {
   if (isCancel(value)) return null;
@@ -149,7 +160,7 @@ async function groupSelect({ message, options, initialValue, maxItems }) {
             cursor: this.cursor,
             options: this.options,
             maxItems,
-            columnPadding: bar.length,
+            columnPadding: visibleLen(bar),
             rowPadding: headerLines + footer.length + 1,
             style: (option, isActive) => {
               if (option.header) return `\n${option.label ?? ""}`;

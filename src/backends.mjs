@@ -4,6 +4,11 @@ import { scanOmlxModelSizes, lookupOmlxModelInfo } from "./mlx-discovery.mjs";
 import { scanOllamaModels, parseOllamaHost } from "./ollama-runtime.mjs";
 
 // ── Backend definitions ────────────────────────────────────────────────────
+//
+// Data-only registry. MANAGED behavior (start/apply/unload/loaded checks)
+// lives in managed-backends.mjs keyed by these objects (A2); this module
+// only carries the pure context-window precedence so harness-shared can
+// depend on it cycle-free.
 
 const LOCAL_HOST = "127.0.0.1";
 const LLAMA_CPP_PORT = 8080;
@@ -29,6 +34,7 @@ export const BACKENDS = {
     needsCommandFile: true,
     scanModels: async () => (await (await import("./scan.mjs")).scanGgufModels()).models,
     modelIdFields: ["modelAlias"],
+    contextWindowFor: (profile, caps) => profile.flags?.ctxSize ?? caps.contextLength ?? null,
   },
   "omlx": {
     id: "omlx",
@@ -42,6 +48,7 @@ export const BACKENDS = {
     needsCommandFile: false,
     scanModels: () => scanOmlxModels(),
     modelIdFields: ["omlxModel", "modelAlias"],
+    contextWindowFor: (profile, caps) => caps.contextLength ?? profile.flags?.ctxSize ?? null,
   },
   "ollama": {
     id: "ollama",
@@ -55,6 +62,7 @@ export const BACKENDS = {
     needsCommandFile: false,
     scanModels: () => scanOllamaModels(),
     modelIdFields: ["ollamaModel", "modelAlias"],
+    contextWindowFor: (profile, caps) => caps.servedContext ?? profile.flags?.ctxSize ?? caps.contextLength ?? null,
   },
 };
 
@@ -62,6 +70,12 @@ export function backendFor(backendId) {
   const backend = BACKENDS[backendId ?? "llama-cpp"];
   if (!backend) throw new Error(`Unknown backend: ${backendId}`);
   return backend;
+}
+
+/** The managed-server backend entries (oMLX, Ollama, …) — derived from the
+ *  registry, so managed.mjs and friends never keep a hardcoded list. */
+export function managedBackends() {
+  return Object.values(BACKENDS).filter((backend) => backend.type === "managed-server");
 }
 
 export async function backendBinaryFor(backendId) {

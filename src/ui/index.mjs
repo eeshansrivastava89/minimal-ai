@@ -4,7 +4,7 @@
 // picocolors are used directly from here.
 
 export { theme, icons } from "./theme.mjs";
-export { maxWidth, visibleLen, padEndVisible, padStartVisible, fillLine, wrapText, sectionLine } from "./layout.mjs";
+export { maxWidth, termWidth, visibleLen, padEndVisible, padStartVisible, fillLine, wrapText, sectionLine } from "./layout.mjs";
 export {
   appHeader,
   screenHeader,
@@ -26,6 +26,7 @@ export {
   promptChoice,
   promptSelectModel,
   promptMultiSelect,
+  promptContentWidth,
 } from "./prompts.mjs";
 export { createCli, runCli, formatError } from "./cli.mjs";
 export { FangHelp } from "./help.mjs";

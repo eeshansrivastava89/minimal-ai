@@ -1,15 +1,12 @@
-/** Strip all trailing slashes from a URL. Single helper shared with
- *  server-status.mjs so baseUrl normalization is consistent (a baseUrl like
- *  `http://localhost:8080//` used to be handled differently across callers —
- *  serverReady stripped one slash, serverModelIds stripped all). (M4) */
-export function stripTrailingSlash(url) {
-  return String(url).replace(/\/+$/u, "");
-}
+// stripTrailingSlash lives in the leaf server-http.mjs (single definition);
+// re-exported here for importers that used to reach server-check.
+import { stripTrailingSlash as normalizeUrl } from "./server-http.mjs";
+export { stripTrailingSlash } from "./server-http.mjs";
 
 /** Check if an OpenAI-compatible server is responding at the given base URL. */
 export async function serverReady(baseUrl) {
   try {
-    const response = await fetch(`${stripTrailingSlash(baseUrl)}/models`, { signal: AbortSignal.timeout(2000) });
+    const response = await fetch(`${normalizeUrl(baseUrl)}/models`, { signal: AbortSignal.timeout(2000) });
     return response.ok;
   } catch {
     return false;

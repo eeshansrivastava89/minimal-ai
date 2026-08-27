@@ -17,16 +17,20 @@ import { renderMemoryEstimate, status, theme } from "./ui.mjs";
 
 export async function runProfile(profile, options = {}) {
   const backend = backendFor(profile.backend);
-  const harnessId = options.with ?? (await configuredHarness()).id;
-  const validHarnesses = [...listHarnesses().map((h) => h.id), "server"];
-  if (!validHarnesses.includes(harnessId)) {
-    throw new Error(`Invalid --with value: "${harnessId}". Supported: ${validHarnesses.join(", ")}`);
-  }
-  if (harnessId !== "server" && !(await harnessFor(harnessId).detect())) {
-    const harness = harnessFor(harnessId);
-    console.log(status({ kind: "warning", message: `${harness.label} is not installed. Run with --with server, or install: npm install -g ${harness.npm}` }));
-    console.log(theme.subtle("Starting server only..."));
-    return await runProfile(profile, { ...options, with: "server" });
+  // options.serverOnly starts the server and stops there — the CLI spells it
+  // `--with server`, but that string never crosses into the service layer.
+  const harnessId = options.serverOnly ? null : (options.with ?? (await configuredHarness()).id);
+  if (harnessId !== null) {
+    const validHarnesses = listHarnesses().map((h) => h.id);
+    if (!validHarnesses.includes(harnessId)) {
+      throw new Error(`Invalid --with value: "${harnessId}". Supported: ${[...validHarnesses, "server"].join(", ")}`);
+    }
+    if (!(await harnessFor(harnessId).detect())) {
+      const harness = harnessFor(harnessId);
+      console.log(status({ kind: "warning", message: `${harness.label} is not installed. Run with --with server, or install: npm install -g ${harness.npm}` }));
+      console.log(theme.subtle("Starting server only..."));
+      return await runProfile(profile, { ...options, serverOnly: true });
+    }
   }
 
   const isManaged = backend.type === "managed-server";
@@ -140,7 +144,7 @@ function printMemoryEstimate(profile, isManaged) {
 }
 
 async function launchHarness(profile, options, isManaged, harnessId, backend) {
-  if (harnessId === "server") {
+  if (harnessId === null) {
     if (!isManaged) {
       console.log(theme.subtle(`Server running at ${profile.baseUrl}`));
       console.log(theme.subtle(`Stop with: minimal-ai stop ${profile.id}`));

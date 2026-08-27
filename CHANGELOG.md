@@ -4,6 +4,36 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.2.1] - 2026-08-27
+
+### Changed
+- **No truncation, anywhere.** Picker rows shed their metadata columns
+  (quant → size → ctx) on narrow terminals instead of clipping model names
+  with an ellipsis, and the autotune plan table sizes to its content and
+  wraps long notes onto aligned continuation lines — at any terminal width,
+  nothing is cut off.
+- **Width/wrap math now runs on maintained primitives** (string-width,
+  wrap-ansi) instead of hand-rolled ANSI slicing — the source of the
+  mid-word cuts, misaligned columns, and tiny-width hangs this screen used
+  to hit. Clack picker rows get their full width back (the frame gutter was
+  being counted with ANSI escape bytes inside: options wrapped 13 columns
+  too early).
+- **The autotune screen reads as one framed flow**: the title prints before
+  preflight so MTPLX/side-car notes land under it with context, the friendly
+  model label replaces the raw id, indentation follows one convention
+  (headings at col 0, content at col 2), and estimates sit next to the text
+  they belong to.
+
+### Fixed
+- The oMLX settings writer is now one source of truth (setup + launch): the
+  profile's full desired state is diffed against the server and only drift
+  is pushed — including re-enabling thinking and disabling a removed budget
+  that the old additive-only lifecycle writer never sent.
+
+### Removed
+- cli-truncate dependency (nothing truncates anymore); the fixed 24/10/9
+  column constants in autotune and picker names now measure their own widths.
+
 ## [3.2.0] - 2026-08-26
 
 ### Changed

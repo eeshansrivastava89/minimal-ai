@@ -28,8 +28,16 @@ export function fitColor(totalBytes, availableBytes) {
   return pc.red;
 }
 
-export function humanCapabilitySummary(caps = {}) {
+/** The one capability renderer (A8). Feature words are colored and use one
+ *  vocabulary everywhere; { specs: true } prepends the technical facts
+ *  (architecture · quant) for detail/overview rows. Fallback is
+ *  backend-neutral (not every model is a GGUF). */
+export function capabilitySummary(caps = {}, { specs = false } = {}) {
   const parts = [];
+  if (specs) {
+    if (caps.architecture) parts.push(caps.architecture);
+    if (caps.quant) parts.push(caps.quant);
+  }
   if (caps.thinking) parts.push(pc.magenta("Reasoning"));
   if (caps.vision) parts.push(pc.cyan("Vision"));
   if (caps.mtp) parts.push(pc.blue("MTP"));

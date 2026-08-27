@@ -15,6 +15,7 @@ import {
   removeProviderModel,
   syncProviderConfig,
 } from "./harness-shared.mjs";
+import { isQwen3xFamily, usesChatTemplateKwargs } from "./model-family.mjs";
 
 const RESOURCES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "resources");
 const PI_DIR = join(homedir(), ".pi");
@@ -60,10 +61,6 @@ const OLLAMA_THINKING_LEVEL_MAP = { off: "none", minimal: "minimal", low: "low",
 // a value the template accepts.
 const QWEN3X_THINKING_LEVEL_MAP = { minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: "xhigh" };
 
-function isQwen3xFamily(family) {
-  return /qwen3[._-]?(?:[568]|next)/i.test(family);
-}
-
 export function thinkingLevelMapFor(profile) {
   if (profile.backend === "ollama") return OLLAMA_THINKING_LEVEL_MAP;
   return isQwen3xFamily(modelFamily(profile)) ? QWEN3X_THINKING_LEVEL_MAP : THINKING_LEVEL_MAP;
@@ -92,7 +89,7 @@ function piModelCompat(profile) {
   if (profile.compat) return profile.compat;
   if (profile.backend === "ollama") return null; // /v1 ignores chat_template_kwargs — levels travel via top-level reasoning_effort (piReasoning)
   const family = modelFamily(profile);
-  if (family.includes("qwen") || family.includes("gemma-4") || family.includes("gemma 4")) {
+  if (usesChatTemplateKwargs(family)) {
     // Generic chat-template kwargs carry BOTH the on/off toggle and the
     // effort level. Pi's "qwen-chat-template" format only sends the toggle
     // and silently drops the level — leaving models like Qwen3.8 stuck at
