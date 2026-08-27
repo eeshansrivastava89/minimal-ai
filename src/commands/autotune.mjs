@@ -17,7 +17,7 @@ import { serverReady, apiRootUrl } from "../process.mjs";
 import { offerOmlxRestart, putOmlxModelSettings, omlxSettingsFailureHint, restartOmlxServer } from "../omlx-runtime.mjs";
 import { sleep } from "../exec.mjs";
 import {
-  parseOptions, status, theme, renderList, maxWidth, termWidth, wrapText,
+  parseOptions, status, theme, renderList, maxWidth, wrapText,
   promptConfirm, padEndVisible, padStartVisible, visibleLen,
 } from "../ui.mjs";
 import { probeOmlxModel, fetchOmlxAdminModels, ensureMtplxImported, needsMtplxImport } from "../autotune/probe.mjs";
@@ -114,9 +114,9 @@ async function probeForAutotune(profile, { nonInteractive = false, skipImport = 
 // ── ③ Dry-run plan ───────────────────────────────────────────────────────────
 
 function formatGridTable(rows) {
-  // Columns size to CONTENT up to the real terminal width — anchoring the
-  // estimate to maxWidth()'s readability cap floated it into empty space
-  // and truncated notes on wide terminals. Indent matches every other
+  // Columns size to CONTENT up to the real terminal width — no fixed cap:
+  // on wide terminals the full note text is visible, on narrow ones it
+  // wraps onto aligned continuation lines. Indent matches every other
   // content block in this flow (lists, hints: two spaces).
   const INDENT = "  ";
   const data = rows.map((r) => ({
@@ -129,7 +129,7 @@ function formatGridTable(rows) {
   const estW = Math.max(...data.map((r) => visibleLen(r.est)));
   const noteW = Math.max(12, Math.min(
     Math.max(...data.map((r) => visibleLen(r.note))),
-    termWidth() - INDENT.length - labelW - 2 - 1 - 2 - 2 - estW,
+    maxWidth() - INDENT.length - labelW - 2 - 1 - 2 - 2 - estW,
   ));
   const lines = [];
   const continuation = INDENT + " ".repeat(labelW + 2 + 1 + 2); // under the note column

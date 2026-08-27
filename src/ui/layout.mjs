@@ -5,17 +5,9 @@
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 
-const DEFAULT_MAX_WIDTH = 80;
-const ABSOLUTE_MAX_WIDTH = 120;
+const DEFAULT_MAX_WIDTH = 80; // non-TTY fallback (no terminal to measure)
 
 export function maxWidth() {
-  return Math.min(process.stdout.columns || DEFAULT_MAX_WIDTH, ABSOLUTE_MAX_WIDTH);
-}
-
-/** Real terminal width without the readability cap — for tables whose
- *  columns should size to content up to the actual window (the cap squeezes
- *  notes into truncation while the terminal sits half empty). */
-export function termWidth() {
   return process.stdout.columns || DEFAULT_MAX_WIDTH;
 }
 

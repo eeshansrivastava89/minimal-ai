@@ -14,7 +14,7 @@ import {
   formatInstructionFooter,
 } from "@clack/prompts";
 import { SelectPrompt, settings, wrapTextWithPrefix } from "@clack/core";
-import { visibleLen, termWidth } from "./layout.mjs";
+import { visibleLen, maxWidth } from "./layout.mjs";
 
 // Frame overhead of the clack select frame: left bar + gap + option marker
 // + gap. Derived from Clack's own symbols so picker rows can be sized to
@@ -23,7 +23,7 @@ const FRAME_GUTTER = visibleLen(`${S_BAR}  `) + visibleLen(`${S_RADIO_ACTIVE} `)
 
 /** Columns available to option content inside the select frame. */
 export function promptContentWidth() {
-  return Math.max(20, termWidth() - FRAME_GUTTER);
+  return Math.max(20, maxWidth() - FRAME_GUTTER);
 }
 
 function guard(value) {

@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.2.3] - 2026-08-27
+
+### Changed
+- **The CLI uses the full terminal width.** The last hardcoded layout cap
+  (a 120-column readability limit inherited from the old cli-kit) is gone —
+  every screen (changelog/update notes, help, settings, autotune, status)
+  now wraps and pads to your actual terminal size. The only fallback is 80
+  columns when output isn't attached to a terminal at all (pipes, CI).
+
 ## [3.2.2] - 2026-08-27
 
 ### Fixed

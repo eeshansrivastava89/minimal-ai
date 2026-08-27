@@ -3,7 +3,7 @@
 ## Project Context
 
 - **Renamed from offgrid-ai to minimal-ai** (v2.0.0). Umbrella brand: Minimal Intelligence (eeshans.com, "a Minimal Intelligence tool" byline). Sibling tools (goalbot, sidequests) carry their own plain names — no shared prefix.
-- **CLI UI toolkit lives in `src/ui/`** (theme, layout, components, prompts, cli, help) — inlined from the archived `@eeshans/cli-kit` package (single consumer; the npm package remains published but unmaintained). Rules: **no boxes/cards** — bold headings (`theme.bold`), `renderList` rows, plain padded tables clamped to `maxWidth()`, ✓/✗/!/→ status lines via `status()`.
+- **CLI UI toolkit lives in `src/ui/`** (theme, layout, components, prompts, cli, help) — inlined from the archived `@eeshans/cli-kit` package (single consumer; the npm package remains published but unmaintained). Rules: **no boxes/cards** — bold headings (`theme.bold`), `renderList` rows, plain padded tables clamped to the terminal width (`maxWidth()`), ✓/✗/!/→ status lines via `status()`.
 
 ## Release Workflow
 
