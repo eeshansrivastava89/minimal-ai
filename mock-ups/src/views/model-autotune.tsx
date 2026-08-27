@@ -1,11 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { HUB_DATA } from "@/data/data";
-import { fmtDate, fmtPct, fmtTps } from "@/lib/format";
+import { toast } from "sonner";
+import { fmtDate, fmtPct, fmtTps, backendLabel } from "@/lib/format";
+import { autotuneForProfile } from "@/lib/lookup";
 import { SectionTitle, StatusBadge } from "@/components/shared";
 import { cn } from "@/lib/utils";
-import type { AutotuneRun } from "@/data/types";
+import type { Navigate } from "@/App";
+import type { AutotuneRun, Profile } from "@/data/types";
 
 const SPEC_ROWS: [string, string][] = [
   ["none", "none"],
@@ -99,14 +101,27 @@ function Matrix({ run }: { run: AutotuneRun }) {
   );
 }
 
-export function AutotuneDetail({ modelId }: { modelId: string }) {
-  const a = HUB_DATA.autotune.find((x) => x.modelId === modelId);
+export function ModelAutotune({ profile, navigate }: { profile: Profile; navigate: Navigate }) {
+  const a = autotuneForProfile(profile);
+
+  if (profile.backend !== "omlx") {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Autotune drives the oMLX admin API — this model runs on {backendLabel(profile.backend)}.
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!a) {
     return (
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Not found</h1>
-        <p className="mt-1 text-sm text-muted-foreground">No sweep for "{modelId}".</p>
-      </div>
+      <Card>
+        <CardContent className="flex flex-col items-center gap-3 py-10">
+          <p className="text-sm text-muted-foreground">No sweep for this model yet.</p>
+          <Button onClick={() => navigate("autotuneNew", { modelId: profile.id })}>◉ New sweep</Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -115,11 +130,13 @@ export function AutotuneDetail({ modelId }: { modelId: string }) {
 
   return (
     <div>
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">{a.modelId}</h1>
-        <span className="text-sm text-muted-foreground">sweep {fmtDate(a.recommendedAt)}</span>
+      <div className="flex items-center gap-3">
+        <p className="max-w-3xl text-sm text-muted-foreground">{a.reasoning}</p>
+        <Button className="ml-auto shrink-0" variant="outline" onClick={() => navigate("autotuneNew", { modelId: profile.id })}>
+          ◉ New sweep
+        </Button>
       </div>
-      <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{a.reasoning}</p>
+      <p className="mt-1 text-xs text-muted-foreground">sweep {fmtDate(a.recommendedAt)}</p>
 
       <SectionTitle title="Result matrix" meta="the full config space" />
       <Card>
@@ -196,8 +213,10 @@ export function AutotuneDetail({ modelId }: { modelId: string }) {
       </Card>
 
       <div className="mt-4 flex gap-2">
-        <Button>Apply to server</Button>
-        <Button variant="outline">Discard (restore snapshot)</Button>
+        <Button onClick={() => toast("Applied to server — simulated")}>Apply to server</Button>
+        <Button variant="outline" onClick={() => toast("Snapshot restored — simulated")}>
+          Discard (restore snapshot)
+        </Button>
       </div>
     </div>
   );

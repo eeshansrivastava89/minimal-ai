@@ -51,7 +51,7 @@ export function Models({ navigate }: { navigate: Navigate }) {
                     <CapabilityBadges caps={p.capabilities} />
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => navigate("model", p.id)}>
+                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: p.id })}>
                       Open
                     </Button>
                   </TableCell>

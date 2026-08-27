@@ -4,9 +4,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { HUB_DATA } from "@/data/data";
 import { RUNS } from "@/data/runs";
 import { fmtDate, fmtDur, fmtPct } from "@/lib/format";
+import { profileForRun } from "@/lib/lookup";
 import { SectionTitle, StatCard, StatusBadge } from "@/components/shared";
+import type { Navigate } from "@/App";
 
-export function BenchmarkDetail({ runId }: { runId: string }) {
+export function BenchmarkDetail({ runId, modelId, navigate }: { runId: string; modelId?: string; navigate: Navigate }) {
   const r = RUNS.find((x) => x.id === runId);
   if (!r) {
     return (
@@ -18,12 +20,22 @@ export function BenchmarkDetail({ runId }: { runId: string }) {
   }
 
   const b = HUB_DATA.benchmarks.find((x) => x.id === r.bench);
+  const owner = (modelId && HUB_DATA.profiles.find((p) => p.id === modelId)) || profileForRun(r);
 
   return (
     <div>
       <div className="flex items-baseline gap-3">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">{r.benchTitle}</h1>
-        <span className="text-sm text-muted-foreground">{r.modelDisplay ?? r.model}</span>
+        {owner ? (
+          <button
+            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onClick={() => navigate("model", { modelId: owner.id, tab: "benchmark" })}
+          >
+            {r.modelDisplay ?? r.model}
+          </button>
+        ) : (
+          <span className="text-sm text-muted-foreground">{r.modelDisplay ?? r.model}</span>
+        )}
       </div>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{b?.description}</p>
 
@@ -145,6 +157,11 @@ export function BenchmarkDetail({ runId }: { runId: string }) {
       </Card>
 
       <div className="mt-4 flex gap-2">
+        {owner && (
+          <Button variant="outline" onClick={() => navigate("model", { modelId: owner.id, tab: "benchmark" })}>
+            ← Back to {owner.label}
+          </Button>
+        )}
         <Button variant="outline">Open index.html</Button>
         <Button variant="outline">Recapture media</Button>
         <Button variant="destructive">Delete run</Button>

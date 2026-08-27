@@ -1,14 +1,26 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { HUB_DATA } from "@/data/data";
 import { fmtBytes, fmtCtx } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BackendBadge, CapabilityBadges, SectionTitle, StatCard } from "@/components/shared";
 import { SetupDialog } from "@/components/flows";
+import { ModelAutotune } from "@/views/model-autotune";
+import { ModelBenchmark } from "@/views/model-benchmark";
+import { ModelLogs } from "@/views/model-logs";
 import type { Navigate } from "@/App";
 import type { Profile } from "@/data/types";
+
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "configuration", label: "Configuration" },
+  { id: "logs", label: "Logs" },
+  { id: "autotune", label: "Autotune" },
+  { id: "benchmark", label: "Benchmark" },
+];
 
 function kvParamsFor(p: Profile) {
   const size = p.modelSizeBytes ?? 0;
@@ -71,34 +83,34 @@ function Heatmap({ profile }: { profile: Profile }) {
   );
 }
 
-export function ModelDetail({ id, navigate }: { id: string; navigate: Navigate }) {
-  const p = HUB_DATA.profiles.find((x) => x.id === id);
-  if (!p) {
-    return (
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
-        <p className="mt-1 text-sm text-muted-foreground">No profile "{id}".</p>
-      </div>
-    );
-  }
+function SettingsTable({ rows }: { rows: [string, unknown][] }) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableBody>
+            {rows.map(([k, v]) => (
+              <TableRow key={k}>
+                <TableCell className="w-56 text-muted-foreground">{k}</TableCell>
+                <TableCell className="tabular-nums text-foreground">
+                  {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
 
+function OverviewTab({ p }: { p: Profile }) {
   const caps = p.capabilities;
-  const settings = HUB_DATA.omlxModelSettings[p.modelAlias] ?? null;
-  const flags = p.flags ?? null;
   const cmd = `minimal-ai run ${p.id}`;
 
   return (
     <div>
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight">{p.label}</h1>
-        <span className="text-sm text-muted-foreground">{p.modelAlias}</span>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <BackendBadge backend={p.backend} />
-        <CapabilityBadges caps={caps} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <StatCard label="Size" value={fmtBytes(p.modelSizeBytes)} />
         <StatCard label="Context" value={fmtCtx((caps.contextLength ?? caps.ctxSize) as number | undefined)} />
         <StatCard label="Architecture" value={String(caps.architecture ?? "—")} />
@@ -135,62 +147,83 @@ export function ModelDetail({ id, navigate }: { id: string; navigate: Navigate }
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
 
+function ConfigurationTab({ p }: { p: Profile }) {
+  const settings = HUB_DATA.omlxModelSettings[p.modelAlias] ?? null;
+  const flags = p.flags ?? null;
+
+  return (
+    <div>
       {settings && (
         <>
           <SectionTitle title="oMLX settings" meta="applied on the server" />
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableBody>
-                  {Object.entries(settings).map(([k, v]) => (
-                    <TableRow key={k}>
-                      <TableCell className="w-56 text-muted-foreground">{k}</TableCell>
-                      <TableCell className="tabular-nums text-foreground">{String(v)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <SettingsTable rows={Object.entries(settings)} />
         </>
       )}
-
       {flags && (
         <>
           <SectionTitle title="llama.cpp flags" />
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableBody>
-                  {Object.entries(flags).map(([k, v]) => (
-                    <TableRow key={k}>
-                      <TableCell className="w-56 text-muted-foreground">{k}</TableCell>
-                      <TableCell className="tabular-nums text-foreground">
-                        {typeof v === "object" ? JSON.stringify(v) : String(v)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <SettingsTable rows={Object.entries(flags)} />
         </>
       )}
-
+      {!settings && !flags && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No extra server settings for this model.
+          </CardContent>
+        </Card>
+      )}
       <div className="mt-4 flex gap-2">
-        {p.backend === "omlx" && (
-          <Button variant="outline" onClick={() => navigate("autotuneRun", p.modelAlias)}>
-            Autotune
-          </Button>
-        )}
-        <Button variant="outline" onClick={() => navigate("benchmark")}>
-          Benchmark
-        </Button>
         <SetupDialog profile={p} />
         <Button variant="destructive" onClick={() => toast("Remove configuration — simulated")}>
           Remove configuration
         </Button>
+      </div>
+    </div>
+  );
+}
+
+export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; navigate: Navigate }) {
+  const p = HUB_DATA.profiles.find((x) => x.id === id);
+  if (!p) {
+    return (
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
+        <p className="mt-1 text-sm text-muted-foreground">No profile "{id}".</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-3">
+        <h1 className="text-3xl font-semibold tracking-tight">{p.label}</h1>
+        <span className="text-sm text-muted-foreground">{p.modelAlias}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <BackendBadge backend={p.backend} />
+        <CapabilityBadges caps={p.capabilities} />
+      </div>
+
+      <Tabs value={tab} onValueChange={(t) => navigate("model", { modelId: id, tab: t })} className="mt-6">
+        <TabsList>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      <div className="mt-4">
+        {tab === "overview" && <OverviewTab p={p} />}
+        {tab === "configuration" && <ConfigurationTab p={p} />}
+        {tab === "logs" && <ModelLogs profile={p} />}
+        {tab === "autotune" && <ModelAutotune profile={p} navigate={navigate} />}
+        {tab === "benchmark" && <ModelBenchmark profile={p} navigate={navigate} />}
       </div>
     </div>
   );

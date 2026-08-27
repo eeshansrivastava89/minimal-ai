@@ -3,7 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HUB_DATA } from "@/data/data";
 import { RUNS } from "@/data/runs";
-import { fmtBytes, fmtCtx, fmtTps, backendLabel } from "@/lib/format";
+import { fmtBytes, fmtCtx, fmtTps } from "@/lib/format";
+import { profileForRun } from "@/lib/lookup";
 import { StatCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
 import type { Navigate } from "@/App";
 
@@ -81,7 +82,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" onClick={() => navigate("model", p.id)}>
+                    <Button size="sm" onClick={() => navigate("model", { modelId: p.id })}>
                       Run
                     </Button>
                   </TableCell>
@@ -95,7 +96,11 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
       <SectionTitle title="Recent benchmark runs" />
       <div className="grid grid-cols-3 gap-3">
         {recentRuns.map((r) => (
-          <RunCard key={r.id} run={r} onClick={() => navigate("benchmarkRun", r.id)} />
+          <RunCard
+            key={r.id}
+            run={r}
+            onClick={() => navigate("benchmarkRun", { modelId: profileForRun(r)?.id, runId: r.id })}
+          />
         ))}
       </div>
 
@@ -135,7 +140,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => navigate("autotuneRun", a.modelId)}>
+                      <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}>
                         View
                       </Button>
                     </TableCell>

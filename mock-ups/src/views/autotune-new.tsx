@@ -4,17 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { HUB_DATA } from "@/data/data";
+import { profileById } from "@/lib/lookup";
 import { StatusBadge } from "@/components/shared";
 import type { Navigate } from "@/App";
 
 const SWEEP_CONFIGS = ["vanilla", "MTP on", "DFlash on", "thinking + budget", "MTP + thinking", "ANE prefill", "turboquant q4", "turboquant q8"];
 
-export function AutotuneNew({ navigate }: { navigate: Navigate }) {
+export function AutotuneNew({ modelId, navigate }: { modelId: string; navigate: Navigate }) {
+  const profile = profileById(modelId);
+  const model = profile?.modelAlias ?? "";
   const [step, setStep] = useState<"form" | "probe" | "sweep" | "done">("form");
-  const [model, setModel] = useState(HUB_DATA.omlxModels.find((m) => m.kind === "chat")?.id ?? "");
   const [warm, setWarm] = useState("4");
   const [progress, setProgress] = useState(0);
 
@@ -40,31 +41,32 @@ export function AutotuneNew({ navigate }: { navigate: Navigate }) {
     return () => clearInterval(iv);
   }, [step]);
 
+  if (!profile) {
+    return (
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
+        <p className="mt-1 text-sm text-muted-foreground">No profile "{modelId}".</p>
+      </div>
+    );
+  }
+
+  const back = () => navigate("model", { modelId, tab: "autotune" });
+
   return (
     <div>
       <h1 className="text-3xl font-semibold tracking-tight">New autotune sweep</h1>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        Autotune drives the oMLX admin API — oMLX models only. A sweep measures ~8 configs, each a cold load + warm runs.
+        <strong className="text-foreground">{profile.label}</strong> — a sweep measures ~8 configs against the live
+        oMLX server, each a cold load + warm runs, then recommends the fastest.
       </p>
 
       {step === "form" && (
         <Card className="mt-4 max-w-xl">
           <CardHeader>
             <CardTitle>Configure the sweep</CardTitle>
-            <CardDescription>Pick the model and how many warm runs to average per config.</CardDescription>
+            <CardDescription>{model} on the oMLX server.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label>Model</Label>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {HUB_DATA.omlxModels.filter((m) => m.kind === "chat").map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="flex flex-col gap-1.5">
               <Label>Warm runs per config</Label>
               <Select value={warm} onValueChange={setWarm}>
@@ -76,7 +78,10 @@ export function AutotuneNew({ navigate }: { navigate: Navigate }) {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={() => setStep("probe")}>Probe &amp; plan</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={back}>Back</Button>
+              <Button onClick={() => setStep("probe")}>Probe &amp; plan</Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -135,7 +140,7 @@ export function AutotuneNew({ navigate }: { navigate: Navigate }) {
             {step === "done" && (
               <div className="mt-2 flex gap-2">
                 <Button onClick={() => toast("Recommendation applied — simulated")}>Apply recommendation</Button>
-                <Button variant="outline" onClick={() => navigate("autotune")}>Back to autotune</Button>
+                <Button variant="outline" onClick={back}>Back to model</Button>
               </div>
             )}
           </CardContent>

@@ -21,51 +21,55 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { HUB_DATA } from "@/data/data";
 import { StatusBadge } from "@/components/shared";
+import { profileById } from "@/lib/lookup";
 import { Dashboard } from "@/views/dashboard";
 import { Models } from "@/views/models";
 import { ModelDetail } from "@/views/model-detail";
-import { Autotune } from "@/views/autotune";
 import { AutotuneNew } from "@/views/autotune-new";
-import { AutotuneDetail } from "@/views/autotune-detail";
-import { Benchmark } from "@/views/benchmark";
 import { BenchmarkNew } from "@/views/benchmark-new";
 import { BenchmarkDetail } from "@/views/benchmark-detail";
 import { Jobs } from "@/views/jobs";
 import { Learn } from "@/views/learn";
 import { Settings } from "@/views/settings";
 
-export type Route = { view: string; param?: string };
-export type Navigate = (view: string, param?: string) => void;
+// Entity-centric routing: the model is the entity. Configuration, logs,
+// autotune sweeps and benchmark runs are children of a model — they live
+// under /models/:id/*, never as standalone top-level features.
+//
+// Mock-up routes (state router, mirrors the real URL scheme):
+//   dashboard            /dashboard
+//   models               /models
+//   model + tab          /models/:id[/configuration|logs|autotune|benchmark]
+//   autotuneNew          /models/:id/autotune/new
+//   benchmarkNew         /models/:id/benchmark/new
+//   benchmarkRun         /models/:id/benchmark/:runId
+//   jobs / learn / settings
+export type Route = { view: string; modelId?: string; tab?: string; runId?: string };
+export type Navigate = (view: string, opts?: { modelId?: string; tab?: string; runId?: string }) => void;
 
 const NAV = [
   { view: "dashboard", label: "Dashboard" },
   { view: "models", label: "Models", count: HUB_DATA.profiles.length },
-  { view: "autotune", label: "Autotune", count: HUB_DATA.autotune.length },
-  { view: "benchmark", label: "Benchmark", count: 157 },
-  { view: "jobs", label: "Logs & jobs" },
+  { view: "jobs", label: "Jobs" },
   { view: "learn", label: "Learn" },
   { view: "settings", label: "Settings" },
 ];
 
-const CRUMBS: Record<string, string> = {
+const TITLES: Record<string, string> = {
   dashboard: "Dashboard",
   models: "Models",
-  model: "Models",
-  autotune: "Autotune",
-  autotuneNew: "Autotune",
-  autotuneRun: "Autotune",
-  benchmark: "Benchmark",
-  benchmarkNew: "Benchmark",
-  benchmarkRun: "Benchmark",
-  jobs: "Logs & jobs",
+  jobs: "Jobs",
   learn: "Learn",
   settings: "Settings",
 };
 
+// Views that live under a model (highlight "Models" in the sidebar).
+const MODEL_VIEWS = new Set(["model", "autotuneNew", "benchmarkNew", "benchmarkRun"]);
+
 export default function App() {
   const [route, setRoute] = useState<Route>({ view: "dashboard" });
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  const navigate: Navigate = (view, param) => setRoute({ view, param });
+  const navigate: Navigate = (view, opts) => setRoute({ view, ...opts });
 
   const toggleTheme = () => {
     const next = !dark;
@@ -74,14 +78,9 @@ export default function App() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  const activeTop =
-    route.view === "model"
-      ? "models"
-      : route.view === "autotuneNew" || route.view === "autotuneRun"
-        ? "autotune"
-        : route.view === "benchmarkNew" || route.view === "benchmarkRun"
-          ? "benchmark"
-          : route.view;
+  const model = profileById(route.modelId);
+  const activeTop = MODEL_VIEWS.has(route.view) ? "models" : route.view;
+  const title = model ? model.label : (TITLES[route.view] ?? "Dashboard");
 
   const o = HUB_DATA.omlxStatus as Record<string, unknown>;
   const omlxUp = o.status === "ok";
@@ -133,7 +132,18 @@ export default function App() {
 
         <SidebarInset>
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-background/95 px-6 backdrop-blur">
-            <div className="text-lg font-semibold">{CRUMBS[route.view] ?? "Dashboard"}</div>
+            <div className="flex items-baseline gap-2">
+              {model && (
+                <button
+                  className="text-lg font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => navigate("models")}
+                >
+                  Models
+                </button>
+              )}
+              {model && <span className="text-muted-foreground">/</span>}
+              <div className="text-lg font-semibold">{title}</div>
+            </div>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
               <StatusBadge status={omlxUp ? "up" : "down"}>oMLX {String(o.version ?? "")}</StatusBadge>
@@ -149,13 +159,14 @@ export default function App() {
           <div className="mx-auto w-full max-w-6xl p-6">
             {route.view === "dashboard" && <Dashboard navigate={navigate} />}
             {route.view === "models" && <Models navigate={navigate} />}
-            {route.view === "model" && <ModelDetail id={route.param ?? ""} navigate={navigate} />}
-            {route.view === "autotune" && <Autotune navigate={navigate} />}
-            {route.view === "autotuneNew" && <AutotuneNew navigate={navigate} />}
-            {route.view === "autotuneRun" && <AutotuneDetail modelId={route.param ?? ""} />}
-            {route.view === "benchmark" && <Benchmark navigate={navigate} />}
-            {route.view === "benchmarkNew" && <BenchmarkNew navigate={navigate} />}
-            {route.view === "benchmarkRun" && <BenchmarkDetail runId={route.param ?? ""} />}
+            {route.view === "model" && (
+              <ModelDetail id={route.modelId ?? ""} tab={route.tab ?? "overview"} navigate={navigate} />
+            )}
+            {route.view === "autotuneNew" && <AutotuneNew modelId={route.modelId ?? ""} navigate={navigate} />}
+            {route.view === "benchmarkNew" && <BenchmarkNew modelId={route.modelId ?? ""} navigate={navigate} />}
+            {route.view === "benchmarkRun" && (
+              <BenchmarkDetail runId={route.runId ?? ""} modelId={route.modelId} navigate={navigate} />
+            )}
             {route.view === "jobs" && <Jobs />}
             {route.view === "learn" && <Learn />}
             {route.view === "settings" && <Settings />}
