@@ -115,10 +115,21 @@ function styleCell(cell) {
   }
 }
 
+/** Color the fixed state tokens in a matrix header: "off" red (disabled
+ *  axis), "on" green (enabled axis), "+budget" green (the bound that
+ *  tames thinking). Headers follow a fixed grammar, so token styling is
+ *  exact, not heuristic. Exported for tests. */
+export function styleMatrixHeader(label) {
+  return label
+    .replace(/(\+\d+)/gu, (match) => theme.success(match))
+    .replace(/\b(off)\b/gu, (match) => theme.error(match))
+    .replace(/\b(on)\b/gu, (match) => theme.success(match));
+}
+
 /** One KV-quant block of the matrix as a bordered table. */
 function renderMatrixBlock(headers, block) {
   return renderTable({
-    headers: ["Speculative", ...headers],
+    headers: ["Speculative", ...headers.map(styleMatrixHeader)],
     rows: block.rows.map((row) => [row.label, ...row.cells.map(styleCell)]),
   });
 }

@@ -4,6 +4,13 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.3.1] - 2026-08-27
+
+### Changed
+- Autotune matrix headers color their state tokens: `off` in red, `on` and
+  the `+budget` bound in green — the enabled/disabled axes read at a glance
+  on both the Plan and the results grids.
+
 ## [3.3.0] - 2026-08-27
 
 ### Added

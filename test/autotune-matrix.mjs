@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { renderTable } from "../src/ui.mjs";
+import { renderTable, theme } from "../src/ui.mjs";
+import { styleMatrixHeader } from "../src/commands/autotune.mjs";
 import { rowCoordinates, comboPossible, planMatrix, resultsMatrix, matrixHeaders, thinkingColumnLabel } from "../src/autotune/matrix.mjs";
 
 function gridRow(id, settings) {
@@ -104,6 +105,15 @@ describe("resultsMatrix (measured cells carry tps + delta)", () => {
     const kvQ4 = blocks.find((b) => b.kv === "q4");
     assert.deepEqual(kvQ4.rows[0].cells[0], { text: "30.0 (−5%)", kind: "value" });
     assert.deepEqual(kvQ4.rows[0].cells[2], { text: "–", kind: "empty" });
+  });
+});
+
+describe("styleMatrixHeader", () => {
+  it("colors off red, on green, and the +budget green — plain text intact", () => {
+    assert.equal(styleMatrixHeader("think off · ANE off"), `think ${theme.error("off")} · ANE ${theme.error("off")}`);
+    assert.equal(styleMatrixHeader("think +4096 · ANE on"), `think ${theme.success("+4096")} · ANE ${theme.success("on")}`);
+    // Stripped, the header still reads exactly as authored.
+    assert.equal(stripVTControlCharacters(styleMatrixHeader("think +4096 · ANE on")), "think +4096 · ANE on");
   });
 });
 
