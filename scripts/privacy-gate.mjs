@@ -200,7 +200,11 @@ async function main() {
     /^\.pi\//,
   ];
 
-  const MAX_TARBALL_FILES = 90;
+  // Recalibrated 2026-08-27 with the #23 phase-3 refactor: the profile-setup
+  // split (+5 source modules) took the legit source count past the old cap.
+  // The cap exists to catch accidental dev files (fixtures, configs), not to
+  // freeze honest growth — keep it a generous headroom above the real count.
+  const MAX_TARBALL_FILES = 100;
   const MAX_TARBALL_SIZE_MB = 5;
 
   try {

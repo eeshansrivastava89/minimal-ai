@@ -4,7 +4,14 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
-## [3.2.1] - 2026-08-27
+## [3.2.2] - 2026-08-27
+
+### Fixed
+- The released tarball now ships `src/profile-setup/` (the v3.2.1 tag
+  attempted to publish without it — the privacy gate caught the broken
+  import and zero files reached npm; rolled forward per the never-retag
+  precedent). Tarball file-cap recalibrated to 100 for the phase-3 module
+  split.
 
 ### Changed
 - **No truncation, anywhere.** Picker rows shed their metadata columns
