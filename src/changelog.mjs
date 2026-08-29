@@ -112,23 +112,27 @@ export function renderEntryBody(entry, width = maxWidth() - 2) {
   const bodyLines = [];
   const lines = entry.content.split("\n");
   let i = 0;
+  let prevWasBullet = false; // a blank separates consecutive top-level bullets
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
     if (line.startsWith("### ")) {
       if (bodyLines.length > 0) bodyLines.push("");
       bodyLines.push(theme.bold(theme.warning(line.replace(/^###\s+/u, ""))));
+      prevWasBullet = false;
       i++;
       continue;
     }
     const bullet = line.match(/^(\s*)-\s+/u);
     if (bullet) {
-      // A bullet is the "- " line plus its continuation lines (indented, but
-      // NOT another bullet). Join them into one paragraph before wrapping,
-      // so the markdown's own hand-wrapping isn't re-wrapped per line.
       const indent = bullet[1].length;
+      if (indent === 0 && prevWasBullet) bodyLines.push("");
+      prevWasBullet = true;
       const parts = [line.replace(/^\s*-\s+/u, "")];
       i++;
+      // A bullet is the "- " line plus its continuation lines (indented, but
+      // NOT another bullet). Join them into one paragraph before wrapping —
+      // legacy entries hand-wrap in the source; convention-clean entries don't.
       while (i < lines.length) {
         const next = lines[i];
         if (!next.trim() || next.startsWith("### ") || /^\s*-\s/u.test(next)) break;
@@ -140,6 +144,7 @@ export function renderEntryBody(entry, width = maxWidth() - 2) {
     }
     // Non-bullet, non-header paragraph (rare in our changelog).
     bodyLines.push(...wrapText(formatInline(line), paraWidth).map((l) => `  ${l}`));
+    prevWasBullet = false;
     i++;
   }
   return bodyLines.join("\n");

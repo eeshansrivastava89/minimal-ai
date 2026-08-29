@@ -7,278 +7,110 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 ## [3.3.1] - 2026-08-27
 
 ### Changed
-- Autotune matrix headers color their state tokens: `off` in red, `on` and
-  the `+budget` bound in green — the enabled/disabled axes read at a glance
-  on both the Plan and the results grids.
+- Colored the autotune matrix headers' state tokens: `off` in red, `on` and the `+budget` bound in green, so enabled/disabled axes read at a glance on both the Plan and the results grids.
 
 ## [3.3.0] - 2026-08-27
 
 ### Added
-- **Autotune renders the full config space as a grid.** The dry-run Plan and
-  the Speed sweep results are now real bordered tables (one per KV-quant
-  state, 36 combos in total): rows are the speculative path (none / MTP /
-  DFlash), columns are thinking × ANE prefill, and every cell is one
-  standardized token — `✓`/`–`/`NA` in the plan, `tps (delta)` in the
-  results, `★` on the recommendation. Impossible combos (DFlash + thinking,
-  DFlash + ANE) show `NA` instead of being silently absent.
-- **One table primitive** (`src/ui/table.mjs` on cli-table3): box-drawing
-  borders between every cell, ANSI-safe, and cells wrap at word boundaries —
-  never truncate — while columns shrink to fit the terminal width.
-- The results footer now explains *why* a faster-rated beauty path
-  (thinking on) isn't the pick: its tps counts reasoning tokens as output,
-  so wall-clock the thinking-off config wins; the quality call is v2's job.
+- Rendered the full autotune config space as bordered grids: the dry-run Plan and the Speed sweep results each show one table per KV-quant state (36 combos in total), rows the speculative path (none / MTP / DFlash), columns thinking × ANE prefill.
+- Standardized the grid cells: `✓`/`–`/`NA` in the plan, `tps (delta)` in the results, `★` on the recommendation; impossible combos (DFlash + thinking, DFlash + ANE) show `NA` instead of being silently absent.
+- Added one table primitive (`src/ui/table.mjs` on cli-table3): box-drawing borders between every cell, ANSI-safe, cells wrap at word boundaries instead of truncating, columns shrink to fit the terminal width.
+- Added a results footer explaining why a higher-tps thinking-on config isn't the pick: its tps counts reasoning tokens, so wall-clock the thinking-off config wins.
 
 ## [3.2.3] - 2026-08-27
 
 ### Changed
-- **The CLI uses the full terminal width.** The last hardcoded layout cap
-  (a 120-column readability limit inherited from the old cli-kit) is gone —
-  every screen (changelog/update notes, help, settings, autotune, status)
-  now wraps and pads to your actual terminal size. The only fallback is 80
-  columns when output isn't attached to a terminal at all (pipes, CI).
+- Removed the last hardcoded layout cap (a 120-column readability limit) so every screen — changelog/update notes, help, settings, autotune, status — wraps and pads to the actual terminal width, falling back to 80 columns only for non-TTY output.
 
 ## [3.2.2] - 2026-08-27
 
-### Fixed
-- The released tarball now ships `src/profile-setup/` (the v3.2.1 tag
-  attempted to publish without it — the privacy gate caught the broken
-  import and zero files reached npm; rolled forward per the never-retag
-  precedent). Tarball file-cap recalibrated to 100 for the phase-3 module
-  split.
-
 ### Changed
-- **No truncation, anywhere.** Picker rows shed their metadata columns
-  (quant → size → ctx) on narrow terminals instead of clipping model names
-  with an ellipsis, and the autotune plan table sizes to its content and
-  wraps long notes onto aligned continuation lines — at any terminal width,
-  nothing is cut off.
-- **Width/wrap math now runs on maintained primitives** (string-width,
-  wrap-ansi) instead of hand-rolled ANSI slicing — the source of the
-  mid-word cuts, misaligned columns, and tiny-width hangs this screen used
-  to hit. Clack picker rows get their full width back (the frame gutter was
-  being counted with ANSI escape bytes inside: options wrapped 13 columns
-  too early).
-- **The autotune screen reads as one framed flow**: the title prints before
-  preflight so MTPLX/side-car notes land under it with context, the friendly
-  model label replaces the raw id, indentation follows one convention
-  (headings at col 0, content at col 2), and estimates sit next to the text
-  they belong to.
+- Removed truncation everywhere: picker rows drop their metadata columns (quant → size → ctx) on narrow terminals instead of clipping model names, and the autotune plan table sizes to its content with long notes wrapped onto aligned continuation lines.
+- Moved width and wrap math onto maintained primitives (string-width, wrap-ansi) instead of hand-rolled ANSI slicing — the source of the mid-word cuts, misaligned columns, and tiny-width hangs.
+- Fixed Clack picker rows to use their full width: the frame gutter counted ANSI escape bytes, wrapping options 13 columns early.
+- Reframed the autotune screen as one flow: the title prints before preflight so MTPLX/side-car notes land with context, the friendly model label replaces the raw id, indentation follows one convention, and estimates sit next to the text they belong to.
 
 ### Fixed
-- The oMLX settings writer is now one source of truth (setup + launch): the
-  profile's full desired state is diffed against the server and only drift
-  is pushed — including re-enabling thinking and disabling a removed budget
-  that the old additive-only lifecycle writer never sent.
+- Fixed the released tarball to ship `src/profile-setup/` (the v3.2.1 tag published without it, the privacy gate caught the broken import, and zero files reached npm; rolled forward per the never-retag precedent, with the tarball file-cap recalibrated to 100 for the module split).
+- Fixed the oMLX settings writer to be one source of truth for setup and launch: the profile's full desired state is diffed against the server and only drift is pushed, including re-enabling thinking and disabling removed budgets the additive-only writer never sent.
 
 ### Removed
-- cli-truncate dependency (nothing truncates anymore); the fixed 24/10/9
-  column constants in autotune and picker names now measure their own widths.
+- Removed the cli-truncate dependency (nothing truncates anymore); the fixed 24/10/9 column constants in autotune and picker names now measure their own widths.
 
 ## [3.2.0] - 2026-08-26
 
 ### Changed
-- **The CLI has no more boxes.** Every screen — startup, status, settings,
-  download, onboarding, autotune, model details — now renders as plain,
-  readable output: a bold heading, clean indented key/value rows, and
-  ordinary padded tables wrapped to your terminal width. Nothing is cut
-  off, nothing misaligns, nothing wraps weirdly in narrow windows.
-- **The model picker is now a proper menu.** After any action (chat, stop,
-  setup, delete, install) you return to the freshly updated list instead
-  of the command exiting; press Esc to leave. Startup also no longer
-  clears your terminal scrollback.
-- **autotune asks before it touches anything.** The "Run dir created ·
-  snapshot captured" line used to appear before the confirmation prompt —
-  as if the sweep had already started. Confirmation now comes first, and
-  cancelling changes nothing. The plan is titled "Plan" on real runs, the
-  overview names the model being tuned, and the recommendation now
-  actually prints the numbers behind the pick.
-- **The bundled CLI UI toolkit lives in-repo now** (`src/ui/`). The
-  `@eeshans/cli-kit` dependency was inlined — one less package in the
-  install, nothing else changes.
+- Removed boxes from the CLI: every screen — startup, status, settings, download, onboarding, autotune, model details — renders as plain output with a bold heading, indented key/value rows, and padded tables wrapped to the terminal width.
+- Reworked the model picker into a menu: every action returns to the freshly updated list instead of exiting the command, Esc leaves, and startup no longer clears terminal scrollback.
+- Moved autotune's confirmation ahead of mutation: the run dir and snapshot are created only after you confirm, the plan is titled "Plan" on real runs, the overview names the model, and the recommendation prints the numbers behind the pick.
+- Inlined the bundled CLI UI toolkit into `src/ui/`, dropping the `@eeshans/cli-kit` dependency — one less package in the install, nothing else changes.
 
 ### Fixed
-- **Model details got one layout instead of three**, and long model names
-  in the picker are clipped with an ellipsis instead of wrapping
-  mid-row and breaking the columns. The duplicate "Thinking" row in the
-  setup summary is gone.
-- **Text wrapping no longer mangles styling** on narrow terminals and can
-  no longer hang on extremely tiny terminal widths (inherited bugs in the
-  UI toolkit).
-- **autotune dry runs truly change nothing** — `--dry-run` no longer sends
-  the MTPLX import to the server, so "no settings changed" is now
-  literally true.
-- **autotune resume is resilient to a truncated journal.** One corrupt
-  line (e.g. after a crash) used to wipe all recorded progress, forcing a
-  full re-sweep; now just that line is skipped.
-- **autotune never reports a tie as a win.** An exact tie with zero
-  measured noise (e.g. one warm sample per config) now keeps your current
-  settings instead of "recommending" them.
-- **DFlash sweeps pass the draft's real path.** The server expects a model
-  path, not a display name — verified against oMLX's own dashboard source.
-- **ANE prefill is only measured where it can work** — Qwen3.5/3.6/3.8
-  models. Other families no longer spend ~10 minutes measuring a no-op.
-- **The publish gate now matches Node's import rules exactly**, so it can
-  no longer pass an import that would crash after install.
+- Fixed model details to use one layout instead of three, and long model names in the picker now clip with an ellipsis instead of wrapping mid-row; the duplicate "Thinking" row in the setup summary is gone.
+- Fixed text wrapping to keep styling intact on narrow terminals and never hang on tiny widths (inherited UI-toolkit bugs).
+- Fixed `--dry-run` to send no MTPLX import to the server, so "no settings changed" is now literally true.
+- Fixed autotune resume to skip a corrupt journal line instead of wiping all recorded progress after a crash.
+- Fixed autotune to never report an exact tie with zero measured noise as a win — it keeps your current settings instead of "recommending" them.
+- Fixed DFlash sweeps to pass the draft model's real path instead of its display name (verified against oMLX's own dashboard source).
+- Restricted ANE prefill measurement to Qwen3.5/3.6/3.8 models so other families no longer spend ~10 minutes measuring a no-op.
+- Fixed the publish gate to match Node's import rules exactly, so it can no longer pass an import that would crash after install.
 
 ## [3.1.4] - 2026-08-26
 
 ### Fixed
-- **Publish pipeline works with npm 12.** npm 12 changed `npm pack --json`
-  from an array to an object keyed by package name; the privacy gate's
-  tarball check crashed on the new shape, which — now that the gate fails
-  closed — blocked the 3.1.3 publish. The parser accepts both shapes. (The
-  3.1.3 tag never reached npm; its fixes ship here in 3.1.4.)
+- Fixed the publish pipeline for npm 12, whose `npm pack --json` changed from an array to an object keyed by package name and crashed the privacy gate's tarball check — which, failing closed, blocked the 3.1.3 publish (that tag never reached npm; its fixes ship here in 3.1.4).
 
 ## [3.1.3] - 2026-08-26
 
 ### Fixed
-- **autotune Discard now actually restores everything.** oMLX applies
-  settings PUTs as partial merges on top of existing state, so restoring
-  only the settings you had before the sweep left sweep-touched knobs
-  (turboquant KV cache, DFlash, thinking budget, …) silently ON at their
-  last sweep value. Discard now restores your settings on top of an
-  explicit all-off baseline, so every knob the sweep touched returns to
-  off unless you had it on yourself.
-- **autotune no longer abandons mutated settings on a mid-sweep crash.**
-  A hiccup reading the oMLX server log (or any other per-config exception)
-  used to escape as an uncaught error, skipping cleanup entirely — the last
-  experimental config stayed live. Exceptions now abort the sweep through
-  the same restore path as an explicit Discard, and a missing server log is
-  treated as "nothing new" instead of crashing.
-- **MTP acceptance % now reports the warm runs.** A one-line ordering bug
-  made the reported acceptance come from the cold run (which includes load
-  effects and is the least representative sample) whenever it was logged.
-- **Release notes no longer garble nested bullets.** Changelog entries with
-  indented sub-bullets (the 3.0.0 notes, for example) were flattened into
-  run-on paragraphs with stray `-` markers; nested bullets now render as
-  indented bullets.
-- **Privacy gate now fails closed.** The publish-time tarball checks
-  (the safeguard built after the broken 3.0.0 release) used to degrade to a
-  warning if the pack/extract step itself errored — CI would stay green on
-  a gate that never ran. Those errors are now failures, and the import
-  scan also covers side-effect imports (`import "./x.mjs"`).
+- Fixed autotune Discard to restore on top of an explicit all-off baseline, since oMLX applies settings PUTs as partial merges — sweep-touched knobs (turboquant KV cache, DFlash, thinking budget) previously stayed silently on at their last sweep value.
+- Fixed mid-sweep crashes leaving the last experimental config live: per-config exceptions now abort through the same restore path as an explicit Discard, and a missing server log is treated as "nothing new" instead of crashing.
+- Fixed the MTP acceptance % to report the warm run instead of the cold one (a one-line ordering bug picked the least representative sample).
+- Fixed release notes to render nested bullets as indented bullets instead of flattened run-on paragraphs with stray `-` markers.
+- Made the privacy gate fail closed: pack/extract errors are now failures instead of warnings, and the import scan covers side-effect imports (`import "./x.mjs"`).
 
 ## [3.1.2] - 2026-08-26
 
 ### Fixed
-- **Release-notes card no longer leaves the right half empty.** The
-  changelog renderer wrapped text at a hardcoded 76 columns, then placed it
-  in a card whose inner width is the full terminal — so the right side was
-  just padding. It now wraps at the card's actual inner width. It also joins
-  each bullet's hand-wrapped markdown lines into one paragraph before
-  wrapping, which fixes the broken `on)` / `a` / `+` fragments that appeared
-  on their own lines when the markdown's own line breaks got re-wrapped per
-  line. `**bold**` and `` `code` `` spans are now styled.
+- Fixed the release-notes card wrapping text at a hardcoded 76 columns, which left the right half of the terminal as padding — it now wraps at the card's actual inner width, joins hand-wrapped markdown lines before wrapping, and styles `**bold**` and `code` spans.
 
 ## [3.1.1] - 2026-08-26
 
-### Fixed
-- **autotune results card no longer makes the recommendation look wrong.**
-  Previously it sorted all configs by raw tps, so the beauty path (thinking on)
-  ranked first while the fast path (thinking off) was recommended — it read
-  like a bug. Now groups by path ("fast path — thinking off (raw output
-  speed)" / "beauty path — thinking on (includes reasoning tokens)"), marks
-  the recommended config with ★, and uses "≈ tie" (vs the opaque †) for
-  within-2×-MAD differences. The recommendation is self-evident.
-- **Recommender no longer dresses up a tie as a win.** If the fastest
-  thinking-off config is within 2× MAD of vanilla, it recommends vanilla and
-  flags `noChange`; the apply step restores your prior settings instead of
-  applying a no-op. The reasoning now explains when the beauty path's higher
-  raw tps is within noise of the fast path and counts thinking tokens (so not
-  a reliable speed gain). `isThinkingOn` is exported for reuse.
-- **autotune plan card no longer cuts off notes mid-phrase.** The notes column
-  was hardcoded to 38 chars, leaving the right of a wide card unused. It now
-  uses the full card inner width and truncates with an ellipsis only at
-  genuinely narrow terminals.
-- **autotune sweep progress no longer duplicates lines.** `withSpinner`
-  printed the full "config i/n · label (est)" label twice (start + end) plus a
-  third line repeating the label. Now one dim start line (index + estimate) +
-  one result line (tps).
-- autotune flow: collapsed the redundant "Tune mode" pick (only speed is
-  enabled in v1; quality is stubbed for #20) + "Start the sweep?" into a single
-  confirm after the plan, with blank-line spacing between sections.
-
 ### Changed
-- `results.md` mirrors the new fast/beauty path grouping and "≈ tie" wording.
+- Made `results.md` mirror the fast/beauty path grouping and the "≈ tie" wording.
+
+### Fixed
+- Fixed the autotune results card to group by path (fast path — thinking off, beauty path — thinking on), mark the recommendation with ★, and print "≈ tie" for within-2×-MAD differences, so the recommendation reads as self-evident instead of a bug.
 
 ## [3.1.0] - 2026-08-25
 
 ### Added
-- **Autotune is now reachable from the models menu for existing oMLX profiles.**
-  Selecting an installed oMLX model now lists an "Autotune — Find the fastest
-  oMLX settings (~30-60m)" action alongside Benchmark and Reconfigure, which
-  runs the same `autotune` workflow as the `minimal-ai autotune <profile>`
-  command and the post-download offer. Previously autotune was only reachable
-  via the explicit CLI command or the prompt right after downloading a new
-  managed model — there was no path to tune an already-installed model from
-  the UI (#19 follow-up). Non-oMLX profiles omit the entry (autotune v1 is
-  oMLX-only).
+- Added an "Autotune — Find the fastest oMLX settings (~30-60m)" action to the models menu for installed oMLX profiles (#19 follow-up), running the same workflow as `minimal-ai autotune <profile>`; non-oMLX profiles omit it since autotune v1 is oMLX-only.
 
 ## [3.0.1] - 2026-08-25
 
 ### Fixed
-- **3.0.0 was broken on install** — `minimal-ai` crashed immediately with
-  `ERR_MODULE_NOT_FOUND: Cannot find module .../src/autotune/probe.mjs`. The
-  new `src/autotune/` directory (probe/grid/sweep/recommend/safety) was never
-  added to the `package.json` `files` allowlist, so `commands/autotune.mjs`
-  shipped but its `../autotune/*` imports 404'd. Added `src/autotune/*.mjs` to
-  `files`.
-- Root-cause note: lint and tests run against the repo (where the imports
-  resolve), and CI's only tarball gate was a file-count cap — the broken 3.0.0
-  tarball was *under* the cap, so it shipped green. Raised the privacy-gate
-  tarball file-count cap from 80 to 90 to fit the new source directory. A
-  tarball import-resolution check is filed as a follow-up to catch this class
-  of bug directly.
+- Fixed 3.0.0 crashing on install with `ERR_MODULE_NOT_FOUND`: the new `src/autotune/` directory was missing from the `files` allowlist, so `commands/autotune.mjs` shipped while its `../autotune/*` imports 404'd.
+- Raised the privacy-gate tarball file-count cap from 80 to 90 for the new source directory, and filed a tarball import-resolution check as follow-up — the broken 3.0.0 tarball was under the file-count cap, so the old gate stayed green.
 
 ## [3.0.0] - 2026-08-25
 
 ### Added
-- **autotune** (#19): a first-class `minimal-ai autotune [profile]` workflow that
-  autonomously searches per-model oMLX settings for the fastest configuration.
-  oMLX-only in v1; speed-tune (a quality/judge engine is filed as #20 for v2).
-  - Capability probe (`probe.mjs`) inspects a model's MTP / DFlash / ANE /
-    turboquant support, and programmatically imports MTPLX side-car MTP heads
-    (some Qwen3.5/3.6 checkpoints ship `mtp.safetensors` unreferenced by the main
-    index; oMLX reports `mtp_compatible:false` until imported — autotune calls
-    `POST /admin/api/models/{id}/import-mtplx` for you, non-destructive and
-    idempotent).
-  - Speed engine: a trap-aware config grid (`grid.mjs` — MTP iff compatible,
-    DFlash iff a matching draft exists and the target isn't a personality
-    fine-tune, never stacks DFlash+MTP, thinking+budget forces DFlash off), a
-    per-config state machine (`sweep.mjs`: precheck → PUT → cold → warm →
-    teardown → journal) with a pure server.log parser and MAD confidence, and a
-    fast-path / beauty-path recommender (`recommend.mjs`) that writes
-    `optimal.json`. Sweeps resume from the journal on Ctrl-C/crash.
-  - Safety layer (`safety.mjs`): lockfile, RAM gate, one-model invariant,
-    settings snapshot/restore, and a journal — cancel/abort/apply-failure all
-    restore; the lock always releases.
-  - Wizard (`autotune.mjs`): pre-flight → mode pick → dry-run plan card →
-    per-config sweep → report (`results.md` + `optimal.json` + terminal card
-    with 2x-MAD noise flags) → apply (echo-verified PUT) / discard. After a new
-    oMLX profile is saved, `models.mjs` offers to autotune now (defaults no).
-  - `--yes` runs non-interactively and applies the recommendation (scripting/CI
-    and the post-download hook path); `--dry-run` probes + shows the plan with
-    no sweep, lock, or mutation; non-TTY without either errors clearly instead
-    of hanging on a prompt.
-
-### Fixed
-- autotune discard now resets to the clean all-off vanilla baseline when the
-  model had no settings entry before the sweep (oMLX has no delete-entry API),
-  so a sweep can't leave its last config applied on discard/abort/apply-failure.
-- autotune no longer aborts on builtin oMLX helpers like MarkItDown
-  (`engine_type "markitdown"`, always `loaded:true` but not in the engine pool —
-  unload 404s); helper engine types are excluded from the one-model invariant.
+- Added `minimal-ai autotune [profile]` (#19): a first-class workflow that searches per-model oMLX settings for the fastest configuration (oMLX-only in v1; a quality/judge engine is filed as #20 for v2).
+- Added a capability probe (`probe.mjs`) that inspects MTP / DFlash / ANE / turboquant support and imports MTPLX side-car MTP heads via `POST /admin/api/models/{id}/import-mtplx` (idempotent, non-destructive) for checkpoints that ship `mtp.safetensors` unreferenced by the main index.
+- Added a speed engine: a trap-aware config grid (`grid.mjs`), a per-config sweep state machine with a journal that resumes on Ctrl-C or crash (`sweep.mjs`), and a fast-path/beauty-path recommender (`recommend.mjs`) that writes `optimal.json`.
+- Added a safety layer (`safety.mjs`): lockfile, RAM gate, one-model invariant, settings snapshot/restore, and a journal — cancel/abort/apply-failure all restore, and the lock always releases.
+- Added the autotune wizard: pre-flight → plan → per-config sweep → report (`results.md` + `optimal.json` + terminal card with 2×-MAD noise flags) → apply or discard.
+- Added `--yes` (non-interactive run that applies the recommendation, used by scripting and the post-download hook) and `--dry-run` (probe + plan only, no sweep or mutation); non-TTY runs without either error clearly instead of hanging.
+- Added a post-download offer to autotune a newly saved oMLX profile (defaults no).
 
 ### Changed
-- autotune restarts the oMLX server after a sweep to reclaim process memory:
-  macOS pushes the server's cold pages to swap over a sweep and they aren't
-  returned (a 9B+27B session left omlx-server at ~17 GB footprint with no model
-  loaded); `restartOmlxServer()` in the sweep's `finally` drops it back to
-  baseline. Applied settings persist to `~/.omlx/model_settings.json`, so the
-  recommendation survives the restart.
-- AGENTS.md documents the cross-repo visual benchmark harness
-  (minimal-ai launches, `~/dev/local-llm-visual-benchmark` is the gallery on
-  :4321) for future-agent context.
+- Made the sweep restart the oMLX server afterwards to reclaim process memory (a 9B+27B session left omlx-server at a ~17 GB footprint with no model loaded); applied settings persist to `~/.omlx/model_settings.json`, so the recommendation survives the restart.
+- Documented the cross-repo visual benchmark harness in AGENTS.md for future-agent context.
+
+### Fixed
+- Fixed autotune discard to reset to the clean all-off vanilla baseline when the model had no settings entry before the sweep (oMLX has no delete-entry API), so a sweep can't leave its last config applied.
+- Excluded builtin oMLX helpers like MarkItDown (always loaded, unload 404s, not in the engine pool) from the one-model invariant so sweeps no longer abort on them.
 
 ## [2.9.2] - 2026-08-25
 

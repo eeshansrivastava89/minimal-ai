@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 const { renderEntryBody } = await import("../src/changelog.mjs");
+const { lintChangelog } = await import("../scripts/check-changelog.mjs");
 
 // stripAnsi so assertions don't depend on the test runner's TTY/color state.
 // eslint-disable-next-line no-control-regex
@@ -36,6 +37,24 @@ describe("renderEntryBody", () => {
     assert.equal(lines[0], "  - A bullet wrapped by hand across two source lines");
   });
 
+  it("separates consecutive top-level bullets with a blank line", () => {
+    const lines = render("- one\n\n- two");
+    const idxOne = lines.indexOf("  - one");
+    const idxTwo = lines.indexOf("  - two");
+    assert.notEqual(idxOne, -1);
+    assert.notEqual(idxTwo, -1);
+    assert.equal(lines[idxOne + 1], "");
+  });
+
+  it("keeps a bullet group with nested children tight (no blank inside)", () => {
+    const lines = render("- parent\n  - child\n\n- next parent");
+    const parent = lines.findIndex((l) => l.includes("parent"));
+    const child = lines.findIndex((l) => l.includes("child"));
+    const next = lines.findIndex((l) => l.includes("next parent"));
+    assert.equal(lines[parent + 1].includes("child"), true); // child follows parent directly
+    assert.equal(lines[next - 1], ""); // blank only between groups
+  });
+
   it("renders section headers and drops blank lines", () => {
     const lines = render("\n### Added\n\n- one\n\n### Fixed\n\n- two\n");
     assert.ok(lines.some((l) => l.includes("Added")));
@@ -60,5 +79,61 @@ describe("renderEntryBody", () => {
     for (const l of lines) {
       if (l.includes("Renamed")) assert.ok(!l.includes("Config dir moved"));
     }
+  });
+});
+
+describe("check-changelog (convention linter)", () => {
+  it("accepts a convention-clean entry", () => {
+    const md = [
+      "## [3.4.0] - 2026-08-29",
+      "",
+      "### Added",
+      "- Added a thing (#23).",
+      "",
+      "### Fixed",
+      "- Fixed another thing.",
+    ].join("\n");
+    assert.deepEqual(lintChangelog(md), []);
+  });
+
+  it("flags bold leads, hand-wrapped bullets, nested bullets, and bad sections", () => {
+    const md = [
+      "## [3.4.0] - 2026-08-29",
+      "",
+      "### Fixed",
+      "- **Headline lead.** with a wrapped continuation",
+      "  still wrapping",
+      "  - nested child",
+      "",
+      "### Changed",
+      "- Out of order section.",
+      "",
+      "### Fixed",
+      "- Duplicate section.",
+    ].join("\n");
+    const errors = lintChangelog(md);
+    assert.ok(errors.some((e) => e.includes("bold-headline lead")));
+    assert.ok(errors.some((e) => e.includes("hand-wrapped continuation")));
+    assert.ok(errors.some((e) => e.includes("nested bullet")));
+    assert.ok(errors.some((e) => e.includes("out of order")));
+    assert.ok(errors.some((e) => e.includes("duplicate section")));
+  });
+
+  it("ignores entries below 3.0.0 and overlong bullets", () => {
+    const legacy = [
+      "## [2.9.0] - 2026-08-25",
+      "",
+      "### Fixed",
+      "- **Bold lead** with\n  wrapped lines — legacy entries are grandfathered.",
+    ].join("\n");
+    assert.deepEqual(lintChangelog(legacy), []);
+
+    const long = [
+      "## [3.4.0] - 2026-08-29",
+      "",
+      "### Added",
+      "- " + "x".repeat(300) + ".",
+    ].join("\n");
+    assert.ok(lintChangelog(long).some((e) => e.includes("visible chars")));
   });
 });

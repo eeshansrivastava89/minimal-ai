@@ -32,8 +32,17 @@ The version follows `MAJOR.MINOR.PATCH` (semver). Bump rules:
 
 ### Changelog
 
-- Every release must add an entry to `CHANGELOG.md` before tagging.
-- Format: `## [x.y.z] - YYYY-MM-DD` with `### Added`, `### Fixed`, `### Changed` sections.
+- Every release adds an entry to `CHANGELOG.md` before tagging.
+- Format: `## [x.y.z] - YYYY-MM-DD` with sections in fixed order, each at most
+  once: `### Added` → `### Changed` → `### Fixed` → `### Removed`
+  (`### Breaking Changes` first when a major needs it).
+- **Pi-style bullets: one change = one bullet = one fact**, verb-first
+  ("Fixed …", "Added …"), no bold-headline leads, no editorializing. Link the
+  GitHub issue (`#N`) when one exists.
+- **A bullet is a single source line** — never hand-wrap continuation lines.
+- `scripts/check-changelog.mjs` runs in `npm test` and CI and enforces these
+  rules for entries ≥ 3.0.0 (older entries are grandfathered); new entries
+  must pass it.
 - `CHANGELOG.md` is included in the npm package so installed users can read it.
 - On startup, if the installed version is newer than the last-seen version
   (tracked in `config.json`), release notes are printed to the terminal.
