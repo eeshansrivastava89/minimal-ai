@@ -113,6 +113,9 @@ export interface Run {
   toolCalls: number | null;
   success: boolean;
   preview: string | null;
+  // Optional only so the legacy mock snapshot (data/runs.ts) still
+  // typechecks; the hub always sets it.
+  video?: string | null;
   ds: { scorecard: DsScorecard; summary: DsSummary } | null;
   // ModelRef composite of the catalog model that owns this run, when the
   // run's model is known to this machine (historical/cloud runs: null).

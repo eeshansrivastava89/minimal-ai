@@ -427,6 +427,15 @@ function num(v: unknown): number | null {
 }
 
 async function runFromMetadata(m: RunMetadata): Promise<Run> {
+  // Scorecard "checks" arrive as a keyed object (scorer output); the Run
+  // DTO's rows are an array. Tolerate either.
+  function toCheckRows(checks: unknown): { label: string; earned: number; max: number; pass: boolean; detail?: string }[] {
+    if (Array.isArray(checks)) return checks as never;
+    const obj = (checks ?? {}) as Record<string, any>;
+    return Object.values(obj).map((c) => ({
+      label: c.label, earned: c.earned, max: c.max, pass: Boolean(c.pass), detail: c.detail,
+    }));
+  }
   const cap = (m.capture?.video as any)?.quality ?? {};
   const tok: Record<string, any> = m.runner?.tokenMetrics ?? {};
   const spd = (m.runner as any)?.speedMetrics ?? {};
@@ -434,7 +443,15 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
 
   let ds: Run["ds"] = null;
   if (m.dsScorecard && m.dsSummary) {
-    ds = { scorecard: m.dsScorecard as Run["ds"] extends null ? never : any, summary: m.dsSummary as any };
+    ds = {
+      // Hydration passes `checks` through as the raw scorer object — the
+      // Run DTO promises an array; normalize here (one mapper, both paths).
+      scorecard: {
+        ...m.dsScorecard,
+        checks: toCheckRows((m.dsScorecard as any).checks),
+      } as Run["ds"] extends null ? never : any,
+      summary: m.dsSummary as any,
+    };
   } else if (m.kind === "data-science") {
     try {
       const sc = JSON.parse(await readFile(join(m.runDirectory, "scorecard.json"), "utf8"));
@@ -444,9 +461,7 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
           total: sc.total,
           earned: sc.earned,
           pct: sc.pct,
-          checks: Object.values(sc.checks ?? {}).map((c: any) => ({
-            label: c.label, earned: c.earned, max: c.max, pass: Boolean(c.pass), detail: c.detail,
-          })),
+          checks: toCheckRows(sc.checks),
         },
         summary: {
           status: su.status,
@@ -470,6 +485,20 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
     }
   } catch {
     /* no preview */
+  }
+
+  // Constrained media: prefer the Safari-friendly mp4, fall back to webm.
+  let video: string | null = null;
+  for (const file of ["preview.mp4", "preview.webm"]) {
+    try {
+      const s = await stat(join(m.runDirectory, file));
+      if (s.isFile()) {
+        video = `/api/media/run/${m.benchmark.id}/${m.model.slug}/${m.runId}/${file}`;
+        break;
+      }
+    } catch {
+      /* keep looking */
+    }
   }
 
   return {
@@ -503,6 +532,7 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
     toolCalls: num(res.toolCalls),
     success: Boolean(res.success),
     preview,
+    video,
     ds,
     ownerRef: null, // attached by allRuns once the catalog is known
   };
@@ -580,7 +610,9 @@ export async function allBenchmarks(): Promise<Benchmark[]> {
     return defs.map((d) => ({
       id: d.id,
       title: d.title,
-      kind: ((d as unknown as Record<string, unknown>).kind as string) ?? "visual",
+      // Benchmark frontmatter carries no kind field — the A/B analysis is
+      // the one data-science prompt (same rule as the CLI loader).
+      kind: d.id === "ab-test-analysis" ? "data-science" : "visual",
       description: d.description,
       prompt: d.prompt,
     }));

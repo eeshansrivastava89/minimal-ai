@@ -109,7 +109,7 @@ export async function downloadExecutor(ctx: JobContext) {
 
 /** Find the existing profile for a model ref, or create the fresh one the
  *  CLI flows would start from (facts detected, defaults applied). */
-async function baseProfileFor(ref: ModelRef, create: boolean): Promise<{ profile: any; created: boolean }> {
+export async function baseProfileFor(ref: ModelRef, create: boolean): Promise<{ profile: any; created: boolean }> {
   const { models, profiles } = await catalog();
   const existing = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
   if (existing || !create) return { profile: existing ?? null, created: false };
@@ -192,6 +192,82 @@ export interface LaunchOptions {
   piBin?: string; // test seam: stub pi binary
 }
 
+/** The one headless launch path: server up → preflight → pi spawn (owned
+ *  by the runner). Both "Run in browser" and benchmark runs go through
+ *  here — cwd and prompt are the only differences. */
+export async function runModelHeadless(
+  ctx: JobContext,
+  profile: any,
+  opts: { piBin?: string; message?: string; thinking?: string; keepServer?: boolean; cwd: string }
+): Promise<Record<string, unknown>> {
+  const backend = backendFor(profile.backend);
+  const started = Date.now();
+
+  ctx.log(`[hub] launching ${profile.label} (${backend.label})`);
+  const managed = backend.type === "managed-server";
+  if (managed) {
+    if (!(await serverReady(profile.baseUrl))) {
+      ctx.log(`[hub] starting ${backend.label}…`);
+      await startServer(profile);
+    }
+    const available = await modelAvailableOnServer(profile);
+    if (available === null) throw new Error(`couldn't reach ${backend.label} at ${profile.baseUrl} to confirm the model is available`);
+    if (!available) throw new Error(`${profile.modelAlias} is not available on ${backend.label}`);
+  } else {
+    if (await serverReady(profile.baseUrl)) {
+      const match = await serverMatchesProfile(profile);
+      if (!match.matches) throw new Error(`a different server is already responding at ${profile.baseUrl} — ${match.reason}`);
+      ctx.log(`[hub] reusing server at ${profile.baseUrl}`);
+    } else {
+      ctx.log("[hub] starting llama-server…");
+      const state = await startServer(profile);
+      ctx.progress(20, "waiting for the server");
+      await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
+    }
+  }
+
+  ctx.progress(30, "preflight inference test");
+  const preflight = await preflightInference(profile);
+  if (!preflight.ok) {
+    try {
+      await stopOrUnload(profile);
+    } catch {
+      /* best effort */
+    }
+    throw new Error(`model failed to generate a test token: ${preflight.error}`);
+  }
+  ctx.log("[hub] preflight ok — model loaded");
+
+  const harness = harnessFor((await configuredHarness()).id);
+  if (!(await harness.detect())) throw new Error(`${harness.label} is not installed — npm install -g ${harness.npm}`);
+  await harness.syncConfig(profile);
+
+  const piBin = opts.piBin ?? harness.bin;
+  const args = ["--model", `${profile.providerId}/${profile.modelAlias}`];
+  const level = opts.thinking ?? profile.thinkingLevel;
+  if (level) args.push("--thinking", level);
+  if (opts.message) args.push(opts.message);
+
+  await mkdir(opts.cwd, { recursive: true });
+  ctx.progress(50, "pi running");
+  ctx.log(`[hub] ${piBin} ${args.join(" ")}`);
+  const result = await ctx.spawnOwned(piBin, args, { cwd: opts.cwd });
+
+  const metrics = {
+    exitCode: result.code,
+    durationMs: Date.now() - started,
+    piDurationMs: result.durationMs,
+    keepServer: Boolean(opts.keepServer),
+    workdir: opts.cwd,
+  };
+  if (!opts.keepServer) {
+    ctx.log("[hub] unloading/stopping the server");
+    await stopOrUnload(profile);
+  }
+  if (result.code !== 0) throw new Error(`pi exited with code ${result.code}`);
+  return metrics;
+}
+
 export function launchExecutor(options: LaunchOptions = {}) {
   return async function launch(ctx: JobContext) {
     const ref = parseModelRef(ctx.job.ref ?? "");
@@ -203,72 +279,13 @@ export function launchExecutor(options: LaunchOptions = {}) {
     };
     const { profile } = await baseProfileFor(ref, false);
     if (!profile) throw new Error("no saved profile for this model — set it up first");
-    const backend = backendFor(profile.backend);
-    const started = Date.now();
-
-    ctx.log(`[hub] launching ${profile.label} (${backend.label})`);
-    const managed = backend.type === "managed-server";
-    if (managed) {
-      if (!(await serverReady(profile.baseUrl))) {
-        ctx.log(`[hub] starting ${backend.label}…`);
-        await startServer(profile);
-      }
-      const available = await modelAvailableOnServer(profile);
-      if (available === null) throw new Error(`couldn't reach ${backend.label} at ${profile.baseUrl} to confirm the model is available`);
-      if (!available) throw new Error(`${profile.modelAlias} is not available on ${backend.label}`);
-    } else {
-      if (await serverReady(profile.baseUrl)) {
-        const match = await serverMatchesProfile(profile);
-        if (!match.matches) throw new Error(`a different server is already responding at ${profile.baseUrl} — ${match.reason}`);
-        ctx.log(`[hub] reusing server at ${profile.baseUrl}`);
-      } else {
-        ctx.log("[hub] starting llama-server…");
-        const state = await startServer(profile);
-        ctx.progress(10, "waiting for the server");
-        await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
-      }
-    }
-
-    ctx.progress(20, "preflight inference test");
-    const preflight = await preflightInference(profile);
-    if (!preflight.ok) {
-      try {
-        await stopOrUnload(profile);
-      } catch {
-        /* best effort */
-      }
-      throw new Error(`model failed to generate a test token: ${preflight.error}`);
-    }
-    ctx.log("[hub] preflight ok — model loaded");
-
-    const harness = harnessFor((await configuredHarness()).id);
-    if (!(await harness.detect())) throw new Error(`${harness.label} is not installed — npm install -g ${harness.npm}`);
-    await harness.syncConfig(profile);
-
-    const piBin = options.piBin ?? harness.bin;
-    const args = ["--model", `${profile.providerId}/${profile.modelAlias}`];
-    const level = thinking ?? profile.thinkingLevel;
-    if (level) args.push("--thinking", level);
-    if (message) args.push(message);
-
-    const cwd = join(DATA_DIR, "hub", "runs", ctx.job.id);
-    await mkdir(cwd, { recursive: true });
-    ctx.progress(50, "pi running");
-    ctx.log(`[hub] ${piBin} ${args.join(" ")}`);
-    const result = await ctx.spawnOwned(piBin, args, { cwd });
-
-    const metrics = {
-      exitCode: result.code,
-      durationMs: Date.now() - started,
-      piDurationMs: result.durationMs,
-      keepServer: Boolean(keepServer),
-      workdir: cwd,
-    };
-    if (!keepServer) {
-      ctx.log("[hub] unloading/stopping the server");
-      await stopOrUnload(profile);
-    }
-    if (result.code !== 0) throw new Error(`pi exited with code ${result.code}`);
+    const metrics = await runModelHeadless(ctx, profile, {
+      piBin: options.piBin,
+      message,
+      keepServer,
+      thinking,
+      cwd: join(DATA_DIR, "hub", "runs", ctx.job.id),
+    });
     ctx.progress(100, "run complete");
     return metrics;
   };

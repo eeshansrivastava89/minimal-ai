@@ -42,7 +42,7 @@ export function ModelBenchmark({
               <RunCard
                 key={r.id}
                 run={r}
-                onClick={() => navigate("benchmarkRun", { modelId: r.ownerRef ?? undefined, runId: r.id })}
+                onClick={() => navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" })}
               />
             ))}
           </div>

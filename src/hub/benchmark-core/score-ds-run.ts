@@ -1,10 +1,22 @@
 import { execFile } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { DsScorecard, RunMetadata } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
+
+// The deterministic scorer ships with this repo (scripts/score-ds-run.py +
+// its oracle); resolve relative to this module, never process.cwd().
+const SCORER_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "scripts",
+  "score-ds-run.py"
+);
 
 export interface ScoreDsRunOptions {
   runsRoot: string;
@@ -65,9 +77,8 @@ export async function scoreDsRun(
   console.log(`[score-ds] Model: ${metadata.model?.id ?? "unknown"}, Benchmark: ${metadata.benchmark?.id ?? "unknown"}`);
 
   // Run deterministic scorer
-  const scorerPath = resolve(process.cwd(), "scripts/score-ds-run.py");
-  console.log(`[score-ds] Running: python3 ${scorerPath} ${runDirectory}`);
-  const { stdout } = await exec("python3", [scorerPath, runDirectory], {
+  console.log(`[score-ds] Running: python3 ${SCORER_PATH} ${runDirectory}`);
+  const { stdout } = await exec("python3", [SCORER_PATH, runDirectory], {
     timeout: 30_000
   });
 

@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/api";
-import { fmtCtx, fmtRelative, fmtTps } from "@/lib/format";
-import { SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
+import { fmtCtx, fmtRelative } from "@/lib/format";
+import { AutotuneTable, SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
 import type { Navigate } from "@/App";
 
 export function Dashboard({ navigate }: { navigate: Navigate }) {
@@ -106,7 +106,14 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
         </CardContent>
       </Card>
 
-      <SectionTitle title="Recent benchmark runs" />
+      <SectionTitle
+        title="Recent benchmark runs"
+        action={
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("benchmarks")}>
+            All benchmarks
+          </Button>
+        }
+      />
       {recentRuns.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -119,63 +126,21 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
             <RunCard
               key={r.id}
               run={r}
-              onClick={() => navigate("benchmarkRun", { modelId: r.ownerRef ?? undefined, runId: r.id })}
+              onClick={() => navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" })}
             />
           ))}
         </div>
       )}
 
-      <SectionTitle title="Recent autotune" />
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Model</TableHead>
-                <TableHead>Recommended</TableHead>
-                <TableHead className="text-right">Median tps</TableHead>
-                <TableHead className="text-right">vs vanilla</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(autotune ?? []).map((a) => {
-                const rec = a.configs.find((c) => c.id === a.recommended);
-                const base = a.configs.find((c) => c.id === "vanilla");
-                const delta = rec && base && rec.id !== "vanilla" ? ((rec.median - base.median) / base.median) * 100 : null;
-                return (
-                  <TableRow key={a.modelId}>
-                    <TableCell className="font-medium text-foreground">{a.modelId}</TableCell>
-                    <TableCell>
-                      <StatusBadge status="ok">{rec?.label}</StatusBadge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtTps(rec?.median)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {delta == null ? (
-                        "baseline"
-                      ) : (
-                        <span className={delta >= 0 ? "text-foreground" : "text-destructive"}>
-                          {delta >= 0 ? "+" : ""}
-                          {delta.toFixed(0)}%
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}
-                      >
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <SectionTitle
+        title="Recent autotune"
+        action={
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("autotune")}>
+            All autotune results
+          </Button>
+        }
+      />
+      <AutotuneTable autotune={autotune} navigate={navigate} />
     </div>
   );
 }

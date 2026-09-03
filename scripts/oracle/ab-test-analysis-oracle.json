@@ -1,0 +1,26 @@
+{
+  "status": "significant",
+  "recommended_variant": "A",
+  "raw_stats": {
+    "p_value": 0.00063,
+    "cohens_d": 0.3961,
+    "mean_a": 5.75,
+    "mean_b": 8.942,
+    "std_a": 7.735,
+    "std_b": 8.394,
+    "completion_rate_a": 0.8889,
+    "completion_rate_b": 0.7067,
+    "repeat_rate_a": 0.6062,
+    "repeat_rate_b": 0.5714,
+    "srm_p_value": 0.155176
+  },
+  "tolerance": {
+    "p_value": 0.05,
+    "cohens_d": 0.1,
+    "mean_pct": 0.05,
+    "rate_pct": 0.05
+  },
+  "sample_size_a": 160,
+  "sample_size_b": 147,
+  "generated_at": "2026-05-02T21:17:49.011460Z"
+}

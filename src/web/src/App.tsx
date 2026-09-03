@@ -4,13 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { MoonIcon, SunIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -26,23 +26,20 @@ import { StatusBadge } from "@/components/shared";
 
 // Legacy navigation shape the (not yet converted) views speak: view name +
 // optional model/tab/run ids. router.tsx's useNav() adapts it to URLs.
-export type Navigate = (view: string, opts?: { modelId?: string; tab?: string; runId?: string }) => void;
+export type Navigate = (
+  view: string,
+  opts?: { modelId?: string; tab?: string; runId?: string; bench?: string; slug?: string }
+) => void;
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/models", label: "Models" },
+  { to: "/benchmarks", label: "Benchmarks" },
+  { to: "/autotune", label: "Autotune" },
   { to: "/jobs", label: "Jobs" },
   { to: "/learn", label: "Learn" },
   { to: "/settings", label: "Settings" },
 ];
-
-const TITLES: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/models": "Models",
-  "/jobs": "Jobs",
-  "/learn": "Learn",
-  "/settings": "Settings",
-};
 
 export default function App() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
@@ -62,7 +59,6 @@ export default function App() {
   };
 
   const activeTop = "/" + (pathname.split("/")[1] ?? "");
-  const title = TITLES[activeTop] ?? "Models"; // model pages render their own h1
 
   return (
     <TooltipProvider>
@@ -76,7 +72,6 @@ export default function App() {
           </SidebarHeader>
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {NAV.map((n) => (
@@ -117,7 +112,7 @@ export default function App() {
 
         <SidebarInset>
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-background/95 px-6 backdrop-blur">
-            <div className="text-lg font-semibold">{title}</div>
+            <Breadcrumbs />
             <div className="flex-1" />
             <div className="flex items-center gap-2">
               <StatusBadge status={omlx?.up ? "up" : "down"}>oMLX {omlx?.version ?? ""}</StatusBadge>

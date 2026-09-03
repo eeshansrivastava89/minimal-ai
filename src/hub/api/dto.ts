@@ -59,9 +59,44 @@ export const LaunchDto = z
   })
   .strict();
 
+// Filesystem-safe run identity segments (the runs tree's own shape).
+const SEG = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, "invalid run path segment");
+
+export const RunRefDto = z
+  .object({
+    bench: SEG,
+    slug: SEG,
+    runId: SEG,
+  })
+  .strict();
+
+export const CaptureDto = RunRefDto.extend({
+  force: z.boolean().optional(),
+});
+
+export const BenchmarkLaunchDto = z
+  .object({
+    benchmarkId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "invalid benchmark id"),
+    keepServer: z.boolean().optional(),
+    thinking: THINKING_LEVEL.optional(),
+  })
+  .strict();
+
+export const ComparisonVideoDto = z
+  .object({
+    runs: z.array(RunRefDto).min(2, "pick 2 to 6 runs").max(6, "pick 2 to 6 runs"),
+  })
+  .strict();
+
+export const ExportDto = z
+  .object({
+    publish: z.boolean().default(false),
+  })
+  .strict();
+
 export const JobEnqueueDto = z
   .object({
-    type: z.enum(["download", "setup", "launch"]),
+    type: z.enum(["download", "setup", "launch", "benchmark", "capture", "score", "comparison-video", "export"]),
     ref: z.string().optional(),
     title: z.string().max(200).optional(),
     payload: z.record(z.string(), z.unknown()).optional(),
@@ -71,3 +106,4 @@ export const JobEnqueueDto = z
 export type DownloadInput = z.infer<typeof DownloadDto>;
 export type SetupForm = z.infer<typeof SetupFormDto>;
 export type LaunchInput = z.infer<typeof LaunchDto>;
+export type RunRefInput = z.infer<typeof RunRefDto>;

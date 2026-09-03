@@ -35,6 +35,8 @@ export interface JobContext {
   progress(pct: number, message?: string): void;
   /** Spawn a child owned by the runner — cancelled with the job. */
   spawnOwned(cmd: string, argv: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<SpawnResult>;
+  /** Enqueue a follow-up job (benchmark chaining: launch → capture/score). */
+  enqueue(input: EnqueueInput): Promise<Job>;
 }
 
 export type Executor = (ctx: JobContext) => Promise<Record<string, unknown> | void>;
@@ -210,6 +212,7 @@ export class JobRunner {
     const ctx: JobContext = {
       job: this.store.get(id)!,
       signal: controller.signal,
+      enqueue: (input) => this.enqueue(input),
       log: (line) => {
         void appendFile(logPath, `${line}\n`).catch(() => {});
         notify(line);

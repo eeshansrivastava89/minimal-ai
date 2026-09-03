@@ -4,6 +4,28 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.5.0] - 2026-09-03
+
+### Added
+- Added the Phase 4 benchmark engine as hub jobs (#27): a `benchmark` job writes the run slot (same `runs/<benchmark>/<model>/<run-id>/` layout as the CLI, zero migration), launches pi headless in it, and chains a follow-up — `capture` for visual runs, `score` for data-science runs.
+- Added `capture`, `score`, `comparison-video`, and `export` job types: Playwright preview/video capture flips run status to completed/failed, and the deterministic Python scorer writes `scorecard.json` (scorer + oracle now ship in `scripts/`).
+- Added run endpoints: `POST /api/models/:id/benchmark`, capture/score/delete on `/api/runs/:bench/:slug/:runId`, and `POST /api/runs/comparison-video`, all Zod-validated.
+- Added a publish button (dev-mode gated, git-work-tree detection at boot) that builds the gallery snapshot into the benchmark repo's `public/export`, commits, and pushes via an `export` job.
+- Added the `/benchmarks` sidebar section: the prompt catalog as a single pill row (hover for the detail card) and a run browser that groups by benchmark or by model (one at a time), with historical models marked "no longer on this machine" and read-only.
+- Added an `/autotune` sidebar section listing every model's latest tuning recommendation; the results table is one shared component with the dashboard's recent list.
+- Added "All benchmarks" and "All autotune results" buttons on the dashboard's recent sections.
+- Added run detail under `/benchmarks/:bench/:slug/:runId`, reachable from both the model page and the benchmarks browser: controls at the top, streamed video, open index.html, recapture, score, delete, and a compare selection that enqueues a comparison-video job.
+- Converted the prepare-run flow to live data: real benchmark prompts from the gallery repo, and "Create slot & launch" enqueues the benchmark job.
+
+### Changed
+- Replaced the static page title with site-wide breadcrumbs: one derivation from the URL tree (the entity spine), parent links only to real routes, labels resolved from the same cached queries the pages use — the chain can't drift or dead-end.
+- Removed the "Workspace" caption from the sidebar.
+
+### Fixed
+- Fixed the hub process crashing on GC after a media download was aborted mid-stream (browser navigation, HEAD probes): file responses now stream via `createReadStream`, which owns its fd lifecycle, instead of a hand-rolled FileHandle that leaked.
+- Fixed data-science run detail crashing on scorecards whose `checks` arrive as the scorer's keyed object instead of an array (the Run DTO now normalizes both shapes).
+- Fixed `/api/benchmarks` reporting the A/B analysis prompt as a visual benchmark; its `kind` is `data-science` (same rule as the CLI loader).
+
 ## [3.4.0] - 2026-09-03
 
 ### Added

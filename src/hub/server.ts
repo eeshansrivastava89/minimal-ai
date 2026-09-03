@@ -3,13 +3,15 @@
 // Localhost-only bind; no cloud, no accounts.
 
 import { spawn as spawnChild } from "node:child_process";
-import { chmodSync, existsSync } from "node:fs";
-import { mkdir, open, stat, writeFile } from "node:fs/promises";import { extname, join, normalize, resolve, sep } from "node:path";
+import { chmodSync, createReadStream, existsSync } from "node:fs";
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 
 import { DATA_DIR } from "../config.mjs";
@@ -32,15 +34,33 @@ import {
   setupInfo,
 } from "./api/data.ts";
 import { parseModelRef } from "./api/model-ref.ts";
-import { DownloadDto, JobEnqueueDto, LaunchDto, SetupFormDto } from "./api/dto.ts";
+import {
+  BenchmarkLaunchDto,
+  CaptureDto,
+  ComparisonVideoDto,
+  DownloadDto,
+  ExportDto,
+  JobEnqueueDto,
+  LaunchDto,
+  RunRefDto,
+  SetupFormDto,
+} from "./api/dto.ts";
 import {
   buildTerminalScript,
   downloadExecutor,
   launchExecutor,
   setupExecutor,
 } from "./jobs/executors.ts";
+import {
+  benchmarkExecutor,
+  captureExecutor,
+  comparisonVideoExecutor,
+  exportExecutor,
+  scoreExecutor,
+} from "./jobs/benchmark-executors.ts";
 import { JobRunner } from "./jobs/runner.ts";
 import { toJobDto } from "./jobs/store.ts";
+import { deleteRunDirectory } from "./benchmark-core/runs.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DIST_DIR = join(REPO_ROOT, "src", "web", "dist");
@@ -79,33 +99,22 @@ async function fileResponse(absPath: string, rangeHeader: string | undefined): P
     if (start >= s.size || start > end) {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${s.size}` } });
     }
-    const fh = await open(absPath, "r");
-    const buf = Buffer.alloc(end - start + 1);
-    await fh.read(buf, 0, buf.length, start);
-    await fh.close();
     headers["Content-Range"] = `bytes ${start}-${end}/${s.size}`;
-    headers["Content-Length"] = String(buf.length);
-    return new Response(buf, { status: 206, headers });
+    headers["Content-Length"] = String(end - start + 1);
+    // createReadStream owns its fd lifecycle (destroyed on end/error/cancel)
+    // — a hand-rolled FileHandle leaks under aborts and Node 26 kills the
+    // process when a leaked handle is collected.
+    return new Response(Readable.toWeb(createReadStream(absPath, { start, end })) as unknown as BodyInit, {
+      status: 206,
+      headers,
+    });
   }
 
   headers["Content-Length"] = String(s.size);
-  const fh = await open(absPath, "r");
-  const stream = new ReadableStream({
-    async pull(controller) {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await fh.read(buf, 0, buf.length, null);
-      if (bytesRead === 0) {
-        controller.close();
-        await fh.close();
-      } else {
-        controller.enqueue(buf.subarray(0, bytesRead));
-      }
-    },
-    async cancel() {
-      await fh.close();
-    },
+  return new Response(Readable.toWeb(createReadStream(absPath)) as unknown as BodyInit, {
+    status: 200,
+    headers,
   });
-  return new Response(stream as unknown as BodyInit, { status: 200, headers });
 }
 
 // Resolve a request path safely inside root; null = escape attempt.
@@ -250,7 +259,17 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
           ? DownloadDto.safeParse(payload)
           : type === "launch"
             ? LaunchDto.safeParse(payload)
-            : SetupFormDto.safeParse(payload);
+            : type === "benchmark"
+              ? BenchmarkLaunchDto.safeParse(payload)
+              : type === "capture"
+                ? CaptureDto.safeParse(payload)
+                : type === "score"
+                  ? RunRefDto.safeParse(payload)
+                  : type === "comparison-video"
+                    ? ComparisonVideoDto.safeParse(payload)
+                    : type === "export"
+                      ? ExportDto.safeParse(payload)
+                      : SetupFormDto.safeParse(payload);
       if (!typed.success) return zodError(c, typed.error.issues);
       const job = await runner.enqueue({
         type,
@@ -340,6 +359,116 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     return c.json({ removed: profile.id });
   });
 
+  // ── Benchmark engine (Phase 4) ─────────────────────────────────────────────
+
+  // Prepare + launch a benchmark run for a model: one job; the executor
+  // writes the run slot, launches pi headless in it, and chains capture
+  // (visual) or score (data-science) when the agent finishes.
+  app.post("/api/models/:id/benchmark", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    const dto = BenchmarkLaunchDto.safeParse(await c.req.json().catch(() => ({})));
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const benchmarks = await allBenchmarks();
+    const bench = benchmarks.find((b) => b.id === dto.data.benchmarkId);
+    if (!bench) return c.json({ error: `unknown benchmark: ${dto.data.benchmarkId}` }, 404);
+    const job = await runner.enqueue({
+      type: "benchmark",
+      ref: detail.ref,
+      title: `Benchmark ${bench.title} — ${detail.profile?.label ?? detail.title}`,
+      payload: dto.data as Record<string, unknown>,
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  // Run-scoped path params: safe segments + the run must exist on disk.
+  // Returns the run directory, or an error Response the caller returns.
+  const runDir = async (
+    c: Context
+  ): Promise<{ dir: string; runsRoot: string } | { error: Response }> => {
+    const { bench, slug, runId } = c.req.param();
+    for (const seg of [bench, slug, runId]) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(seg)) {
+        return { error: c.json({ error: "invalid run path segment" }, 400) };
+      }
+    }
+    const runsRoot = await resolveRunsRoot();
+    if (!runsRoot) return { error: c.json({ error: "runs not available" }, 404) };
+    const target = safeJoin(runsRoot, bench, slug, runId);
+    if (!target || !existsSync(join(target, "metadata.json"))) {
+      return { error: c.json({ error: "run not found" }, 404) };
+    }
+    return { dir: target, runsRoot };
+  };
+
+  app.post("/api/runs/:bench/:slug/:runId/capture", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const found = await runDir(c);
+    if ("error" in found) return found.error;
+    const { bench, slug, runId } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const force = typeof body?.force === "boolean" ? body.force : undefined;
+    const job = await runner.enqueue({
+      type: "capture",
+      title: `Capture ${bench}/${slug}`,
+      payload: { bench, slug, runId, ...(force !== undefined ? { force } : {}) },
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  app.post("/api/runs/:bench/:slug/:runId/score", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const found = await runDir(c);
+    if ("error" in found) return found.error;
+    const { bench, slug, runId } = c.req.param();
+    const job = await runner.enqueue({
+      type: "score",
+      title: `Score ${bench}/${slug}`,
+      payload: { bench, slug, runId },
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  app.delete("/api/runs/:bench/:slug/:runId", async (c) => {
+    const found = await runDir(c);
+    if ("error" in found) return found.error;
+    await deleteRunDirectory({ runsRoot: found.runsRoot, runDirectory: found.dir });
+    return c.json({ deleted: c.req.param("runId") });
+  });
+
+  app.post("/api/runs/comparison-video", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const dto = ComparisonVideoDto.safeParse(await c.req.json().catch(() => null));
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const job = await runner.enqueue({
+      type: "comparison-video",
+      title: `Comparison video — ${dto.data.runs.length} runs`,
+      payload: dto.data as Record<string, unknown>,
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  // Publish (dev-mode gated): build the gallery snapshot, commit, push.
+  // Hidden in the UI unless machine.devMode; refused here as the backstop.
+  app.post("/api/publish", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const machine = await machineInfo();
+    if (!machine.devMode) {
+      return c.json({ error: "publishing needs a git checkout (dev mode)" }, 403);
+    }
+    const dto = ExportDto.safeParse((await c.req.json().catch(() => ({}))) ?? {});
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const job = await runner.enqueue({
+      type: "export",
+      title: "Publish benchmark gallery",
+      payload: { publish: true },
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
   // Open in Terminal: the hub writes a start script and asks the OS to open
   // Terminal with it. The hub never owns the process — read-back stays
   // backend-level (server up? model loaded?), same as the plan.
@@ -392,6 +521,11 @@ function createRunner(): JobRunner {
   runner.registerExecutor("download", downloadExecutor);
   runner.registerExecutor("setup", setupExecutor);
   runner.registerExecutor("launch", launchExecutor());
+  runner.registerExecutor("benchmark", benchmarkExecutor());
+  runner.registerExecutor("capture", captureExecutor());
+  runner.registerExecutor("score", scoreExecutor());
+  runner.registerExecutor("comparison-video", comparisonVideoExecutor());
+  runner.registerExecutor("export", exportExecutor());
   return runner;
 }
 

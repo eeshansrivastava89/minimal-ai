@@ -4,10 +4,13 @@
 // using its default variants.
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { backendLabel } from "@/lib/format";
-import type { Run } from "@/data/types";
+import { backendLabel, fmtTps } from "@/lib/format";
+import type { AutotuneRun, Run } from "@/data/types";
+import type { Navigate } from "@/App";
 
 type Status = string;
 
@@ -113,6 +116,59 @@ export function CapabilityBadges({ caps }: { caps: Record<string, unknown> }) {
         </Badge>
       ))}
     </span>
+  );
+}
+
+// The autotune results table — one component, used by both the dashboard
+// (recent) and the /autotune section (all models).
+export function AutotuneTable({ autotune, navigate, limit }: { autotune?: AutotuneRun[]; navigate: Navigate; limit?: number }) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Model</TableHead>
+              <TableHead>Recommended</TableHead>
+              <TableHead className="text-right">Median tps</TableHead>
+              <TableHead className="text-right">vs vanilla</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(autotune ?? []).slice(0, limit).map((a) => {
+              const rec = a.configs.find((c) => c.id === a.recommended);
+              const base = a.configs.find((c) => c.id === "vanilla");
+              const delta = rec && base && rec.id !== "vanilla" ? ((rec.median - base.median) / base.median) * 100 : null;
+              return (
+                <TableRow key={a.modelId}>
+                  <TableCell className="font-medium text-foreground">{a.modelId}</TableCell>
+                  <TableCell>
+                    <StatusBadge status="ok">{rec?.label}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtTps(rec?.median)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {delta == null ? (
+                      "baseline"
+                    ) : (
+                      <span className={delta >= 0 ? "text-foreground" : "text-destructive"}>
+                        {delta >= 0 ? "+" : ""}
+                        {delta.toFixed(0)}%
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}>
+                      View
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

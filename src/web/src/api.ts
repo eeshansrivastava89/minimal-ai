@@ -16,6 +16,14 @@ import type {
   SetupInfo,
 } from "@/data/types";
 
+// A run's filesystem identity — the runs-tree segments every run-scoped
+// write (capture/score/delete/compare) keys on.
+export interface RunRef {
+  bench: string;
+  slug: string;
+  runId: string;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
@@ -72,4 +80,17 @@ export const api = {
     send<{ opened: boolean; scriptPath: string }>(`/api/models/${seg(ref)}/terminal`, "POST"),
   hfQuants: (repo: string) =>
     get<{ repo: string; files: { path: string; sizeBytes: number }[] }>(`/api/hf/quants?repo=${seg(repo)}`),
+
+  // ── Benchmark engine (Phase 4) ──────────────────────────────────────────────
+  benchmarkLaunch: (ref: string, benchmarkId: string, opts?: { keepServer?: boolean; thinking?: string }) =>
+    send<Job>(`/api/models/${seg(ref)}/benchmark`, "POST", { benchmarkId, ...opts }),
+  runCapture: (run: RunRef, force?: boolean) =>
+    send<Job>(`/api/runs/${seg(run.bench)}/${seg(run.slug)}/${seg(run.runId)}/capture`, "POST", force !== undefined ? { force } : {}),
+  runScore: (run: RunRef) =>
+    send<Job>(`/api/runs/${seg(run.bench)}/${seg(run.slug)}/${seg(run.runId)}/score`, "POST"),
+  deleteRun: (run: RunRef) =>
+    send<unknown>(`/api/runs/${seg(run.bench)}/${seg(run.slug)}/${seg(run.runId)}`, "DELETE"),
+  comparisonVideo: (runs: RunRef[]) =>
+    send<Job>("/api/runs/comparison-video", "POST", { runs }),
+  publish: () => send<Job>("/api/publish", "POST", { publish: true }),
 };

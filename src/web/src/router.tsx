@@ -23,6 +23,8 @@ import { SetupNew } from "./views/setup-new";
 import { AutotuneNew } from "./views/autotune-new";
 import { BenchmarkNew } from "./views/benchmark-new";
 import { BenchmarkDetail } from "./views/benchmark-detail";
+import { Benchmarks } from "./views/benchmarks";
+import { Autotune } from "./views/autotune";
 import { Jobs } from "./views/jobs";
 import { Learn } from "./views/learn";
 import { Settings } from "./views/settings";
@@ -56,9 +58,13 @@ export function useNav(): Navigate {
       case "benchmarkNew":
         return navigate({ to: "/models/$id/benchmark/new", params: { id: ref } });
       case "benchmarkRun":
+        // Run detail lives under /benchmarks (the cross-model record) —
+        // reachable from both the model page (live) and the benchmarks
+        // browser (historical). bench/slug/runId are the run's filesystem
+        // identity.
         return navigate({
-          to: "/models/$id/benchmark/$runId",
-          params: { id: ref, runId: opts?.runId ?? "" },
+          to: "/benchmarks/$bench/$slug/$runId",
+          params: { bench: opts?.bench ?? "", slug: opts?.slug ?? "", runId: opts?.runId ?? "" },
         });
       default:
         return navigate({ to: `/${view}` });
@@ -109,12 +115,20 @@ function AutotuneNewPage() {
 
 function BenchmarkNewPage() {
   const { id } = useParams({ from: benchmarkNewRoute.id });
-  return <BenchmarkNew modelId={useMockId(id)} navigate={useNav()} />;
+  return <BenchmarkNew modelRef={id} navigate={useNav()} />;
 }
 
 function BenchmarkRunPage() {
-  const { id, runId } = useParams({ from: runRoute.id });
-  return <BenchmarkDetail runId={runId} modelRef={id} navigate={useNav()} />;
+  const { bench, slug, runId } = useParams({ from: runRoute.id });
+  return <BenchmarkDetail run={{ bench, slug, runId }} navigate={useNav()} />;
+}
+
+function BenchmarksPage() {
+  return <Benchmarks navigate={useNav()} />;
+}
+
+function AutotunePage() {
+  return <Autotune navigate={useNav()} />;
 }
 
 const dashboardRoute = createRoute({
@@ -152,8 +166,18 @@ const benchmarkNewRoute = createRoute({
 });
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/models/$id/benchmark/$runId",
+  path: "/benchmarks/$bench/$slug/$runId",
   component: BenchmarkRunPage,
+});
+const benchmarksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/benchmarks",
+  component: BenchmarksPage,
+});
+const autotuneRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/autotune",
+  component: AutotunePage,
 });
 const jobsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/jobs", component: Jobs });
 const learnRoute = createRoute({ getParentRoute: () => rootRoute, path: "/learn", component: Learn });
@@ -171,7 +195,9 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   autotuneNewRoute,
   benchmarkNewRoute,
+  benchmarksRoute,
   runRoute,
+  autotuneRoute,
   jobsRoute,
   learnRoute,
   settingsRoute,

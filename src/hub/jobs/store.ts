@@ -11,7 +11,15 @@ import { DatabaseSync } from "node:sqlite";
 
 import { DATA_DIR } from "../../config.mjs";
 
-export type JobType = "download" | "setup" | "launch";
+export type JobType =
+  | "download"
+  | "setup"
+  | "launch"
+  | "benchmark"
+  | "capture"
+  | "score"
+  | "comparison-video"
+  | "export";
 export type JobStatus =
   | "queued"
   | "running"
