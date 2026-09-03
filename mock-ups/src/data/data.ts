@@ -46,10 +46,12 @@ export const HUB_DATA: HubData = {
   },
 
   // ── Backends ─────────────────────────────────────────────────────────────
+  // Versions captured 2026-09-02: oMLX GET /api/status, Ollama GET /api/version,
+  // `llama-server --version` → build 9430 (d48a56eff).
   backends: [
-    { id: "llama-cpp", label: "llama.cpp", type: "local-server", port: 8080, baseUrl: "http://127.0.0.1:8080/v1" },
-    { id: "omlx", label: "oMLX", type: "managed-server", port: 8000, baseUrl: "http://127.0.0.1:8000/v1" },
-    { id: "ollama", label: "Ollama", type: "managed-server", port: 11434, baseUrl: "http://127.0.0.1:11434/v1" },
+    { id: "llama-cpp", label: "llama.cpp", type: "local-server", port: 8080, baseUrl: "http://127.0.0.1:8080/v1", version: "b9430" },
+    { id: "omlx", label: "oMLX", type: "managed-server", port: 8000, baseUrl: "http://127.0.0.1:8000/v1", version: "0.6.3rc3" },
+    { id: "ollama", label: "Ollama", type: "managed-server", port: 11434, baseUrl: "http://127.0.0.1:11434/v1", version: "0.33.2" },
   ],
 
   // ── oMLX live server status (http://127.0.0.1:8000/api/status) ───────────
@@ -103,6 +105,7 @@ export const HUB_DATA: HubData = {
       },
       createdAt: "2026-08-23T19:06:07.994Z",
       updatedAt: "2026-08-24T05:21:29.766Z",
+      lastUsedAt: "2026-08-26T04:09:16.452Z", // autotune recommendedAt
     },
     {
       id: "omlx-qwen3.5-9b-mtplx",
@@ -119,6 +122,7 @@ export const HUB_DATA: HubData = {
       },
       createdAt: "2026-08-26T04:25:34.115Z",
       updatedAt: "2026-08-26T04:25:34.115Z",
+      lastUsedAt: "2026-08-27T01:07:19.517Z", // autotune recommendedAt
     },
     {
       id: "omlx-qwen3.5-4b-optiq-4bit",
@@ -138,6 +142,7 @@ export const HUB_DATA: HubData = {
       },
       createdAt: "2026-07-09T07:21:23.835Z",
       updatedAt: "2026-08-27T00:30:36.156Z",
+      lastUsedAt: "2026-08-26T16:30:38.341Z", // autotune recommendedAt
     },
     {
       id: "ollama-qwen3.8-27b-mlx",
@@ -159,6 +164,7 @@ export const HUB_DATA: HubData = {
       },
       createdAt: "2026-08-16T19:51:05.779Z",
       updatedAt: "2026-08-25T04:07:36.260Z",
+      lastUsedAt: "2026-08-24T06:26:26.155Z", // latest benchmark run createdAt
     },
     {
       id: "unsloth-gemma-4-e2b-it",
@@ -203,6 +209,7 @@ export const HUB_DATA: HubData = {
       },
       createdAt: "2026-07-12T04:20:59.833Z",
       updatedAt: "2026-07-12T04:20:59.833Z",
+      lastUsedAt: "2026-07-26T17:06:52.970Z", // last launch, ~/.minimal-ai/run state + logs
     },
   ],
 
@@ -240,6 +247,31 @@ export const HUB_DATA: HubData = {
       imatrix: true,
       ctxSize: 131072,
       source: "huggingface",
+    },
+  ],
+
+  // ── llama.cpp memory heatmap (real: estimate.mjs on the live machine, ───
+  // 2026-09-02; 48 GB M4 Pro, 21.5 GB available at capture time)
+  memoryHeatmaps: [
+    {
+      modelId: "unsloth/gemma-4-E2B-it-Q4_K_M",
+      ramInstalledGB: 48,
+      ramAvailable: 21506818048,
+      fixedBytes: 4362005440,
+      modelBytes: 3106736256,
+      mmprojBytes: 986833728,
+      overheadBytes: 268435456,
+      kvLayers: 35,
+      maxCtx: 131072,
+      caches: ["bf16", "q8_0", "q4_0"],
+      grid: [
+        { ctx: 4096, cells: [4451134400, 4409355200, 4387072960] },
+        { ctx: 8192, cells: [4526631872, 4449463232, 4408306624] },
+        { ctx: 16384, cells: [4677626816, 4529679296, 4450773952] },
+        { ctx: 32768, cells: [4979616704, 4690111424, 4535708608] },
+        { ctx: 65536, cells: [5583596480, 5010975680, 4705577920] },
+        { ctx: 131072, cells: [6791556032, 5652704192, 5045316544] },
+      ],
     },
   ],
 

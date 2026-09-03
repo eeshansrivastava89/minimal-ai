@@ -3,15 +3,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HUB_DATA } from "@/data/data";
 import { RUNS } from "@/data/runs";
-import { fmtBytes, fmtCtx, fmtTps } from "@/lib/format";
-import { profileForRun } from "@/lib/lookup";
-import { StatCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
+import { fmtCtx, fmtRelative, fmtTps } from "@/lib/format";
+import { backendVersion, profileForRun } from "@/lib/lookup";
+import { SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
 import type { Navigate } from "@/App";
 
 export function Dashboard({ navigate }: { navigate: Navigate }) {
   const o = HUB_DATA.omlxStatus as Record<string, unknown>;
   const omlxUp = o.status === "ok";
   const profiles = HUB_DATA.profiles;
+  // Quick launch = saved profiles, most recently used first (see lastUsedAt
+  // provenance comments in data.ts).
+  const recentProfiles = [...profiles].sort((a, b) =>
+    (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "")
+  );
   const recentRuns = RUNS.slice(0, 6);
 
   return (
@@ -22,33 +27,42 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
         three backends, all on this machine. Nothing leaves it.
       </p>
 
-      <SectionTitle title="Backends" />
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard
-          label="oMLX"
-          value={omlxUp ? String(o.version) : "down"}
-          sub={omlxUp ? `${o.modelsLoaded} loaded · ${o.modelsDiscovered} discovered · ${fmtBytes(o.modelMemoryMax as number)} max` : "server not running"}
+      <div className="mt-6 grid grid-cols-4 gap-3">
+        <SummaryCard
+          name="Machine"
+          meta={HUB_DATA.hardware.chip}
+          value={HUB_DATA.hardware.ramLabel}
+          unit="unified memory"
         />
-        <StatCard
-          label="Ollama"
-          value={HUB_DATA.ollamaModels.length || "down"}
-          sub={HUB_DATA.ollamaModels.length ? HUB_DATA.ollamaModels.map((m) => m.id).join(", ") : "server not running"}
+        <SummaryCard
+          name="oMLX"
+          meta={omlxUp ? (backendVersion("omlx") ?? String(o.version)) : "not running"}
+          value={omlxUp ? HUB_DATA.omlxModels.length : "—"}
+          unit={HUB_DATA.omlxModels.length === 1 ? "model" : "models"}
         />
-        <StatCard
-          label="llama.cpp"
-          value={HUB_DATA.ggufModels.length || "—"}
-          sub={HUB_DATA.ggufModels.length ? "GGUF models scanned" : "no GGUF models scanned"}
+        <SummaryCard
+          name="Ollama"
+          meta={HUB_DATA.ollamaModels.length ? backendVersion("ollama") ?? "—" : "not running"}
+          value={HUB_DATA.ollamaModels.length}
+          unit={HUB_DATA.ollamaModels.length === 1 ? "model" : "models"}
+        />
+        <SummaryCard
+          name="llama.cpp"
+          meta={backendVersion("llama-cpp") ?? "—"}
+          value={HUB_DATA.ggufModels.length}
+          unit={HUB_DATA.ggufModels.length === 1 ? "model" : "models"}
         />
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-3">
-        <StatCard label="Machine" value={HUB_DATA.hardware.chip} sub={`${HUB_DATA.hardware.ramLabel} · ${HUB_DATA.hardware.metal}`} />
-        <StatCard label="Profiles" value={profiles.length} sub="saved model setups" />
-        <StatCard label="Benchmark runs" value={RUNS.length} sub={`across ${HUB_DATA.benchmarks.length} prompts`} />
-        <StatCard label="Autotune sweeps" value={HUB_DATA.autotune.length} sub="completed speed tunes" />
-      </div>
-
-      <SectionTitle title="Quick launch" meta="opens Terminal/iTerm with the command" />
+      <SectionTitle
+        title="Quick launch"
+        meta="opens Terminal/iTerm with the command"
+        action={
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("models")}>
+            All models
+          </Button>
+        }
+      />
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -58,11 +72,12 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                 <TableHead>Backend</TableHead>
                 <TableHead className="text-right">Context</TableHead>
                 <TableHead>Thinking</TableHead>
+                <TableHead>Last used</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {profiles.map((p) => (
+              {recentProfiles.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>
                     <div className="font-medium text-foreground">{p.label}</div>
@@ -81,6 +96,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                       <StatusBadge status="ok">{p.thinkingLevel ?? "default"}</StatusBadge>
                     )}
                   </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{fmtRelative(p.lastUsedAt)}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" onClick={() => navigate("model", { modelId: p.id })}>
                       Run

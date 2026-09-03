@@ -16,6 +16,17 @@ export function profileById(id: string | undefined): Profile | undefined {
   return HUB_DATA.profiles.find((p) => p.id === id);
 }
 
+export function backendVersion(id: string): string | undefined {
+  return HUB_DATA.backends.find((b) => b.id === id)?.version;
+}
+
+/** Saved profile for a backend model id (or its own profile id), if any. */
+export function profileForModel(id: string): Profile | undefined {
+  return HUB_DATA.profiles.find(
+    (p) => p.id === id || p.modelAlias === id || p.omlxModel === id || p.ollamaModel === id
+  );
+}
+
 export function runsForProfile(p: Profile): Run[] {
   const ids = profileIds(p);
   return RUNS.filter(

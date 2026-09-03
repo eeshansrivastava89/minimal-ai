@@ -15,8 +15,18 @@ const OK = new Set(["ok", "ready", "completed", "done", "up"]);
 const ACTIVE = new Set(["running", "active", "starting"]);
 const WARN = new Set(["prepared", "warn"]);
 const ERR = new Set(["failed", "missing", "down", "error"]);
+const SETUP = new Set(["setup", "needs-setup"]);
 
 export function StatusBadge({ status, children }: { status: Status; children?: React.ReactNode }) {
+  // "Needs setup" gets a warm amber treatment so it reads as an action item,
+  // distinct from both healthy (default) and failed (destructive).
+  if (SETUP.has(status)) {
+    return (
+      <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        {children ?? "needs setup"}
+      </Badge>
+    );
+  }
   const variant = ERR.has(status) ? "destructive" : OK.has(status) ? "default" : ACTIVE.has(status) || WARN.has(status) ? "secondary" : "outline";
   return <Badge variant={variant}>{children ?? status}</Badge>;
 }
@@ -45,12 +55,42 @@ export function StatCard({
   );
 }
 
-export function SectionTitle({ title, meta }: { title: string; meta?: string }) {
+// Compact summary card for the dashboard machine/backends row:
+// header = name + meta (version), stat below. Deliberately one line tall.
+export function SummaryCard({
+  name,
+  meta,
+  value,
+  unit,
+}: {
+  name: React.ReactNode;
+  meta?: React.ReactNode;
+  value: React.ReactNode;
+  unit?: React.ReactNode;
+}) {
+  return (
+    <Card size="sm">
+      <CardContent className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="text-sm font-medium text-foreground">{name}</div>
+          {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <div className="text-2xl leading-none font-medium tabular-nums text-foreground">{value}</div>
+          {unit ? <div className="text-xs text-muted-foreground">{unit}</div> : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SectionTitle({ title, meta, action }: { title: string; meta?: string; action?: React.ReactNode }) {
   return (
     <div className="mt-8 mb-3 flex items-baseline gap-3 first:mt-0">
       <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
       <div className="h-px flex-1 bg-border" />
       {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
+      {action}
     </div>
   );
 }

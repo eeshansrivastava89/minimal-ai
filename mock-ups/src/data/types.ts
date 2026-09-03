@@ -19,6 +19,25 @@ export interface Profile {
   flags?: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
+  // Latest real evidence of use: benchmark run createdAt, autotune
+  // recommendedAt, or a launch record (~/.minimal-ai/run/*.state.json, logs).
+  lastUsedAt?: string;
+}
+
+// Context × KV-cache memory grid for one GGUF. `grid[i].cells[j]` is the
+// total bytes for preset grid[i].ctx with caches[j] on K and V.
+export interface MemoryHeatmap {
+  modelId: string;
+  ramInstalledGB: number;
+  ramAvailable: number;
+  fixedBytes: number; // model + mmproj + draft + overhead
+  modelBytes: number;
+  mmprojBytes: number;
+  overheadBytes: number;
+  kvLayers: number;
+  maxCtx: number;
+  caches: string[];
+  grid: { ctx: number; cells: number[] }[];
 }
 
 export interface AutotuneConfig {
@@ -104,12 +123,15 @@ export interface HubData {
   meta: { app: string; version: string; capturedAt: string; note: string };
   hardware: { chip: string; ramBytes: number; ramLabel: string; metal: string; platform: string };
   config: Record<string, unknown>;
-  backends: { id: string; label: string; type: string; port: number; baseUrl: string }[];
+  backends: { id: string; label: string; type: string; port: number; baseUrl: string; version?: string }[];
   omlxStatus: Record<string, unknown>;
   profiles: Profile[];
   omlxModels: { id: string; maxModelLen: number | null; kind: string }[];
   ollamaModels: { id: string; sizeBytes: number; quant: string; capabilities: string[] }[];
   ggufModels: Record<string, unknown>[];
+  // llama.cpp memory heatmaps, precomputed per GGUF with the real CLI
+  // (prepareMemoryEstimate + computeMemoryTotal) on the live machine.
+  memoryHeatmaps: MemoryHeatmap[];
   autotune: AutotuneRun[];
   benchmarks: Benchmark[];
   omlxSettingKeys: { key: string; label: string; group: string }[];

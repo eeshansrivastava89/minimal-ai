@@ -7,7 +7,6 @@ import { HUB_DATA } from "@/data/data";
 import { fmtBytes, fmtCtx } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BackendBadge, CapabilityBadges, SectionTitle, StatCard } from "@/components/shared";
-import { SetupDialog } from "@/components/flows";
 import { ModelAutotune } from "@/views/model-autotune";
 import { ModelBenchmark } from "@/views/model-benchmark";
 import { ModelLogs } from "@/views/model-logs";
@@ -151,7 +150,7 @@ function OverviewTab({ p }: { p: Profile }) {
   );
 }
 
-function ConfigurationTab({ p }: { p: Profile }) {
+function ConfigurationTab({ p, navigate }: { p: Profile; navigate: Navigate }) {
   const settings = HUB_DATA.omlxModelSettings[p.modelAlias] ?? null;
   const flags = p.flags ?? null;
 
@@ -177,7 +176,9 @@ function ConfigurationTab({ p }: { p: Profile }) {
         </Card>
       )}
       <div className="mt-4 flex gap-2">
-        <SetupDialog profile={p} />
+        <Button variant="outline" onClick={() => navigate("setupNew", { modelId: p.id, tab: p.backend })}>
+          Reconfigure
+        </Button>
         <Button variant="destructive" onClick={() => toast("Remove configuration — simulated")}>
           Remove configuration
         </Button>
@@ -220,7 +221,7 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
 
       <div className="mt-4">
         {tab === "overview" && <OverviewTab p={p} />}
-        {tab === "configuration" && <ConfigurationTab p={p} />}
+        {tab === "configuration" && <ConfigurationTab p={p} navigate={navigate} />}
         {tab === "logs" && <ModelLogs profile={p} />}
         {tab === "autotune" && <ModelAutotune profile={p} navigate={navigate} />}
         {tab === "benchmark" && <ModelBenchmark profile={p} navigate={navigate} />}

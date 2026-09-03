@@ -28,6 +28,7 @@ import { ModelDetail } from "@/views/model-detail";
 import { AutotuneNew } from "@/views/autotune-new";
 import { BenchmarkNew } from "@/views/benchmark-new";
 import { BenchmarkDetail } from "@/views/benchmark-detail";
+import { SetupNew } from "@/views/setup-new";
 import { Jobs } from "@/views/jobs";
 import { Learn } from "@/views/learn";
 import { Settings } from "@/views/settings";
@@ -43,13 +44,19 @@ import { Settings } from "@/views/settings";
 //   autotuneNew          /models/:id/autotune/new
 //   benchmarkNew         /models/:id/benchmark/new
 //   benchmarkRun         /models/:id/benchmark/:runId
+//   setupNew             /models/:id/setup (tab carries the backend id)
 //   jobs / learn / settings
 export type Route = { view: string; modelId?: string; tab?: string; runId?: string };
 export type Navigate = (view: string, opts?: { modelId?: string; tab?: string; runId?: string }) => void;
 
+// Model count = what the Models page actually lists: oMLX discovered +
+// Ollama served + GGUF on disk. (Profiles are saved setups, a subset view.)
+const MODEL_COUNT =
+  HUB_DATA.omlxModels.length + HUB_DATA.ollamaModels.length + HUB_DATA.ggufModels.length;
+
 const NAV = [
   { view: "dashboard", label: "Dashboard" },
-  { view: "models", label: "Models", count: HUB_DATA.profiles.length },
+  { view: "models", label: "Models", count: MODEL_COUNT },
   { view: "jobs", label: "Jobs" },
   { view: "learn", label: "Learn" },
   { view: "settings", label: "Settings" },
@@ -58,13 +65,14 @@ const NAV = [
 const TITLES: Record<string, string> = {
   dashboard: "Dashboard",
   models: "Models",
+  setupNew: "Set up model",
   jobs: "Jobs",
   learn: "Learn",
   settings: "Settings",
 };
 
 // Views that live under a model (highlight "Models" in the sidebar).
-const MODEL_VIEWS = new Set(["model", "autotuneNew", "benchmarkNew", "benchmarkRun"]);
+const MODEL_VIEWS = new Set(["model", "autotuneNew", "benchmarkNew", "benchmarkRun", "setupNew"]);
 
 export default function App() {
   const [route, setRoute] = useState<Route>({ view: "dashboard" });
@@ -80,7 +88,7 @@ export default function App() {
 
   const model = profileById(route.modelId);
   const activeTop = MODEL_VIEWS.has(route.view) ? "models" : route.view;
-  const title = model ? model.label : (TITLES[route.view] ?? "Dashboard");
+  const title = route.view === "setupNew" ? "Set up model" : model ? model.label : (TITLES[route.view] ?? "Dashboard");
 
   const o = HUB_DATA.omlxStatus as Record<string, unknown>;
   const omlxUp = o.status === "ok";
@@ -166,6 +174,9 @@ export default function App() {
             {route.view === "benchmarkNew" && <BenchmarkNew modelId={route.modelId ?? ""} navigate={navigate} />}
             {route.view === "benchmarkRun" && (
               <BenchmarkDetail runId={route.runId ?? ""} modelId={route.modelId} navigate={navigate} />
+            )}
+            {route.view === "setupNew" && (
+              <SetupNew modelId={route.modelId ?? ""} backendId={route.tab} navigate={navigate} />
             )}
             {route.view === "jobs" && <Jobs />}
             {route.view === "learn" && <Learn />}

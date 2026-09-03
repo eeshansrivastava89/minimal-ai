@@ -22,6 +22,16 @@ export function fmtDate(iso: string | null | undefined): string {
   );
 }
 
+// Compact relative time for "last used" style columns: "today", "3d ago", "5w ago".
+export function fmtRelative(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const days = (Date.now() - new Date(iso).getTime()) / 86400000;
+  if (days < 1) return "today";
+  if (days < 14) return `${Math.floor(days)}d ago`;
+  if (days < 60) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
 export function fmtDur(ms: number | null | undefined): string {
   if (ms == null) return "—";
   const s = ms / 1000;
