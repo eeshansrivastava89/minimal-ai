@@ -1,124 +1,28 @@
-// Types for the real dataset. Loose on purpose — the data is a snapshot,
-// not a schema. Views only read a handful of fields.
+// Shared entity/API types live at the hub seam (src/hub/api/types.ts) —
+// re-exported here so views keep one import path. Mock-only shapes (the
+// static snapshot the not-yet-live pages read) stay below.
 
-export interface Profile {
-  id: string;
-  label: string;
-  backend: string;
-  modelAlias: string;
-  modelSizeBytes?: number;
-  baseUrl: string;
-  thinkingLevel?: string;
-  thinkingOff?: boolean;
-  source?: string;
-  modelPath?: string;
-  mmprojPath?: string;
-  omlxModel?: string;
-  ollamaModel?: string;
-  capabilities: Record<string, unknown>;
-  flags?: Record<string, unknown>;
-  createdAt?: string;
-  updatedAt?: string;
-  // Latest real evidence of use: benchmark run createdAt, autotune
-  // recommendedAt, or a launch record (~/.minimal-ai/run/*.state.json, logs).
-  lastUsedAt?: string;
-}
+export type {
+  Profile,
+  MemoryHeatmap,
+  AutotuneConfig,
+  AutotuneRun,
+  DsScorecard,
+  DsSummary,
+  Run,
+  MachineInfo,
+  BackendStatus,
+  ModelSummary,
+  ModelsResponse,
+  ModelDetail,
+  Benchmark,
+  LogEntry,
+} from "@hub/api/types";
 
-// Context × KV-cache memory grid for one GGUF. `grid[i].cells[j]` is the
-// total bytes for preset grid[i].ctx with caches[j] on K and V.
-export interface MemoryHeatmap {
-  modelId: string;
-  ramInstalledGB: number;
-  ramAvailable: number;
-  fixedBytes: number; // model + mmproj + draft + overhead
-  modelBytes: number;
-  mmprojBytes: number;
-  overheadBytes: number;
-  kvLayers: number;
-  maxCtx: number;
-  caches: string[];
-  grid: { ctx: number; cells: number[] }[];
-}
+import type { Profile, MemoryHeatmap, AutotuneRun, Benchmark } from "@hub/api/types";
 
-export interface AutotuneConfig {
-  id: string;
-  label: string;
-  family: string;
-  median: number;
-  mad: number;
-  n: number;
-  accept: number | null;
-  settings: Record<string, unknown>;
-}
-
-export interface AutotuneRun {
-  modelId: string;
-  profileId: string;
-  runId: string;
-  recommendedAt: string;
-  recommended: string;
-  noChange: boolean;
-  reasoning: string;
-  dflashDraft: string | null;
-  configs: AutotuneConfig[];
-}
-
-export interface Benchmark {
-  id: string;
-  title: string;
-  kind: string;
-  description: string;
-  prompt: string;
-}
-
-export interface DsScorecard {
-  total: number;
-  earned: number;
-  pct: number;
-  checks: { label: string; earned: number; max: number; pass: boolean; detail?: string }[];
-}
-
-export interface DsSummary {
-  status?: string | null;
-  recommendedVariant?: string | null;
-  decision?: string | null;
-  metrics?: { label: string; value: string; delta?: string | null; context?: string | null }[];
-}
-
-export interface Run {
-  id: string;
-  bench: string;
-  benchTitle: string;
-  kind: string;
-  model: string | null;
-  modelDisplay: string | null;
-  slug: string | null;
-  backend: string | null;
-  source: string | null;
-  harness: string | null;
-  status: string;
-  createdAt: string | null;
-  completedAt: string | null;
-  fps: number | null;
-  minFps: number | null;
-  frames: number | null;
-  viewport: { width: number; height: number } | null;
-  promptTok: number | null;
-  compTok: number | null;
-  totalTok: number | null;
-  tokReported: boolean;
-  prefill: number | null;
-  gen: number | null;
-  ttft: number | null;
-  specAccept: number | null;
-  wallMs: number | null;
-  turns: number | null;
-  toolCalls: number | null;
-  success: boolean;
-  preview: string | null;
-  ds: { scorecard: DsScorecard; summary: DsSummary } | null;
-}
-
+// Static mock snapshot — only pages not yet on live data read this
+// (jobs, learn, settings, and the Phase 3–5 write flows).
 export interface HubData {
   meta: { app: string; version: string; capturedAt: string; note: string };
   hardware: { chip: string; ramBytes: number; ramLabel: string; metal: string; platform: string };
@@ -129,8 +33,6 @@ export interface HubData {
   omlxModels: { id: string; maxModelLen: number | null; kind: string }[];
   ollamaModels: { id: string; sizeBytes: number; quant: string; capabilities: string[] }[];
   ggufModels: Record<string, unknown>[];
-  // llama.cpp memory heatmaps, precomputed per GGUF with the real CLI
-  // (prepareMemoryEstimate + computeMemoryTotal) on the live machine.
   memoryHeatmaps: MemoryHeatmap[];
   autotune: AutotuneRun[];
   benchmarks: Benchmark[];

@@ -1,32 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { HUB_DATA } from "@/data/data";
+import { api } from "@/api";
 import { fmtBytes, fmtCtx } from "@/lib/format";
-import { backendVersion, profileForModel } from "@/lib/lookup";
 import { CapabilityBadges, SectionTitle, StatusBadge } from "@/components/shared";
 import { DownloadDialog } from "@/components/flows";
-import type { Profile } from "@/data/types";
 import type { Navigate } from "@/App";
+import type { ModelSummary } from "@/data/types";
 
-// One row shape for all three backend buckets. A model with a saved profile
-// is "ready" and pulls size/context/capabilities from that profile; the rest
-// show whatever the backend itself reports and read as "needs setup".
-type RowStatus = "ready" | "setup" | "draft" | "helper";
-
-type ModelRow = {
-  key: string;
-  backend: string;
-  title: string;
-  subtitle?: string;
-  size: string;
-  ctx: string;
-  caps: Record<string, unknown>;
-  status: RowStatus;
-  profile?: Profile;
-};
-
-function ModelTable({ rows, navigate }: { rows: ModelRow[]; navigate: Navigate }) {
+function ModelTable({ rows, navigate }: { rows: ModelSummary[]; navigate: Navigate }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -43,15 +26,17 @@ function ModelTable({ rows, navigate }: { rows: ModelRow[]; navigate: Navigate }
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <TableRow key={r.key}>
-                <TableCell>
-                  <div className="font-medium text-foreground">{r.title}</div>
-                  {r.subtitle ? <div className="text-xs text-muted-foreground">{r.subtitle}</div> : null}
+              <TableRow key={r.ref}>
+                <TableCell className="max-w-[280px]">
+                  <div className="truncate font-medium text-foreground">{r.title}</div>
+                  {r.subtitle ? (
+                    <div className="truncate text-xs text-muted-foreground" title={r.subtitle}>{r.subtitle}</div>
+                  ) : null}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{r.size}</TableCell>
-                <TableCell className="text-right tabular-nums">{r.ctx}</TableCell>
+                <TableCell className="text-right tabular-nums">{r.sizeBytes ? fmtBytes(r.sizeBytes) : "—"}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmtCtx(r.contextLength)}</TableCell>
                 <TableCell>
-                  {r.status === "draft" || r.status === "helper" ? "—" : <CapabilityBadges caps={r.caps} />}
+                  {r.status === "draft" || r.status === "helper" ? "—" : <CapabilityBadges caps={r.capabilities} />}
                 </TableCell>
                 <TableCell>
                   {r.status === "ready" ? (
@@ -65,15 +50,15 @@ function ModelTable({ rows, navigate }: { rows: ModelRow[]; navigate: Navigate }
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {r.profile ? (
-                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: r.profile!.id })}>
-                      Open
-                    </Button>
-                  ) : r.status === "setup" ? (
-                    <Button size="sm" variant="outline" onClick={() => navigate("setupNew", { modelId: r.key, tab: r.backend })}>
+                  {r.status === "setup" ? (
+                    <Button size="sm" variant="outline" onClick={() => navigate("setupNew", { modelId: r.ref, tab: r.backend })}>
                       Set up
                     </Button>
-                  ) : null}
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: r.ref })}>
+                      Open
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -85,59 +70,27 @@ function ModelTable({ rows, navigate }: { rows: ModelRow[]; navigate: Navigate }
 }
 
 export function Models({ navigate }: { navigate: Navigate }) {
-  const omlxRows: ModelRow[] = HUB_DATA.omlxModels.map((m) => {
-    const profile = profileForModel(m.id);
-    const caps = (profile?.capabilities ?? {}) as Record<string, unknown>;
-    return {
-      key: m.id,
-      backend: "omlx",
-      title: m.id,
-      size: profile ? fmtBytes(profile.modelSizeBytes) : "—",
-      ctx: fmtCtx(m.maxModelLen ?? (caps.contextLength as number | undefined)),
-      caps,
-      status: m.kind === "draft" ? "draft" : m.kind === "helper" ? "helper" : profile ? "ready" : "setup",
-      profile,
-    };
-  });
+  const { data, isLoading, error } = useQuery({ queryKey: ["models"], queryFn: api.models });
 
-  const ollamaRows: ModelRow[] = HUB_DATA.ollamaModels.map((m) => {
-    const profile = profileForModel(m.id);
-    const caps: Record<string, unknown> = Object.fromEntries(m.capabilities.map((c) => [c, true]));
-    caps.quant = m.quant;
-    return {
-      key: m.id,
-      backend: "ollama",
-      title: m.id,
-      size: fmtBytes(m.sizeBytes),
-      ctx: profile ? fmtCtx((profile.capabilities.contextLength ?? profile.capabilities.ctxSize) as number | undefined) : "—",
-      caps,
-      status: profile ? "ready" : "setup",
-      profile,
-    };
-  });
+  if (error) {
+    return (
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Models</h1>
+        <Card className="mt-4">
+          <CardContent className="py-8 text-center text-sm text-destructive">
+            Hub API unreachable — is `npm run hub` (or the dev proxy) up? {error.message}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-  const ggufRows: ModelRow[] = HUB_DATA.ggufModels.map((g) => {
-    const gr = g as Record<string, unknown>;
-    const id = String(gr.id);
-    const profile = profileForModel(id);
-    const caps: Record<string, unknown> = {
-      thinking: gr.thinking,
-      vision: gr.vision,
-      imatrix: gr.imatrix,
-      quant: String(gr.quant),
-    };
-    return {
-      key: id,
-      backend: "llama-cpp",
-      title: String(gr.label),
-      subtitle: id,
-      size: profile ? fmtBytes(profile.modelSizeBytes) : "—",
-      ctx: fmtCtx((gr.ctxSize as number | undefined) ?? (profile?.capabilities.ctxSize as number | undefined)),
-      caps,
-      status: profile ? "ready" : "setup",
-      profile,
-    };
-  });
+  const backends = data?.backends ?? [];
+  const metaFor = (id: string, n: number) => {
+    const b = backends.find((x) => x.id === id);
+    return `${n} model${n === 1 ? "" : "s"} · ${b?.up ? b.version ?? "running" : "not running"}`;
+  };
+  const bucket = (id: string) => (data?.models ?? []).filter((m) => m.backend === id);
 
   return (
     <div>
@@ -147,23 +100,16 @@ export function Models({ navigate }: { navigate: Navigate }) {
         ready to run; the rest need setup.
       </p>
 
-      <SectionTitle
-        title="oMLX"
-        meta={`${omlxRows.length} model${omlxRows.length === 1 ? "" : "s"} · ${backendVersion("omlx") ?? "not running"}`}
-      />
-      <ModelTable rows={omlxRows} navigate={navigate} />
-
-      <SectionTitle
-        title="Ollama"
-        meta={`${ollamaRows.length} model${ollamaRows.length === 1 ? "" : "s"} · ${backendVersion("ollama") ?? "not running"}`}
-      />
-      <ModelTable rows={ollamaRows} navigate={navigate} />
-
-      <SectionTitle
-        title="llama.cpp"
-        meta={`${ggufRows.length} model${ggufRows.length === 1 ? "" : "s"} · ${backendVersion("llama-cpp") ?? "not running"}`}
-      />
-      <ModelTable rows={ggufRows} navigate={navigate} />
+      {(["omlx", "ollama", "llama-cpp"] as const).map((id) => {
+        const rows = bucket(id);
+        const label = backends.find((b) => b.id === id)?.label ?? id;
+        return (
+          <div key={id}>
+            <SectionTitle title={label} meta={isLoading ? "…" : metaFor(id, rows.length)} />
+            <ModelTable rows={rows} navigate={navigate} />
+          </div>
+        );
+      })}
 
       <div className="mt-4 flex gap-2">
         <DownloadDialog />

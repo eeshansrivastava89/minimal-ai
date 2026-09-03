@@ -10,7 +10,8 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "allowJs": true
   },
   "include": ["src/hub"]
 }

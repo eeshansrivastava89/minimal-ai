@@ -1,36 +1,55 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { fmtBytes } from "@/lib/format";
-import type { Profile } from "@/data/types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fmtBytes, fmtDate } from "@/lib/format";
+import { StatusBadge } from "@/components/shared";
+import type { LogEntry } from "@/data/types";
 
-// Per-model log lines — a child of the model, filtered out of the backend
-// server log. Static sample lines for the mock-up.
-export function ModelLogs({ profile }: { profile: Profile }) {
-  const m = profile.modelAlias;
-  const lines: [string, string][] = [
-    ["ok", `loaded ${m} (${fmtBytes(profile.modelSizeBytes)})`],
-    ["dim", `Chat completion: model=${m}, 142 tokens in 3.7s (38.5 tok/s), prompt: 170, finish_reason=length`],
-    ["dim", `Chat completion: model=${m}, 300 tokens in 6.3s (47.9 tok/s), prompt: 24, finish_reason=stop`],
-    ["dim", `Chat completion: model=${m}, 1024 tokens in 21.8s (47.0 tok/s), prompt: 612, finish_reason=length`],
-    ["ok", `unloaded ${m} (idle timeout)`],
-  ];
+// Per-model log files from ~/.minimal-ai/logs — a child of the model.
+// Phase 2 lists the files; tailing/streaming content lands with SSE in
+// Phase 3.
+export function ModelLogs({ logs }: { logs: LogEntry[] | undefined }) {
+  if (!logs) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (logs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          No logs for this model yet — they appear after the first launch.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div>
       <p className="mb-3 text-sm text-muted-foreground">
-        Lines for this model from the backend server log. The full stream lives under Jobs.
+        Log files for this model under ~/.minimal-ai/logs. Live tailing lands with the job runner.
       </p>
       <Card>
         <CardContent className="p-0">
-          <ScrollArea className="h-80">
-            <div className="p-4 font-mono text-xs leading-relaxed">
-              {lines.map(([kind, msg], i) => (
-                <div key={i} className={kind === "ok" ? "text-foreground" : "text-muted-foreground"}>
-                  {msg}
-                </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>File</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead className="text-right">Size</TableHead>
+                <TableHead className="text-right">Modified</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {logs.map((l) => (
+                <TableRow key={l.name}>
+                  <TableCell className="font-mono text-xs text-foreground">{l.name}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={l.kind === "friendly" ? "ok" : "active"}>{l.kind}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtBytes(l.sizeBytes)}</TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{fmtDate(l.modifiedAt)}</TableCell>
+                </TableRow>
               ))}
-            </div>
-          </ScrollArea>
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

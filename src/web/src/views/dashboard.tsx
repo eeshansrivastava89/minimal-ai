@@ -1,23 +1,25 @@
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { HUB_DATA } from "@/data/data";
-import { RUNS } from "@/data/runs";
+import { api } from "@/api";
 import { fmtCtx, fmtRelative, fmtTps } from "@/lib/format";
-import { backendVersion, profileForRun } from "@/lib/lookup";
 import { SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
 import type { Navigate } from "@/App";
 
 export function Dashboard({ navigate }: { navigate: Navigate }) {
-  const o = HUB_DATA.omlxStatus as Record<string, unknown>;
-  const omlxUp = o.status === "ok";
-  const profiles = HUB_DATA.profiles;
-  // Quick launch = saved profiles, most recently used first (see lastUsedAt
-  // provenance comments in data.ts).
-  const recentProfiles = [...profiles].sort((a, b) =>
-    (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "")
-  );
-  const recentRuns = RUNS.slice(0, 6);
+  const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
+  const { data: runs } = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
+  const { data: autotune } = useQuery({ queryKey: ["autotune"], queryFn: api.allAutotune, staleTime: 60_000 });
+
+  const backends = modelsData?.backends ?? [];
+  const profiles = modelsData?.profiles ?? [];
+  const backend = (id: string) => backends.find((b) => b.id === id);
+  const countFor = (id: string) => modelsData?.models.filter((m) => m.backend === id).length ?? 0;
+  // Quick launch = saved profiles, most recently used first.
+  const recentProfiles = [...profiles].sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+  const recentRuns = (runs ?? []).slice(0, 6);
 
   return (
     <div>
@@ -30,28 +32,23 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
       <div className="mt-6 grid grid-cols-4 gap-3">
         <SummaryCard
           name="Machine"
-          meta={HUB_DATA.hardware.chip}
-          value={HUB_DATA.hardware.ramLabel}
+          meta={machine?.chip ?? "…"}
+          value={machine?.ramLabel ?? "…"}
           unit="unified memory"
         />
-        <SummaryCard
-          name="oMLX"
-          meta={omlxUp ? (backendVersion("omlx") ?? String(o.version)) : "not running"}
-          value={omlxUp ? HUB_DATA.omlxModels.length : "—"}
-          unit={HUB_DATA.omlxModels.length === 1 ? "model" : "models"}
-        />
-        <SummaryCard
-          name="Ollama"
-          meta={HUB_DATA.ollamaModels.length ? backendVersion("ollama") ?? "—" : "not running"}
-          value={HUB_DATA.ollamaModels.length}
-          unit={HUB_DATA.ollamaModels.length === 1 ? "model" : "models"}
-        />
-        <SummaryCard
-          name="llama.cpp"
-          meta={backendVersion("llama-cpp") ?? "—"}
-          value={HUB_DATA.ggufModels.length}
-          unit={HUB_DATA.ggufModels.length === 1 ? "model" : "models"}
-        />
+        {(["omlx", "ollama", "llama-cpp"] as const).map((id) => {
+          const b = backend(id);
+          const n = countFor(id);
+          return (
+            <SummaryCard
+              key={id}
+              name={b?.label ?? id}
+              meta={b?.up ? b.version ?? "running" : "not running"}
+              value={b?.up || n > 0 ? n : "—"}
+              unit={n === 1 ? "model" : "models"}
+            />
+          );
+        })}
       </div>
 
       <SectionTitle
@@ -87,7 +84,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                     <BackendBadge backend={p.backend} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {fmtCtx((p.capabilities.contextLength ?? p.capabilities.ctxSize) as number | undefined)}
+                    {fmtCtx((p.capabilities?.contextLength ?? p.capabilities?.ctxSize) as number | undefined)}
                   </TableCell>
                   <TableCell>
                     {p.thinkingOff ? (
@@ -110,15 +107,23 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
       </Card>
 
       <SectionTitle title="Recent benchmark runs" />
-      <div className="grid grid-cols-3 gap-3">
-        {recentRuns.map((r) => (
-          <RunCard
-            key={r.id}
-            run={r}
-            onClick={() => navigate("benchmarkRun", { modelId: profileForRun(r)?.id, runId: r.id })}
-          />
-        ))}
-      </div>
+      {recentRuns.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No benchmark runs yet.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          {recentRuns.map((r) => (
+            <RunCard
+              key={r.id}
+              run={r}
+              onClick={() => navigate("benchmarkRun", { modelId: r.ownerRef ?? undefined, runId: r.id })}
+            />
+          ))}
+        </div>
+      )}
 
       <SectionTitle title="Recent autotune" />
       <Card>
@@ -134,7 +139,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {HUB_DATA.autotune.map((a) => {
+              {(autotune ?? []).map((a) => {
                 const rec = a.configs.find((c) => c.id === a.recommended);
                 const base = a.configs.find((c) => c.id === "vanilla");
                 const delta = rec && base && rec.id !== "vanilla" ? ((rec.median - base.median) / base.median) * 100 : null;
@@ -156,7 +161,11 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}
+                      >
                         View
                       </Button>
                     </TableCell>

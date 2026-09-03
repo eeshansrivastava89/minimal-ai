@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { MoonIcon, SunIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,65 +21,38 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { HUB_DATA } from "@/data/data";
+import { api } from "@/api";
 import { StatusBadge } from "@/components/shared";
-import { profileById } from "@/lib/lookup";
-import { Dashboard } from "@/views/dashboard";
-import { Models } from "@/views/models";
-import { ModelDetail } from "@/views/model-detail";
-import { AutotuneNew } from "@/views/autotune-new";
-import { BenchmarkNew } from "@/views/benchmark-new";
-import { BenchmarkDetail } from "@/views/benchmark-detail";
-import { SetupNew } from "@/views/setup-new";
-import { Jobs } from "@/views/jobs";
-import { Learn } from "@/views/learn";
-import { Settings } from "@/views/settings";
 
-// Entity-centric routing: the model is the entity. Configuration, logs,
-// autotune sweeps and benchmark runs are children of a model — they live
-// under /models/:id/*, never as standalone top-level features.
-//
-// Mock-up routes (state router, mirrors the real URL scheme):
-//   dashboard            /dashboard
-//   models               /models
-//   model + tab          /models/:id[/configuration|logs|autotune|benchmark]
-//   autotuneNew          /models/:id/autotune/new
-//   benchmarkNew         /models/:id/benchmark/new
-//   benchmarkRun         /models/:id/benchmark/:runId
-//   setupNew             /models/:id/setup (tab carries the backend id)
-//   jobs / learn / settings
-export type Route = { view: string; modelId?: string; tab?: string; runId?: string };
+// Legacy navigation shape the (not yet converted) views speak: view name +
+// optional model/tab/run ids. router.tsx's useNav() adapts it to URLs.
 export type Navigate = (view: string, opts?: { modelId?: string; tab?: string; runId?: string }) => void;
 
-// Model count = what the Models page actually lists: oMLX discovered +
-// Ollama served + GGUF on disk. (Profiles are saved setups, a subset view.)
-const MODEL_COUNT =
-  HUB_DATA.omlxModels.length + HUB_DATA.ollamaModels.length + HUB_DATA.ggufModels.length;
-
 const NAV = [
-  { view: "dashboard", label: "Dashboard" },
-  { view: "models", label: "Models", count: MODEL_COUNT },
-  { view: "jobs", label: "Jobs" },
-  { view: "learn", label: "Learn" },
-  { view: "settings", label: "Settings" },
+  { to: "/dashboard", label: "Dashboard" },
+  { to: "/models", label: "Models" },
+  { to: "/jobs", label: "Jobs" },
+  { to: "/learn", label: "Learn" },
+  { to: "/settings", label: "Settings" },
 ];
 
 const TITLES: Record<string, string> = {
-  dashboard: "Dashboard",
-  models: "Models",
-  setupNew: "Set up model",
-  jobs: "Jobs",
-  learn: "Learn",
-  settings: "Settings",
+  "/dashboard": "Dashboard",
+  "/models": "Models",
+  "/jobs": "Jobs",
+  "/learn": "Learn",
+  "/settings": "Settings",
 };
 
-// Views that live under a model (highlight "Models" in the sidebar).
-const MODEL_VIEWS = new Set(["model", "autotuneNew", "benchmarkNew", "benchmarkRun", "setupNew"]);
-
 export default function App() {
-  const [route, setRoute] = useState<Route>({ view: "dashboard" });
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  const navigate: Navigate = (view, opts) => setRoute({ view, ...opts });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
+  const backends = modelsData?.backends ?? [];
+  const backend = (id: string) => backends.find((b) => b.id === id);
+  const omlx = backend("omlx");
 
   const toggleTheme = () => {
     const next = !dark;
@@ -86,12 +61,8 @@ export default function App() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  const model = profileById(route.modelId);
-  const activeTop = MODEL_VIEWS.has(route.view) ? "models" : route.view;
-  const title = route.view === "setupNew" ? "Set up model" : model ? model.label : (TITLES[route.view] ?? "Dashboard");
-
-  const o = HUB_DATA.omlxStatus as Record<string, unknown>;
-  const omlxUp = o.status === "ok";
+  const activeTop = "/" + (pathname.split("/")[1] ?? "");
+  const title = TITLES[activeTop] ?? "Models"; // model pages render their own h1
 
   return (
     <TooltipProvider>
@@ -109,10 +80,14 @@ export default function App() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {NAV.map((n) => (
-                    <SidebarMenuItem key={n.view}>
-                      <SidebarMenuButton isActive={activeTop === n.view} onClick={() => navigate(n.view)}>
-                        {n.label}
-                        {n.count != null && <SidebarMenuBadge>{n.count}</SidebarMenuBadge>}
+                    <SidebarMenuItem key={n.to}>
+                      <SidebarMenuButton isActive={activeTop === n.to} asChild>
+                        <Link to={n.to}>
+                          {n.label}
+                          {n.to === "/models" && modelsData && (
+                            <SidebarMenuBadge>{modelsData.models.length}</SidebarMenuBadge>
+                          )}
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -124,15 +99,17 @@ export default function App() {
             <div className="flex flex-col gap-1 px-2 text-xs text-muted-foreground">
               <div className="flex justify-between">
                 <span>oMLX</span>
-                <span className="text-foreground">{omlxUp ? `${o.modelsLoaded}/${o.modelsDiscovered} loaded` : "down"}</span>
+                <span className="text-foreground">
+                  {omlx?.up ? `${omlx.modelsLoaded ?? 0}/${omlx.modelsDiscovered ?? "?"} loaded` : "down"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Harness</span>
                 <span className="text-foreground">Pi</span>
               </div>
               <div className="flex justify-between">
-                <span>v{HUB_DATA.meta.version}</span>
-                <span>mock-up</span>
+                <span>v{machine?.version ?? "…"}</span>
+                <span>{machine?.devMode ? "dev" : ""}</span>
               </div>
             </div>
           </SidebarFooter>
@@ -140,23 +117,12 @@ export default function App() {
 
         <SidebarInset>
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-background/95 px-6 backdrop-blur">
-            <div className="flex items-baseline gap-2">
-              {model && (
-                <button
-                  className="text-lg font-semibold text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => navigate("models")}
-                >
-                  Models
-                </button>
-              )}
-              {model && <span className="text-muted-foreground">/</span>}
-              <div className="text-lg font-semibold">{title}</div>
-            </div>
+            <div className="text-lg font-semibold">{title}</div>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
-              <StatusBadge status={omlxUp ? "up" : "down"}>oMLX {String(o.version ?? "")}</StatusBadge>
-              <StatusBadge status={HUB_DATA.ollamaModels.length ? "up" : "down"}>Ollama</StatusBadge>
-              <StatusBadge status={HUB_DATA.ggufModels.length ? "up" : "down"}>llama.cpp</StatusBadge>
+              <StatusBadge status={omlx?.up ? "up" : "down"}>oMLX {omlx?.version ?? ""}</StatusBadge>
+              <StatusBadge status={backend("ollama")?.up ? "up" : "down"}>Ollama</StatusBadge>
+              <StatusBadge status={backend("llama-cpp")?.up ? "up" : "down"}>llama.cpp</StatusBadge>
               <Badge variant="outline">Pi</Badge>
               <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
                 {dark ? <SunIcon /> : <MoonIcon />}
@@ -165,22 +131,7 @@ export default function App() {
           </header>
 
           <div className="mx-auto w-full max-w-6xl p-6">
-            {route.view === "dashboard" && <Dashboard navigate={navigate} />}
-            {route.view === "models" && <Models navigate={navigate} />}
-            {route.view === "model" && (
-              <ModelDetail id={route.modelId ?? ""} tab={route.tab ?? "overview"} navigate={navigate} />
-            )}
-            {route.view === "autotuneNew" && <AutotuneNew modelId={route.modelId ?? ""} navigate={navigate} />}
-            {route.view === "benchmarkNew" && <BenchmarkNew modelId={route.modelId ?? ""} navigate={navigate} />}
-            {route.view === "benchmarkRun" && (
-              <BenchmarkDetail runId={route.runId ?? ""} modelId={route.modelId} navigate={navigate} />
-            )}
-            {route.view === "setupNew" && (
-              <SetupNew modelId={route.modelId ?? ""} backendId={route.tab} navigate={navigate} />
-            )}
-            {route.view === "jobs" && <Jobs />}
-            {route.view === "learn" && <Learn />}
-            {route.view === "settings" && <Settings />}
+            <Outlet />
           </div>
         </SidebarInset>
       </SidebarProvider>

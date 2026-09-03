@@ -1,15 +1,22 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { HUB_DATA } from "@/data/data";
-import { RUNS } from "@/data/runs";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api } from "@/api";
 import { fmtDate, fmtDur, fmtPct } from "@/lib/format";
-import { profileForRun } from "@/lib/lookup";
 import { SectionTitle, StatCard, StatusBadge } from "@/components/shared";
 import type { Navigate } from "@/App";
 
-export function BenchmarkDetail({ runId, modelId, navigate }: { runId: string; modelId?: string; navigate: Navigate }) {
-  const r = RUNS.find((x) => x.id === runId);
+export function BenchmarkDetail({ runId, modelRef, navigate }: { runId: string; modelRef?: string; navigate: Navigate }) {
+  const { data: runs, isLoading } = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
+  const { data: benchmarks } = useQuery({ queryKey: ["benchmarks"], queryFn: api.benchmarks, staleTime: 300_000 });
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
+
+  const r = (runs ?? []).find((x) => x.id === runId);
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
   if (!r) {
     return (
       <div>
@@ -19,17 +26,18 @@ export function BenchmarkDetail({ runId, modelId, navigate }: { runId: string; m
     );
   }
 
-  const b = HUB_DATA.benchmarks.find((x) => x.id === r.bench);
-  const owner = (modelId && HUB_DATA.profiles.find((p) => p.id === modelId)) || profileForRun(r);
+  const b = (benchmarks ?? []).find((x) => x.id === r.bench);
+  const ownerRef = modelRef ?? r.ownerRef;
+  const owner = modelsData?.models.find((m) => m.ref === ownerRef);
 
   return (
     <div>
       <div className="flex items-baseline gap-3">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">{r.benchTitle}</h1>
-        {owner ? (
+        {ownerRef ? (
           <button
             className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            onClick={() => navigate("model", { modelId: owner.id, tab: "benchmark" })}
+            onClick={() => navigate("model", { modelId: ownerRef, tab: "benchmark" })}
           >
             {r.modelDisplay ?? r.model}
           </button>
@@ -157,14 +165,14 @@ export function BenchmarkDetail({ runId, modelId, navigate }: { runId: string; m
       </Card>
 
       <div className="mt-4 flex gap-2">
-        {owner && (
-          <Button variant="outline" onClick={() => navigate("model", { modelId: owner.id, tab: "benchmark" })}>
-            ← Back to {owner.label}
+        {ownerRef && (
+          <Button variant="outline" onClick={() => navigate("model", { modelId: ownerRef, tab: "benchmark" })}>
+            ← Back to {owner?.title ?? r.modelDisplay ?? r.model}
           </Button>
         )}
-        <Button variant="outline">Open index.html</Button>
-        <Button variant="outline">Recapture media</Button>
-        <Button variant="destructive">Delete run</Button>
+        <Button variant="outline" onClick={() => toast("Run actions land in Phase 4 (benchmark jobs)")}>Open index.html</Button>
+        <Button variant="outline" onClick={() => toast("Run actions land in Phase 4 (benchmark jobs)")}>Recapture media</Button>
+        <Button variant="destructive" onClick={() => toast("Run actions land in Phase 4 (benchmark jobs)")}>Delete run</Button>
       </div>
     </div>
   );
