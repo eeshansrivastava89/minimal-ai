@@ -148,7 +148,6 @@ export interface ModelSummary {
   backend: string;
   id: string;
   title: string;
-  subtitle?: string;
   sizeBytes?: number;
   contextLength?: number;
   capabilities: Record<string, unknown>;

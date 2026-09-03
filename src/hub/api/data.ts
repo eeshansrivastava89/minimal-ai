@@ -222,7 +222,6 @@ export async function catalog(): Promise<{
       backend: "llama-cpp",
       id: g.path,
       title: g.label,
-      subtitle: g.path,
       sizeBytes: g.sizeBytes || profile?.modelSizeBytes,
       contextLength:
         (g.contextLength as number | undefined) ??

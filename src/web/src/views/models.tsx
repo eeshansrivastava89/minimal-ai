@@ -10,11 +10,25 @@ import { DownloadDialog } from "@/components/flows";
 import type { Navigate } from "@/App";
 import type { ModelSummary } from "@/data/types";
 
+// One fixed column layout for every backend table — auto-layout would size
+// each table independently and the columns would drift apart per bucket.
+const COLS = (
+  <colgroup>
+    <col className="w-[34%]" />
+    <col className="w-[10%]" />
+    <col className="w-[10%]" />
+    <col className="w-[26%]" />
+    <col className="w-[11%]" />
+    <col className="w-[9%]" />
+  </colgroup>
+);
+
 function ModelTable({ rows, navigate }: { rows: ModelSummary[]; navigate: Navigate }) {
   return (
     <Card>
       <CardContent className="p-0">
-        <Table>
+        <Table className="table-fixed">
+          {COLS}
           <TableHeader>
             <TableRow>
               <TableHead>Model</TableHead>
@@ -28,11 +42,8 @@ function ModelTable({ rows, navigate }: { rows: ModelSummary[]; navigate: Naviga
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.ref}>
-                <TableCell className="max-w-[280px]">
-                  <div className="truncate font-medium text-foreground">{r.title}</div>
-                  {r.subtitle ? (
-                    <div className="truncate text-xs text-muted-foreground" title={r.subtitle}>{r.subtitle}</div>
-                  ) : null}
+                <TableCell>
+                  <div className="truncate font-medium text-foreground" title={r.title}>{r.title}</div>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{r.sizeBytes ? fmtBytes(r.sizeBytes) : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtCtx(r.contextLength)}</TableCell>
