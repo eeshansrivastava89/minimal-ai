@@ -15,7 +15,7 @@ import { BACKENDS, backendFor } from "../../backends.mjs";
 import { loadConfig } from "../../config.mjs";
 import { prepareMemoryEstimate, computeMemoryTotal } from "../../estimate.mjs";
 import { readOmlxModelSettings, scanOmlxModelSizes } from "../../mlx-discovery.mjs";
-import { installedRamGB } from "../../hardware.mjs";
+import { installedRamGB, availableRamBytes } from "../../hardware.mjs";
 import { findLlamaServer } from "../../config.mjs";
 import { DATA_DIR, LOG_DIR } from "../../config.mjs";
 import { loadProfiles } from "../../profiles.mjs";
@@ -148,7 +148,7 @@ async function llamaCppInfo(): Promise<{ installed: boolean; version?: string }>
 // Match a saved profile to a discovered model. The profile's backend pins
 // the bucket; the id matches the backend's own model field first, then the
 // alias (backendFor(...).modelIdFields defines the lookup order).
-function profileMatchesModel(p: Profile, backend: string, id: string): boolean {
+export function profileMatchesModel(p: Profile, backend: string, id: string): boolean {
   if (p.backend !== backend) return false;
   const fields: string[] = backendFor(backend).modelIdFields ?? ["modelAlias"];
   // GGUF identity is the file path; llama.cpp profiles key on modelPath.
@@ -294,53 +294,62 @@ export async function modelDetail(ref: ModelRef): Promise<ModelDetail | null> {
 
 // ── Setup (read model) ──────────────────────────────────────────────────────
 
+// Same presets and cache types as the CLI heatmap (questions.mjs) so the
+// web form and the CLI picker agree cell-for-cell.
 const HEATMAP_CTXS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
-const HEATMAP_CACHES = [
-  { label: "f16", k: "f16", v: "f16" },
-  { label: "q8", k: "q8_0", v: "q8_0" },
-  { label: "q4", k: "q4_0", v: "q4_0" },
-];
+const HEATMAP_CACHES = ["bf16", "q8_0", "q4_0"];
 
 // llama.cpp only: the heatmap is computed from the GGUF on disk by the real
 // estimator. oMLX/Ollama models get null (server-side settings instead).
+// Detected capabilities + the model's max context ride along so the setup
+// form can render MTP/vision/thinking switches before any profile exists.
 export async function setupInfo(ref: ModelRef): Promise<{
   ref: string;
   heatmap: MemoryHeatmap | null;
   profile?: Profile;
+  capabilities?: Record<string, unknown>;
+  maxCtx?: number;
 } | null> {
   const detail = await modelDetail(ref);
   if (!detail) return null;
   let heatmap: MemoryHeatmap | null = null;
+  let capabilities: Record<string, unknown> | undefined;
+  let maxCtx: number | undefined;
   if (ref.backend === "llama-cpp") {
+    const { detectGgufCapabilities } = await import("../../capabilities.mjs");
     const { models } = await scanGgufModels();
     const g = models.find((m) => m.path === ref.id);
     if (g?.path) {
+      const caps = detectGgufCapabilities(g.path, g.mmprojPath ?? null) as Record<string, unknown>;
+      capabilities = caps;
+      maxCtx = (caps.contextLength as number | undefined) ?? undefined;
       const prepared = prepareMemoryEstimate(g.path, g.mmprojPath ?? null, null);
       const fixedBytes =
         prepared.modelBytes + prepared.mmprojBytes + prepared.draftBytes + prepared.overheadBytes;
+      const ctxs = HEATMAP_CTXS.filter((ctx) => !maxCtx || ctx <= maxCtx);
       heatmap = {
         modelId: ref.id,
         ramInstalledGB: installedRamGB(),
-        ramAvailable: 0,
+        ramAvailable: availableRamBytes(),
         fixedBytes,
         modelBytes: prepared.modelBytes,
         mmprojBytes: prepared.mmprojBytes,
         overheadBytes: prepared.overheadBytes,
         kvLayers: prepared.kvParams.layers ?? 0,
-        maxCtx: Math.max(...HEATMAP_CTXS),
-        caches: HEATMAP_CACHES.map((c) => c.label),
-        grid: HEATMAP_CTXS.map((ctx) => ({
+        maxCtx: ctxs.length ? Math.max(...ctxs) : HEATMAP_CTXS[0],
+        caches: HEATMAP_CACHES,
+        grid: (ctxs.length ? ctxs : [HEATMAP_CTXS[0]]).map((ctx) => ({
           ctx,
           cells: HEATMAP_CACHES.map(
             (c) =>
-              computeMemoryTotal(prepared, { ctxSize: ctx, cacheTypeK: c.k, cacheTypeV: c.v })
+              computeMemoryTotal(prepared, { ctxSize: ctx, cacheTypeK: c, cacheTypeV: c })
                 .totalBytes
           ),
         })),
       };
     }
   }
-  return { ref: detail.ref, heatmap, profile: detail.profile };
+  return { ref: detail.ref, heatmap, profile: detail.profile, capabilities, maxCtx };
 }
 
 // ── Autotune ────────────────────────────────────────────────────────────────

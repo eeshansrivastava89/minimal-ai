@@ -4,6 +4,24 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.4.0] - 2026-09-03
+
+### Added
+- Added the Phase 3 job runner: a SQLite-backed queue (`node:sqlite`, WAL, one `jobs` table in `~/.minimal-ai/hub/`) that owns every long-running hub operation with typed Zod write DTOs at the API seam.
+- Added job endpoints with live progress: `GET/POST /api/jobs`, cancel, restart, and SSE streams for the queue snapshot and per-job log tails.
+- Added job types `download` (HuggingFace GGUF, vision projector auto-included), `setup` (profile create/reconfigure mirroring the CLI flows), and `launch` (server up, preflight, pi headless with stdout streamed to the job log).
+- Added boot recovery: jobs still marked `running` when the hub restarts flip to `interrupted`, restartable from the Jobs page; jobs are never auto-resumed.
+- Added model write actions: launch, setup/reconfigure, and remove-configuration endpoints, plus Open in Terminal (a generated start script opened in Terminal.app; the hub never owns that process).
+- Added a HuggingFace quant listing endpoint that fills the download dialog's quant picker.
+- Made the Jobs page live: queue table with progress, cancel/restart, and a live log viewer per job.
+- Converted the setup page to live data: the context×KV heatmap, available-RAM fit coloring, and detected capabilities now come from the server (computed by the real estimator), and saving enqueues a setup job.
+
+### Changed
+- Aligned the hub heatmap with the CLI picker: cache columns are `bf16/q8_0/q4_0`, presets clamp to the model's max context, and available RAM is measured live instead of reported as zero.
+
+### Fixed
+- Fixed `/api/jobs/stream` being shadowed by the `/api/jobs/:id` route (the SSE endpoint now registers first).
+
 ## [3.3.1] - 2026-08-27
 
 ### Changed

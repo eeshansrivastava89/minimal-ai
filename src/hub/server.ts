@@ -2,14 +2,20 @@
 // built web client. Run: npm run hub (client must be built: npm run build:web).
 // Localhost-only bind; no cloud, no accounts.
 
-import { existsSync } from "node:fs";
-import { open, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { spawn as spawnChild } from "node:child_process";
+import { chmodSync, existsSync } from "node:fs";
+import { mkdir, open, stat, writeFile } from "node:fs/promises";import { extname, join, normalize, resolve, sep } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
+
+import { DATA_DIR } from "../config.mjs";
+import { deleteProfile } from "../profiles.mjs";
+import { configuredHarness } from "../harnesses.mjs";
+import { getHfTree, listGgufFiles } from "../huggingface.mjs";
 
 import {
   allAutotune,
@@ -20,11 +26,21 @@ import {
   logsFor,
   machineInfo,
   modelDetail,
+  profileMatchesModel,
   resolveRunsRoot,
   runsFor,
   setupInfo,
 } from "./api/data.ts";
 import { parseModelRef } from "./api/model-ref.ts";
+import { DownloadDto, JobEnqueueDto, LaunchDto, SetupFormDto } from "./api/dto.ts";
+import {
+  buildTerminalScript,
+  downloadExecutor,
+  launchExecutor,
+  setupExecutor,
+} from "./jobs/executors.ts";
+import { JobRunner } from "./jobs/runner.ts";
+import { toJobDto } from "./jobs/store.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DIST_DIR = join(REPO_ROOT, "src", "web", "dist");
@@ -100,8 +116,9 @@ function safeJoin(root: string, ...segments: string[]): string | null {
   return target;
 }
 
-export function createApp(): Hono {
+export function createApp(opts: { runner?: JobRunner } = {}): Hono {
   const app = new Hono();
+  const runner = opts.runner;
 
   app.onError((err, c) => {
     console.error("[hub]", err);
@@ -173,6 +190,184 @@ export function createApp(): Hono {
     return fileResponse(target, c.req.header("Range"));
   });
 
+  // ── Jobs (Phase 3) ───────────────────────────────────────────────────────
+
+  const zodError = (c: { json: (b: unknown, s: 400) => Response }, issues: { message?: string }[]) =>
+    c.json({ error: issues[0]?.message ?? "invalid body" }, 400);
+
+  if (runner) {
+    app.get("/api/jobs", (c) => c.json(runner.list()));
+
+    // Live jobs snapshot: initial list + every change (SSE). Registered
+    // BEFORE /api/jobs/:id so the literal path wins over the param route.
+    app.get("/api/jobs/stream", (c) =>
+      streamSSE(c, async (stream) => {
+        const send = (jobs: unknown) => stream.writeSSE({ event: "jobs", data: JSON.stringify(jobs) });
+        await send(runner.list());
+        const unsub = runner.onJobs((jobs) => void send(jobs));
+        stream.onAbort(unsub);
+        while (!stream.aborted) {
+          await stream.sleep(20_000);
+          await stream.writeSSE({ event: "ping", data: "" });
+        }
+      })
+    );
+
+    app.get("/api/jobs/:id", (c) => {
+      const job = runner.get(c.req.param("id"));
+      if (!job) return c.json({ error: "job not found" }, 404);
+      return c.json(toJobDto(job));
+    });
+
+    app.get("/api/jobs/:id/log", async (c) => {
+      const log = await runner.readLog(c.req.param("id"));
+      return c.text(log ?? "");
+    });
+
+    // Live jobs snapshot: initial list + every change (SSE) — see /api/jobs/stream above.
+
+    // Live log tail for one job (SSE): existing content, then lines as written.
+    app.get("/api/jobs/:id/stream", (c) => {
+      const id = c.req.param("id");
+      if (!runner.get(id)) return c.json({ error: "job not found" }, 404);
+      return streamSSE(c, async (stream) => {
+        const unsub = await runner.onLog(id, (line) => void stream.writeSSE({ event: "log", data: line }));
+        stream.onAbort(unsub);
+        while (!stream.aborted) {
+          await stream.sleep(20_000);
+          await stream.writeSSE({ event: "ping", data: "" });
+        }
+      });
+    });
+
+    app.post("/api/jobs", async (c) => {
+      const body = await c.req.json().catch(() => null);
+      const dto = JobEnqueueDto.safeParse(body);
+      if (!dto.success) return zodError(c, dto.error.issues);
+      const { type, ref, title, payload } = dto.data;
+      const typed =
+        type === "download"
+          ? DownloadDto.safeParse(payload)
+          : type === "launch"
+            ? LaunchDto.safeParse(payload)
+            : SetupFormDto.safeParse(payload);
+      if (!typed.success) return zodError(c, typed.error.issues);
+      const job = await runner.enqueue({
+        type,
+        ref: ref ?? null,
+        title: title ?? `${type} job`,
+        payload: typed.data as Record<string, unknown>,
+      });
+      return c.json(toJobDto(job), 201);
+    });
+
+    app.post("/api/jobs/:id/cancel", (c) => {
+      if (!runner.cancel(c.req.param("id"))) return c.json({ error: "job cannot be cancelled" }, 409);
+      return c.json({ cancelled: true });
+    });
+
+    app.post("/api/jobs/:id/restart", async (c) => {
+      const job = await runner.restart(c.req.param("id"));
+      if (!job) return c.json({ error: "job not found" }, 404);
+      return c.json(toJobDto(job), 201);
+    });
+  }
+
+  // ── Model write actions (Phase 3) ─────────────────────────────────────────
+
+  app.get("/api/hf/quants", async (c) => {
+    const repo = c.req.query("repo");
+    const parsed = DownloadDto.safeParse({ repo, filename: null });
+    if (!parsed.success) return zodError(c, parsed.error.issues);
+    try {
+      const tree = await getHfTree(parsed.data.repo);
+      const files = await listGgufFiles(parsed.data.repo, { tree });
+      return c.json({ repo: parsed.data.repo, files });
+    } catch (err) {
+      return c.json({ error: String((err as Error).message ?? err) }, 502);
+    }
+  });
+
+  app.post("/api/models/:id/launch", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    const dto = LaunchDto.safeParse(await c.req.json().catch(() => ({})));
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const job = await runner.enqueue({
+      type: "launch",
+      ref: detail.ref,
+      title: `Run ${detail.profile?.label ?? detail.title}`,
+      payload: dto.data,
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  // Setup/reconfigure: a job (it touches the network for HF sampler recs
+  // and the oMLX server), tracked like everything long-running.
+  app.put("/api/models/:id/profile", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    const dto = SetupFormDto.safeParse(await c.req.json().catch(() => ({})));
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const job = await runner.enqueue({
+      type: "setup",
+      ref: detail.ref,
+      title: `${detail.profile ? "Reconfigure" : "Set up"} ${detail.profile?.label ?? detail.title}`,
+      payload: dto.data as Record<string, unknown>,
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  app.delete("/api/models/:id/profile", async (c) => {
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const { profiles } = await catalog();
+    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
+    if (!profile) return c.json({ error: "no saved profile for this model" }, 404);
+    const harness = await configuredHarness();
+    try {
+      await harness.removeModel(profile);
+    } catch {
+      /* harness config already clean */
+    }
+    await deleteProfile(profile.id);
+    return c.json({ removed: profile.id });
+  });
+
+  // Open in Terminal: the hub writes a start script and asks the OS to open
+  // Terminal with it. The hub never owns the process — read-back stays
+  // backend-level (server up? model loaded?), same as the plan.
+  app.post("/api/models/:id/terminal", async (c) => {
+    if (process.platform !== "darwin") {
+      return c.json({ error: "Open in Terminal is macOS-only for now" }, 400);
+    }
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const { profiles } = await catalog();
+    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
+    if (!profile) return c.json({ error: "no saved profile for this model — set it up first" }, 404);
+    let script: string;
+    try {
+      script = await buildTerminalScript(profile);
+    } catch (err) {
+      return c.json({ error: String((err as Error).message ?? err) }, 500);
+    }
+    const dir = join(DATA_DIR, "hub", "terminal");
+    await mkdir(dir, { recursive: true });
+    const scriptPath = join(dir, `${profile.id}.sh`);
+    await writeFile(scriptPath, script, "utf8");
+    chmodSync(scriptPath, 0o755);
+    const child = spawnChild("open", ["-a", "Terminal", scriptPath], { stdio: "ignore" });
+    await new Promise((res) => child.once("exit", res));
+    return c.json({ opened: true, scriptPath });
+  });
+
   // Built web client + SPA fallback.
   app.get("*", async (c) => {
     const path = decodeURIComponent(new URL(c.req.url).pathname);
@@ -190,9 +385,19 @@ export function createApp(): Hono {
   return app;
 }
 
-// Boot only when run directly (tests import createApp instead).
+// Boot only when run directly (tests import createApp instead). The
+// JobStore constructor runs boot recovery (orphaned running → interrupted).
+function createRunner(): JobRunner {
+  const runner = new JobRunner();
+  runner.registerExecutor("download", downloadExecutor);
+  runner.registerExecutor("setup", setupExecutor);
+  runner.registerExecutor("launch", launchExecutor());
+  return runner;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  serve({ fetch: createApp().fetch, hostname: "127.0.0.1", port: PORT }, (info) => {
+  const runner = createRunner();
+  serve({ fetch: createApp({ runner }).fetch, hostname: "127.0.0.1", port: PORT }, (info) => {
     console.log(`Minimal Intelligence Hub → http://127.0.0.1:${info.port}`);
   });
 }

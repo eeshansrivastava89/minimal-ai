@@ -184,8 +184,10 @@ export async function getHfTree(repo, { branch = "main", fetchImpl = globalThis.
   return await response.json();
 }
 
-/** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors). */
-export async function listGgufFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+/** List all GGUF files in a HuggingFace repo with their sizes (excludes MTP drafters and vision projectors).
+ * @param {{ fetchImpl?: typeof globalThis.fetch, tree?: any }} [opts] */
+export async function listGgufFiles(repo, opts) {
+  const { fetchImpl = globalThis.fetch, tree } = opts ?? {};
   return await queryTree(repo, {
     fetchImpl, tree,
     where: (f) => isSafeGgufFile(f) && !isDrafterFile(f.path) && !isMmprojFile(f.path),
@@ -212,8 +214,10 @@ function isMmprojFile(path) {
   return /mmproj/i.test(name);
 }
 
-/** List all mmproj (vision projector) GGUF files in a HuggingFace repo. */
-export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+/** List all mmproj (vision projector) GGUF files in a HuggingFace repo.
+ * @param {{ fetchImpl?: typeof globalThis.fetch, tree?: any }} [opts] */
+export async function listMmprojFiles(repo, opts) {
+  const { fetchImpl = globalThis.fetch, tree } = opts ?? {};
   return await queryTree(repo, {
     fetchImpl, tree,
     where: (f) => isSafeGgufFile(f) && isMmprojFile(f.path),
@@ -225,7 +229,8 @@ export async function listMmprojFiles(repo, { fetchImpl = globalThis.fetch, tree
  *  heuristic — the same isDrafterFile rule listGgufFiles uses to exclude
  *  them, so the two lists are complementary). Used to offer a drafter
  *  download alongside the main model (#2). */
-export async function listDrafterFiles(repo, { fetchImpl = globalThis.fetch, tree } = {}) {
+export async function listDrafterFiles(repo, opts) {
+  const { fetchImpl = globalThis.fetch, tree } = opts ?? {};
   return await queryTree(repo, {
     fetchImpl, tree,
     where: (f) => isSafeGgufFile(f) && isDrafterFile(f.path),
@@ -299,7 +304,8 @@ export function extractRecommendedSamplers(config) {
 }
 
 /** Resolve a user-provided HF reference into a download plan. */
-export async function resolveHfDownload(input, { fetchImpl = globalThis.fetch, tree } = {}) {
+export async function resolveHfDownload(input, opts) {
+  const { fetchImpl = globalThis.fetch, tree } = opts ?? {};
   const { repo, filename } = parseHfRef(input);
   const resolvedTree = tree ?? await getHfTree(repo, { fetchImpl });
 

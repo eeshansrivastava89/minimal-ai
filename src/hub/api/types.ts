@@ -19,6 +19,9 @@ export interface Profile {
   mmprojPath?: string;
   omlxModel?: string;
   ollamaModel?: string;
+  thinkingBudget?: number;
+  mtpEnabled?: boolean;
+  drafterPath?: string | null;
   capabilities: Record<string, unknown>;
   flags?: Record<string, unknown>;
   createdAt?: string;
@@ -191,3 +194,8 @@ export interface LogEntry {
 export interface ApiError {
   error: string;
 }
+
+// The job queue row as the API exposes it (log paths stay server-side).
+// Shape lives in jobs/store.ts; re-exported here so the web client keeps
+// one import path (@hub/api/types).
+export type { JobDto as Job, JobStatus, JobType } from "../jobs/store.ts";

@@ -67,7 +67,8 @@ export function timestampForFile() {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
 
-function quoteShell(value) {
+/** Shell-quote one word; exported for the hub's terminal-script generator. */
+export function quoteShell(value) {
   const text = String(value);
   return /^[A-Za-z0-9_/@%+=:,.-]+$/u.test(text) ? text : `'${text.replace(/'/gu, ` '"'"'`)}'`;
 }

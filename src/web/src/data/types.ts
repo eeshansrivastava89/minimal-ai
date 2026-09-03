@@ -17,9 +17,22 @@ export type {
   ModelDetail,
   Benchmark,
   LogEntry,
+  Job,
+  JobStatus,
+  JobType,
 } from "@hub/api/types";
 
 import type { Profile, MemoryHeatmap, AutotuneRun, Benchmark } from "@hub/api/types";
+
+// Per-model setup read: heatmap (llama.cpp only) + the profile riding
+// along + detected capabilities / max context before a profile exists.
+export interface SetupInfo {
+  ref: string;
+  heatmap: MemoryHeatmap | null;
+  profile?: Profile;
+  capabilities?: Record<string, unknown>;
+  maxCtx?: number;
+}
 
 // Static mock snapshot — only pages not yet on live data read this
 // (jobs, learn, settings, and the Phase 3–5 write flows).

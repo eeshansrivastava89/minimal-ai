@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { api } from "@/api";
 import { fmtBytes, fmtCtx } from "@/lib/format";
@@ -26,8 +28,7 @@ const TABS = [
 // (estimate.mjs) from the GGUF on disk — llama.cpp models only.
 function Heatmap({ heatmap, ramBytes, profile }: { heatmap: MemoryHeatmap; ramBytes: number; profile?: Profile }) {
   const currentCtx = (profile?.capabilities?.contextLength ?? profile?.capabilities?.ctxSize) as number | undefined;
-  const currentPrec =
-    profile?.flags?.cacheTypeK === "q8_0" ? "q8" : profile?.flags?.cacheTypeK === "q4_0" ? "q4" : "f16";
+  const currentPrec = profile?.flags?.cacheTypeK as string | undefined;
 
   return (
     <Table>
@@ -89,14 +90,39 @@ function OverviewTab({
   profile,
   heatmap,
   ramBytes,
+  navigate,
 }: {
   detail: ModelDetailT;
   profile?: Profile;
   heatmap: MemoryHeatmap | null;
   ramBytes: number;
+  navigate: Navigate;
 }) {
   const caps = detail.capabilities;
-  const cmd = profile ? `minimal-ai run ${profile.id}` : null;
+  const [prompt, setPrompt] = useState("");
+  const [launching, setLaunching] = useState(false);
+
+  const runInBrowser = async () => {
+    setLaunching(true);
+    try {
+      await api.launchModel(detail.ref, { message: prompt.trim() || undefined });
+      toast("Queued — tracking live in Jobs");
+      navigate("jobs");
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  const openInTerminal = async () => {
+    try {
+      await api.openTerminal(detail.ref);
+      toast("Opened in Terminal — the session lives there");
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  };
 
   return (
     <div>
@@ -129,27 +155,33 @@ function OverviewTab({
         </CardContent>
       </Card>
 
-      <SectionTitle title="Run in terminal" />
+      <SectionTitle title="Run" meta={profile ? undefined : "set the model up first"} />
       <Card>
         <CardContent className="flex flex-col gap-2 p-4">
-          {cmd ? (
+          {profile ? (
             <>
               <p className="text-sm text-muted-foreground">
-                Pi sessions stay in the terminal — the hub opens Terminal/iTerm with the command, then hands off.
+                Run in browser: the hub starts the server, spawns pi headless, and streams its output
+                in Jobs. Open in Terminal: an interactive pi session in Terminal.app — the hub
+                doesn't own that process, it watches backend state instead.
               </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 rounded border border-border bg-muted px-3 py-1.5 text-sm">{cmd}</code>
-                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(cmd); toast("Copied to clipboard"); }}>
-                  Copy
+              <Textarea
+                placeholder="Optional prompt for the run (leave empty to let pi decide)"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button size="sm" disabled={launching} onClick={runInBrowser}>
+                  {launching ? "Queueing…" : "Run in browser"}
                 </Button>
-                <Button size="sm" onClick={() => toast("Open in Terminal lands in Phase 3")}>
-                  Run
+                <Button size="sm" variant="outline" onClick={openInTerminal}>
+                  Open in Terminal
                 </Button>
               </div>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No saved profile yet — set this model up first and the run command appears here.
+              No saved profile yet — set this model up first and the run actions appear here.
             </p>
           )}
         </CardContent>
@@ -159,9 +191,22 @@ function OverviewTab({
 }
 
 function ConfigurationTab({ detail, navigate }: { detail: ModelDetailT; navigate: Navigate }) {
+  const queryClient = useQueryClient();
   const profile = detail.profile;
   const settings = detail.omlxModelSettings ?? null;
   const flags = profile?.flags ?? null;
+
+  const remove = async () => {
+    if (!window.confirm(`Remove the saved configuration for ${profile?.label ?? detail.title}? Model files stay on disk.`)) return;
+    try {
+      await api.removeProfile(detail.ref);
+      toast("Configuration removed");
+      await queryClient.invalidateQueries({ queryKey: ["model", detail.ref] });
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  };
 
   return (
     <div>
@@ -189,7 +234,7 @@ function ConfigurationTab({ detail, navigate }: { detail: ModelDetailT; navigate
           {profile ? "Reconfigure" : "Set up"}
         </Button>
         {profile && (
-          <Button variant="destructive" onClick={() => toast("Remove configuration lands in Phase 3")}>
+          <Button variant="destructive" onClick={remove}>
             Remove configuration
           </Button>
         )}
@@ -248,6 +293,7 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
             profile={profile}
             heatmap={setup?.heatmap ?? null}
             ramBytes={machine?.ramBytes ?? 0}
+            navigate={navigate}
           />
         )}
         {tab === "configuration" && <ConfigurationTab detail={detail} navigate={navigate} />}

@@ -2,10 +2,12 @@
 // in src/profile-setup/ one-to-one: the llama.cpp path carries the full
 // capability + context/KV-cache heatmap + samplers sequence; oMLX carries
 // MTP + the server-side thinking controls; Ollama is thin (thinking only).
-// Entered only through the model hierarchy: a "needs setup" row on the
-// Models page, or Reconfigure on a model detail page.
+// Live data: model detail + the /setup read (heatmap computed server-side
+// by the real estimate.mjs, detected capabilities pre-profile). Saving
+// enqueues a setup job — profile lands when the job completes (see Jobs).
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,10 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { HUB_DATA } from "@/data/data";
-import type { MemoryHeatmap } from "@/data/types";
+import { api } from "@/api";
+import type { MemoryHeatmap, ModelDetail as ModelDetailT, Profile, SetupInfo } from "@/data/types";
 import { fmtBytes, fmtCtx } from "@/lib/format";
-import { profileForModel } from "@/lib/lookup";
 import { BackendBadge, CapabilityBadges, SectionTitle, StatusBadge } from "@/components/shared";
 import type { Navigate } from "@/App";
 
@@ -197,37 +198,55 @@ function estimateFor(
 }
 
 // ── The page ───────────────────────────────────────────────────────────────
-export function SetupNew({
-  modelId, backendId, navigate,
-}: { modelId: string; backendId?: string; navigate: Navigate }) {
-  const profile = profileForModel(modelId);
-  const backend = backendId ?? profile?.backend ?? "omlx";
-  // Backend lookups key on the model id (profile.modelAlias); reconfigure
-  // arrives with the profile id, so resolve through the profile first.
-  const modelKey = profile?.modelAlias ?? modelId;
+export function SetupNew({ modelRef, navigate }: { modelRef: string; navigate: Navigate }) {
+  const { data: detail, isLoading, error } = useQuery({ queryKey: ["model", modelRef], queryFn: () => api.model(modelRef) });
+  const { data: setup } = useQuery({ queryKey: ["setup", modelRef], queryFn: () => api.setup(modelRef) });
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (error || !detail) {
+    return (
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
+        <p className="mt-1 text-sm text-muted-foreground">No model "{modelRef}".</p>
+      </div>
+    );
+  }
+  // Remount the form whenever the profile identity changes so prefills track
+  // live data instead of stale state.
+  return (
+    <SetupForm
+      key={detail.profile?.id ?? "new"}
+      detail={detail}
+      setup={setup ?? null}
+      navigate={navigate}
+    />
+  );
+}
+
+function SetupForm({
+  detail, setup, navigate,
+}: { detail: ModelDetailT; setup: SetupInfo | null; navigate: Navigate }) {
+  const backend = detail.backend;
+  const profile = setup?.profile ?? detail.profile ?? undefined;
   const flags = (profile?.flags ?? {}) as Record<string, unknown>;
-  const caps = (profile?.capabilities ?? {}) as Record<string, unknown>;
+  const caps = {
+    ...(setup?.capabilities ?? {}),
+    ...(detail.capabilities ?? {}),
+    ...(profile?.capabilities ?? {}),
+  } as Record<string, unknown>;
 
-  const gguf = backend === "llama-cpp" ? HUB_DATA.ggufModels.find((m) => String(m.id) === modelKey) : undefined;
-  const g = (gguf ?? {}) as Record<string, unknown>;
-  const ggufCaps = gguf
-    ? { thinking: g.thinking, vision: g.vision, imatrix: g.imatrix, quant: String(g.quant), ctxSize: g.ctxSize }
-    : undefined;
-  const omlxEntry = backend === "omlx" ? HUB_DATA.omlxModels.find((m) => m.id === modelKey) : undefined;
-  const ollamaEntry = backend === "ollama" ? HUB_DATA.ollamaModels.find((m) => m.id === modelKey) : undefined;
-  const heatmap = HUB_DATA.memoryHeatmaps.find((h) => h.modelId === modelKey);
-
-  const maxCtx =
-    (heatmap?.maxCtx ?? Number(ggufCaps?.ctxSize ?? omlxEntry?.maxModelLen ?? (caps.contextLength as number) ?? 262144));
-  const label = profile?.label ?? modelKey;
-  const detectedCaps = { ...ggufCaps, ...caps } as Record<string, unknown>;
-  const initialCtx = Number(flags.ctxSize ?? (heatmap?.maxCtx ?? 131072));
+  const heatmap = setup?.heatmap ?? null;
+  const maxCtx = setup?.maxCtx ?? Number(caps.contextLength ?? 262144);
+  const label = profile?.label ?? detail.title;
+  const initialCtx = Number(flags.ctxSize ?? (setup?.maxCtx ?? 131072));
 
   // ── form state, prefilled from the profile on reconfigure ──────────────
   const [mtp, setMtp] = useState(Boolean(caps.mtp) && flags.specDraftNMax != null);
   const [draftTokens, setDraftTokens] = useState(String(flags.specDraftNMax ?? 2));
-  const [vision, setVision] = useState(Boolean(detectedCaps.vision));
-  const [thinkingDefaults, setThinkingDefaults] = useState(Boolean(detectedCaps.thinking));
+  const [vision, setVision] = useState(Boolean(caps.vision));
+  const [thinkingDefaults, setThinkingDefaults] = useState(Boolean(caps.thinking));
   const [gpuLayers, setGpuLayers] = useState(String(flags.nGpuLayers ?? 99));
   const [ctxSize, setCtxSize] = useState(String(initialCtx));
   const [cacheK, setCacheK] = useState(String(flags.cacheTypeK ?? "bf16"));
@@ -242,8 +261,8 @@ export function SetupNew({
   const [jinja, setJinja] = useState(flags.jinja !== false);
   const [thinkingLevel, setThinkingLevel] = useState(profile?.thinkingLevel ?? "");
   const [thinkingOff, setThinkingOff] = useState(Boolean(profile?.thinkingOff));
-  const [thinkingBudgetOn, setThinkingBudgetOn] = useState(false);
-  const [thinkingBudget, setThinkingBudget] = useState("4096");
+  const [thinkingBudgetOn, setThinkingBudgetOn] = useState(Number(profile?.thinkingBudget ?? 0) > 0);
+  const [thinkingBudget, setThinkingBudget] = useState(String(profile?.thinkingBudget ?? 4096));
 
   const ctx = Math.min(Number(ctxSize) || maxCtx, maxCtx);
   const effCacheV = sameV ? cacheK : cacheV;
@@ -257,9 +276,38 @@ export function SetupNew({
     .filter((c) => c <= maxCtx)
     .map((c) => ({ value: String(c), label: fmtCtx(c) }));
 
-  const save = () => {
-    toast(`Saved profile for ${label} — simulated`);
-    navigate(profile ? "model" : "models", profile ? { modelId: profile.id } : undefined);
+  const save = async () => {
+    const form: Record<string, unknown> = { thinkingLevel: thinkingLevel || null };
+    if (backend === "llama-cpp") {
+      Object.assign(form, {
+        mtp,
+        draftTokens: Number(draftTokens),
+        vision,
+        thinkingDefaults,
+        nGpuLayers: Number(gpuLayers),
+        ctxSize: ctx,
+        cacheTypeK: cacheK,
+        cacheTypeV: effCacheV,
+        samplers: Object.fromEntries(SAMPLERS.map((s) => [s.field, Number(samplers[s.field]) || 0])),
+        batchSize: Number(batchSize),
+        parallel: Number(parallel),
+        flashAttention: flashAttn,
+        jinja,
+      });
+    } else if (backend === "omlx") {
+      Object.assign(form, {
+        mtpEnabled: mtp,
+        thinkingOff,
+        thinkingBudget: !thinkingOff && thinkingBudgetOn ? Number(thinkingBudget) : null,
+      });
+    }
+    try {
+      await api.setupProfile(detail.ref, form);
+      toast("Saving — tracking in Jobs");
+      navigate("model", { modelId: detail.ref, tab: "configuration" });
+    } catch (err) {
+      toast((err as Error).message);
+    }
   };
 
   return (
@@ -272,21 +320,21 @@ export function SetupNew({
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
         {profile
           ? `Adjust ${label}'s saved profile — same flow as the CLI reconfigure.`
-          : `Create a profile for ${modelKey} — same flow as the CLI setup.`}
+          : `Create a profile for ${label} — same flow as the CLI setup.`}
       </p>
 
       <SectionTitle title="Model overview" />
       <Card>
         <CardContent className="px-4">
           <OverviewRow k="Model">{label}</OverviewRow>
-          <OverviewRow k="Detected"><CapabilityBadges caps={detectedCaps} /></OverviewRow>
+          <OverviewRow k="Detected"><CapabilityBadges caps={caps} /></OverviewRow>
           <OverviewRow k="Backend">{backend === "omlx" ? "oMLX (managed server)" : backend === "ollama" ? "Ollama (managed server)" : "llama.cpp (local server)"}</OverviewRow>
           {backend === "llama-cpp" ? (
             <OverviewRow k="Model file">
-              <span className="font-mono text-xs">{String(profile?.modelPath ?? g.modelPath ?? "—")}</span>
+              <span className="font-mono text-xs">{String(profile?.modelPath ?? detail.id)}</span>
             </OverviewRow>
           ) : (
-            <OverviewRow k="Context">{fmtCtx(maxCtx)}</OverviewRow>
+            <OverviewRow k="Context">{fmtCtx(Number(caps.contextLength ?? detail.contextLength ?? 0))}</OverviewRow>
           )}
         </CardContent>
       </Card>
@@ -572,7 +620,7 @@ export function SetupNew({
 
       <div className="mt-4 flex gap-2">
         <Button onClick={save}>Save profile</Button>
-        <Button variant="outline" onClick={() => navigate(profile ? "model" : "models", profile ? { modelId: profile.id } : undefined)}>
+        <Button variant="outline" onClick={() => navigate("model", { modelId: detail.ref })}>
           Cancel
         </Button>
       </div>

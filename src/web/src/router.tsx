@@ -99,8 +99,7 @@ function ModelPage() {
 
 function SetupPage() {
   const { id } = useParams({ from: setupRoute.id });
-  const { backend } = useSearch({ from: setupRoute.id });
-  return <SetupNew modelId={useMockId(id)} backendId={backend} navigate={useNav()} />;
+  return <SetupNew modelRef={id} navigate={useNav()} />;
 }
 
 function AutotuneNewPage() {
@@ -139,9 +138,6 @@ const modelRoute = createRoute({
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/models/$id/setup",
-  validateSearch: (s: Record<string, unknown>): { backend?: string } => ({
-    backend: typeof s.backend === "string" ? s.backend : undefined,
-  }),
   component: SetupPage,
 });
 const autotuneNewRoute = createRoute({
