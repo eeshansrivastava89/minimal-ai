@@ -4,7 +4,7 @@
 // throws on missing data: absent dirs/servers yield empty results, not
 // errors, so the API works on a fresh machine (and in CI).
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -110,7 +110,7 @@ async function omlxStatus(): Promise<OmlxStatus> {
 }
 
 async function ollamaTags(): Promise<{ up: boolean; version?: string; models: any[] }> {
-  const base = BACKENDS.ollama.defaultBaseUrl;
+  const base = BACKENDS.ollama.apiBaseUrl;
   const [version, tags] = await Promise.all([
     fetchJson(`${base}/api/version`),
     fetchJson(`${base}/api/tags`),
@@ -120,6 +120,27 @@ async function ollamaTags(): Promise<{ up: boolean; version?: string; models: an
     version: typeof version?.version === "string" ? version.version : undefined,
     models: Array.isArray(tags?.models) ? (tags!.models as any[]) : [],
   };
+}
+
+// llama.cpp version comes from the binary itself (it's not a daemon) —
+// read once per process.
+let llamaCppVersion: string | undefined | null;
+async function llamaCppInfo(): Promise<{ installed: boolean; version?: string }> {
+  const binary = await findLlamaServer();
+  if (!binary) return { installed: false };
+  if (llamaCppVersion === undefined) {
+    llamaCppVersion = null;
+    try {
+      // llama-server prints --version to stderr.
+      const r = spawnSync(binary, ["--version"], { timeout: 5000, encoding: "utf8" });
+      const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+      const build = out.match(/build (\d+)/);
+      llamaCppVersion = build ? `build ${build[1]}` : out.split("\n")[0]?.trim() || null;
+    } catch {
+      /* version unreadable — installed is still true */
+    }
+  }
+  return { installed: true, version: llamaCppVersion ?? undefined };
 }
 
 // ── Model catalog ───────────────────────────────────────────────────────────
@@ -140,12 +161,12 @@ export async function catalog(): Promise<{
   models: ModelSummary[];
   profiles: Profile[];
 }> {
-  const [profiles, omlx, ollama, gguf, llamaServer] = await Promise.all([
+  const [profiles, omlx, ollama, gguf, llamaCpp] = await Promise.all([
     loadProfiles() as Promise<Profile[]>,
     omlxStatus(),
     ollamaTags(),
     scanGgufModels(),
-    findLlamaServer(),
+    llamaCppInfo(),
   ]);
 
   const omlxDisk = await scanOmlxModelSizes();
@@ -241,7 +262,8 @@ export async function catalog(): Promise<{
       type: BACKENDS["llama-cpp"].type,
       port: BACKENDS["llama-cpp"].defaultPort,
       baseUrl: BACKENDS["llama-cpp"].defaultBaseUrl,
-      up: Boolean(llamaServer),
+      up: llamaCpp.installed,
+      version: llamaCpp.version,
       modelCount: models.filter((m) => m.backend === "llama-cpp").length,
     },
   ];

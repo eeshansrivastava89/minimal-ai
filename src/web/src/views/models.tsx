@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -103,11 +104,13 @@ export function Models({ navigate }: { navigate: Navigate }) {
       {(["omlx", "ollama", "llama-cpp"] as const).map((id) => {
         const rows = bucket(id);
         const label = backends.find((b) => b.id === id)?.label ?? id;
+        // Fragment, not a wrapper div: SectionTitle's first:mt-0 spacing
+        // keys on the DOM parent — only the page's first section skips mt-8.
         return (
-          <div key={id}>
+          <Fragment key={id}>
             <SectionTitle title={label} meta={isLoading ? "…" : metaFor(id, rows.length)} />
             <ModelTable rows={rows} navigate={navigate} />
-          </div>
+          </Fragment>
         );
       })}
 
