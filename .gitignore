@@ -10,3 +10,5 @@ report/
 .DS_Store
 __pycache__/
 .pi-subagents/
+dist/
+*.tsbuildinfo
