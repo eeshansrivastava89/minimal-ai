@@ -6,7 +6,7 @@
 // config.json before any hub import.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -66,7 +66,6 @@ const {
   captureExecutor,
   scoreExecutor,
 } = await import("../src/hub/jobs/benchmark-executors.ts");
-const { launchExecutor } = await import("../src/hub/jobs/executors.ts");
 const { createApp } = await import("../src/hub/server.ts");
 
 const dbPath = (name) => join(DATA, `${name}.db`);
@@ -96,6 +95,12 @@ function newRunner(name, executors = {}) {
 }
 
 // Stub OpenAI-compatible model server (same shape as the hub-jobs test).
+// Every stub server is tracked and closed after the whole file — a test
+// that fails mid-way must never leak a listening server (one leak keeps
+// the node --test child process alive and hangs the suite).
+const stubServers = [];
+after(() => { for (const s of stubServers) s.close(); });
+
 async function stubModelServer() {
   const server = createServer((req, res) => {
     if (req.url.endsWith("/models")) {
@@ -109,7 +114,10 @@ async function stubModelServer() {
       res.end("{}");
     }
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
+    stubServers.push(server);
+    resolve(server);
+  }));
   return { server, port: server.address().port };
 }
 
@@ -325,21 +333,4 @@ test("run + publish endpoints: validation, enqueue, delete", async () => {
   assert.equal((await app.request(`/api/runs/sakura/api-model/${runId}`, { method: "DELETE" })).status, 200);
   assert.ok(!existsSync(dir));
   assert.equal((await app.request(`/api/runs/sakura/api-model/${runId}`, { method: "DELETE" })).status, 404);
-});
-
-// ── the un-refactored launch path stays green (shared runModelHeadless) ─────
-
-test("launch executor still works after the benchmark refactor", async () => {
-  const { server, port } = await stubModelServer();
-  saveProfile("launch-refactor", port);
-  const runner = newRunner("launch-refactor", { launch: launchExecutor({ piBin: join(BIN, "pi") }) });
-  const ref = `llama-cpp:${encodeURIComponent("/tmp/launch-refactor.gguf")}`;
-  const job = await runner.enqueue({ type: "launch", ref, title: "Run Stub", payload: { message: "hi" } });
-  await waitFor(() => ["completed", "failed"].includes(runner.get(job.id)?.status), 20_000);
-  const done = runner.get(job.id);
-  server.close();
-  const log = readFileSync(done.logPath, "utf8");
-  assert.equal(done.status, "completed", `launch failed: ${done.error}\n${log}`);
-  assert.equal(done.metrics.exitCode, 0);
-  assert.match(log, /preflight ok/);
 });

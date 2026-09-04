@@ -2,9 +2,8 @@
 // built web client. Run: npm run hub (client must be built: npm run build:web).
 // Localhost-only bind; no cloud, no accounts.
 
-import { spawn as spawnChild } from "node:child_process";
-import { chmodSync, createReadStream, existsSync } from "node:fs";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { dirname } from "node:path";
@@ -14,7 +13,6 @@ import { serve } from "@hono/node-server";
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 
-import { DATA_DIR } from "../config.mjs";
 import { deleteProfile } from "../profiles.mjs";
 import { configuredHarness } from "../harnesses.mjs";
 import { getHfTree, listGgufFiles } from "../huggingface.mjs";
@@ -43,16 +41,10 @@ import {
   DownloadDto,
   ExportDto,
   JobEnqueueDto,
-  LaunchDto,
   RunRefDto,
   SetupFormDto,
 } from "./api/dto.ts";
-import {
-  buildTerminalScript,
-  downloadExecutor,
-  launchExecutor,
-  setupExecutor,
-} from "./jobs/executors.ts";
+import { downloadExecutor, setupExecutor } from "./jobs/executors.ts";
 import {
   benchmarkExecutor,
   captureExecutor,
@@ -262,21 +254,19 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
       const typed =
         type === "download"
           ? DownloadDto.safeParse(payload)
-          : type === "launch"
-            ? LaunchDto.safeParse(payload)
-            : type === "benchmark"
-              ? BenchmarkLaunchDto.safeParse(payload)
-              : type === "capture"
-                ? CaptureDto.safeParse(payload)
-                : type === "score"
-                  ? RunRefDto.safeParse(payload)
-                  : type === "comparison-video"
-                    ? ComparisonVideoDto.safeParse(payload)
-                    : type === "export"
-                      ? ExportDto.safeParse(payload)
-                      : type === "autotune"
-                        ? AutotuneStartDto.safeParse(payload)
-                        : SetupFormDto.safeParse(payload);
+          : type === "benchmark"
+            ? BenchmarkLaunchDto.safeParse(payload)
+            : type === "capture"
+              ? CaptureDto.safeParse(payload)
+              : type === "score"
+                ? RunRefDto.safeParse(payload)
+                : type === "comparison-video"
+                  ? ComparisonVideoDto.safeParse(payload)
+                  : type === "export"
+                    ? ExportDto.safeParse(payload)
+                    : type === "autotune"
+                      ? AutotuneStartDto.safeParse(payload)
+                      : SetupFormDto.safeParse(payload);
       if (!typed.success) return zodError(c, typed.error.issues);
       const job = await runner.enqueue({
         type,
@@ -312,23 +302,6 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     } catch (err) {
       return c.json({ error: String((err as Error).message ?? err) }, 502);
     }
-  });
-
-  app.post("/api/models/:id/launch", async (c) => {
-    if (!runner) return c.json({ error: "job runner not started" }, 503);
-    const ref = refParam(c);
-    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
-    const detail = await modelDetail(ref);
-    if (!detail) return c.json({ error: "model not found" }, 404);
-    const dto = LaunchDto.safeParse(await c.req.json().catch(() => ({})));
-    if (!dto.success) return zodError(c, dto.error.issues);
-    const job = await runner.enqueue({
-      type: "launch",
-      ref: detail.ref,
-      title: `Run ${detail.profile?.label ?? detail.title}`,
-      payload: dto.data,
-    });
-    return c.json(toJobDto(job), 201);
   });
 
   // Setup/reconfigure: a job (it touches the network for HF sampler recs
@@ -535,34 +508,6 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     return c.json(toJobDto(job), 201);
   });
 
-  // Open in Terminal: the hub writes a start script and asks the OS to open
-  // Terminal with it. The hub never owns the process — read-back stays
-  // backend-level (server up? model loaded?), same as the plan.
-  app.post("/api/models/:id/terminal", async (c) => {
-    if (process.platform !== "darwin") {
-      return c.json({ error: "Open in Terminal is macOS-only for now" }, 400);
-    }
-    const ref = refParam(c);
-    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
-    const { profiles } = await catalog();
-    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
-    if (!profile) return c.json({ error: "no saved profile for this model — set it up first" }, 404);
-    let script: string;
-    try {
-      script = await buildTerminalScript(profile);
-    } catch (err) {
-      return c.json({ error: String((err as Error).message ?? err) }, 500);
-    }
-    const dir = join(DATA_DIR, "hub", "terminal");
-    await mkdir(dir, { recursive: true });
-    const scriptPath = join(dir, `${profile.id}.sh`);
-    await writeFile(scriptPath, script, "utf8");
-    chmodSync(scriptPath, 0o755);
-    const child = spawnChild("open", ["-a", "Terminal", scriptPath], { stdio: "ignore" });
-    await new Promise((res) => child.once("exit", res));
-    return c.json({ opened: true, scriptPath });
-  });
-
   // Built web client + SPA fallback.
   app.get("*", async (c) => {
     const path = decodeURIComponent(new URL(c.req.url).pathname);
@@ -586,7 +531,6 @@ function createRunner(): JobRunner {
   const runner = new JobRunner();
   runner.registerExecutor("download", downloadExecutor);
   runner.registerExecutor("setup", setupExecutor);
-  runner.registerExecutor("launch", launchExecutor());
   runner.registerExecutor("benchmark", benchmarkExecutor());
   runner.registerExecutor("capture", captureExecutor());
   runner.registerExecutor("score", scoreExecutor());

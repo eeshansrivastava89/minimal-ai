@@ -8,7 +8,7 @@
 // accounting). HOME + MINIMAL_DIR point at temp dirs before any import.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -82,6 +82,11 @@ function stubModel(loaded = false) {
   };
 }
 
+// Tracked + closed after the file so a mid-test failure can't leak a
+// listening server and hang the node --test child process.
+const stubServers = [];
+after(() => { for (const s of stubServers) s.close(); });
+
 function startOmlxStub() {
   const server = createServer((req, res) => {
     const url = req.url;
@@ -118,7 +123,12 @@ function startOmlxStub() {
     }
     send(404, {});
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+  return new Promise((resolve) =>
+    server.listen(0, "127.0.0.1", () => {
+      stubServers.push(server);
+      resolve(server);
+    })
+  );
 }
 
 function saveOmlxProfile(id, port) {

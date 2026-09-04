@@ -4,10 +4,32 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.9.0] - 2026-09-04
+
+### Changed
+- Changed the model page's Run section to a copyable pi launch command (`pi --model <provider>/<alias>` plus the profile's thinking level) — run it in whatever terminal you like; the hub never owns the session.
+- Setup now syncs the harness config after saving a profile, so the copied command resolves in pi right away (best effort, with a log line).
+
+### Removed
+- Removed the Run in browser feature: the `launch` job type, `POST /api/models/:id/launch`, and its executor. Watching model output properly wants the pi SDK, which is out of scope. The benchmark pipeline keeps its own pi launch — it produces the artifacts.
+- Removed Open in Terminal: `POST /api/models/:id/terminal` and the generated start script; the copyable command replaces it.
+- Purged the historical launch jobs from the queue and their run directories.
+
 ## [3.8.2] - 2026-09-04
 
 ### Added
 - Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
+## [3.9.0] - 2026-09-04
+
+### Changed
+- Changed the model page's Run section to a copyable pi launch command (`pi --model <provider>/<alias>` plus the profile's thinking level) — run it in whatever terminal you like; the hub never owns the session.
+- Setup now syncs the harness config after saving a profile, so the copied command resolves in pi right away (best effort, with a log line).
+
+### Removed
+- Removed the Run in browser feature: the `launch` job type, `POST /api/models/:id/launch`, and its executor. Watching model output properly wants the pi SDK, which is out of scope. The benchmark pipeline keeps its own pi launch — it produces the artifacts.
+- Removed Open in Terminal: `POST /api/models/:id/terminal` and the generated start script; the copyable command replaces it.
+- Purged the historical launch jobs from the queue and their run directories.
 
 ## [3.8.2] - 2026-09-04
 

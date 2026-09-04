@@ -73,14 +73,10 @@ export const api = {
   cancelJob: (id: string) => send<unknown>(`/api/jobs/${seg(id)}/cancel`, "POST"),
   restartJob: (id: string) => send<Job>(`/api/jobs/${seg(id)}/restart`, "POST"),
 
-  // ── Model write actions (Phase 3) ────────────────────────────────────────
-  launchModel: (ref: string, opts?: { message?: string; keepServer?: boolean }) =>
-    send<Job>(`/api/models/${seg(ref)}/launch`, "POST", opts ?? {}),
+  // ── Model write actions ──────────────────────────────────────────────────
   setupProfile: (ref: string, form: Record<string, unknown>) =>
     send<Job>(`/api/models/${seg(ref)}/profile`, "PUT", form),
   removeProfile: (ref: string) => send<unknown>(`/api/models/${seg(ref)}/profile`, "DELETE"),
-  openTerminal: (ref: string) =>
-    send<{ opened: boolean; scriptPath: string }>(`/api/models/${seg(ref)}/terminal`, "POST"),
   hfQuants: (repo: string) =>
     get<{ repo: string; files: { path: string; sizeBytes: number }[] }>(`/api/hf/quants?repo=${seg(repo)}`),
 

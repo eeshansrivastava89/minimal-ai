@@ -100,26 +100,18 @@ function OverviewTab({
   navigate: Navigate;
 }) {
   const caps = detail.capabilities;
-  const [prompt, setPrompt] = useState("");
-  const [launching, setLaunching] = useState(false);
 
-  const runInBrowser = async () => {
-    setLaunching(true);
-    try {
-      await api.launchModel(detail.ref, { message: prompt.trim() || undefined });
-      toast("Queued — tracking live in Jobs");
-      navigate("jobs");
-    } catch (err) {
-      toast((err as Error).message);
-    } finally {
-      setLaunching(false);
-    }
-  };
+  // The pi launch command for this model — the hub never owns the session;
+  // the user pastes it into whatever terminal they like.
+  const launchCommand = profile
+    ? `pi --model ${profile.providerId}/${profile.modelAlias}` +
+      (profile.thinkingOff ? " --thinking off" : profile.thinkingLevel ? ` --thinking ${profile.thinkingLevel}` : "")
+    : "";
 
-  const openInTerminal = async () => {
+  const copyCommand = async () => {
     try {
-      await api.openTerminal(detail.ref);
-      toast("Opened in Terminal — the session lives there");
+      await navigator.clipboard.writeText(launchCommand);
+      toast("Copied — run it in the terminal of your choice");
     } catch (err) {
       toast((err as Error).message);
     }
@@ -162,27 +154,21 @@ function OverviewTab({
           {profile ? (
             <>
               <p className="text-sm text-muted-foreground">
-                Run in browser: the hub starts the server, spawns pi headless, and streams its output
-                in Jobs. Open in Terminal: an interactive pi session in Terminal.app — the hub
-                doesn't own that process, it watches backend state instead.
+                The pi launch command for this model. Copy it and run it in the terminal of your
+                choice — the session lives there, the hub never owns it.
               </p>
-              <Textarea
-                placeholder="Optional prompt for the run (leave empty to let pi decide)"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Button size="sm" disabled={launching} onClick={runInBrowser}>
-                  {launching ? "Queueing…" : "Run in browser"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={openInTerminal}>
-                  Open in Terminal
+              <div className="flex items-center gap-2">
+                <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                  {launchCommand}
+                </code>
+                <Button size="sm" variant="outline" onClick={copyCommand}>
+                  Copy
                 </Button>
               </div>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No saved profile yet — set this model up first and the run actions appear here.
+              No saved profile yet — set this model up first and its launch command appears here.
             </p>
           )}
         </CardContent>

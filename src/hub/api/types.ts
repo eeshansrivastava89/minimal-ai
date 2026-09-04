@@ -9,6 +9,7 @@ export interface Profile {
   id: string;
   label: string;
   backend: string;
+  providerId: string; // the harness-side provider id (pi --model providerId/modelAlias)
   modelAlias: string;
   modelSizeBytes?: number;
   baseUrl: string;

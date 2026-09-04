@@ -1,7 +1,7 @@
-// Hub job-runner tests (Phase 3): SQLite store + boot recovery, runner
-// lifecycle (enqueue → progress → metrics → completed), cancel/abort with
-// child-process ownership, restart, and launch read-back (exit code +
-// metrics from a real spawned stub pi against a stub model server).
+// Hub job-runner tests: SQLite store + boot recovery, runner lifecycle
+// (enqueue → progress → metrics → completed), cancel/abort with
+// child-process ownership, restart, and the setup/queue API contracts.
+// The pi launch chain itself is covered by hub-benchmark.test.mjs.
 //
 // Runs fully sandboxed: MINIMAL_DIR/HOME point at temp dirs and a stub `pi`
 // sits on PATH before any hub import (config.mjs snapshots the env).
@@ -28,7 +28,7 @@ process.env.PATH = `${BIN}:${process.env.PATH}`;
 
 const { JobStore } = await import("../src/hub/jobs/store.ts");
 const { JobRunner } = await import("../src/hub/jobs/runner.ts");
-const { launchExecutor, buildTerminalScript, setupExecutor } = await import("../src/hub/jobs/executors.ts");
+const { setupExecutor } = await import("../src/hub/jobs/executors.ts");
 const { createApp } = await import("../src/hub/server.ts");
 
 const dbPath = (name) => join(DATA, `${name}.db`);
@@ -63,7 +63,7 @@ test("JobStore boot recovery flips orphaned running rows to interrupted", () => 
   const s1 = new JobStore(path, logDir);
   s1.insert({
     id: "orphan",
-    type: "launch",
+    type: "download",
     ref: null,
     title: "was running when the hub died",
     payload: { keep: true },
@@ -177,68 +177,6 @@ test("runner: restart copies type/ref/payload into a fresh queued job", async ()
   assert.equal(await runner.restart("nope"), null);
 });
 
-// ── launch read-back ────────────────────────────────────────────────────────
-
-test("launch executor: server chain → pi spawn → exit-code read-back in metrics", async () => {
-  assert.equal(homedir(), HOME, "HOME sandbox not in effect — refusing to run");
-
-  // Stub OpenAI-compatible server: /models + /chat/completions.
-  const server = createServer((req, res) => {
-    if (req.url.endsWith("/models")) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ data: [{ id: "stub-model" }] }));
-    } else if (req.url.endsWith("/chat/completions")) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
-    } else {
-      res.writeHead(404);
-      res.end("{}");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = server.address().port;
-
-  // A saved llama.cpp profile pointing at the stub server.
-  const profilesDir = join(DATA, "profiles", "stub-llama");
-  mkdirSync(profilesDir, { recursive: true });
-  writeFileSync(
-    join(profilesDir, "profile.json"),
-    JSON.stringify({
-      id: "stub-llama",
-      label: "Stub GGUF",
-      backend: "llama-cpp",
-      providerId: "llama-cpp",
-      modelAlias: "stub-model",
-      modelPath: "/tmp/stub.gguf",
-      baseUrl: `http://127.0.0.1:${port}`,
-      capabilities: { thinking: false },
-      flags: { ctxSize: 4096, host: "127.0.0.1", port },
-    })
-  );
-
-  const runner = newRunner("launch", {
-    launch: launchExecutor({ piBin: join(BIN, "pi") }),
-  });
-  const ref = `llama-cpp:${encodeURIComponent("/tmp/stub.gguf")}`;
-  const job = await runner.enqueue({
-    type: "launch",
-    ref,
-    title: "Run Stub GGUF",
-    payload: { message: "say hi" },
-  });
-  await waitFor(() => ["completed", "failed"].includes(runner.get(job.id).status), 20_000);
-  const done = runner.get(job.id);
-  const log = readFileSync(done.logPath, "utf8");
-  server.close();
-
-  assert.equal(done.status, "completed", `launch failed: ${done.error}\n${log}`);
-  assert.equal(done.metrics.exitCode, 0);
-  assert.equal(done.metrics.piDurationMs > 0, true);
-  assert.match(log, /preflight ok/);
-  assert.match(log, /pi-stub: launched/);
-  assert.match(log, /pi-stub done/);
-});
-
 test("setup executor: form overrides land on the saved profile", async () => {
   // Self-contained seed: a saved llama.cpp profile the form overrides.
   const profilesDir = join(DATA, "profiles", "stub-setup");
@@ -294,33 +232,6 @@ test("setup executor: form overrides land on the saved profile", async () => {
   assert.equal(saved.flags.flashAttention, "on");
 });
 
-test("launch executor without a profile fails with a setup hint", async () => {
-  const runner = newRunner("launch-noprofile", {
-    launch: launchExecutor({ piBin: join(BIN, "pi") }),
-  });
-  const ref = `llama-cpp:${encodeURIComponent("/tmp/never-scanned.gguf")}`;
-  const job = await runner.enqueue({ type: "launch", ref, title: "no profile", payload: {} });
-  await waitFor(() => ["completed", "failed"].includes(runner.get(job.id).status));
-  const done = runner.get(job.id);
-  assert.equal(done.status, "failed");
-  assert.match(done.error, /no saved profile|model not found/);
-});
-
-test("buildTerminalScript generates a pi script (managed: no server block)", async () => {
-  const script = await buildTerminalScript({
-    id: "stub-omlx",
-    label: "Stub oMLX",
-    backend: "omlx",
-    providerId: "omlx",
-    modelAlias: "stub-mlx",
-  });
-  assert.ok(script.startsWith("#!/bin/bash"));
-  assert.match(script, /pi --model omlx\/stub-mlx/);
-  assert.ok(!script.includes("SERVER_PID"), "managed backends must not start a server");
-  // The pi config sync landed inside the sandboxed HOME, not the real one.
-  assert.ok(existsSync(join(HOME, ".pi", "agent", "models.json")));
-});
-
 // ── API contracts (Zod DTOs at the write seam) ─────────────────────────────
 
 test("POST /api/jobs validates the typed payload (400s + 201)", async () => {
@@ -335,21 +246,22 @@ test("POST /api/jobs validates the typed payload (400s + 201)", async () => {
 
   assert.equal((await post({ type: "bogus", payload: {} })).status, 400);
   assert.equal((await post({ type: "download", payload: { repo: "not a repo" } })).status, 400);
-  assert.equal((await post({ type: "launch", payload: { thinking: "ultra" } })).status, 400);
+  assert.equal((await post({ type: "benchmark", payload: { benchmarkId: "Not A Slug" } })).status, 400);
   assert.equal(
-    (await post({ type: "launch", payload: { message: "hi", keepServer: true } })).status,
+    (await post({ type: "benchmark", payload: { benchmarkId: "sakura" } })).status,
     201
   );
   const res = await post({
-    type: "launch",
+    type: "benchmark",
     ref: "omlx:test",
-    title: "queued launch",
-    payload: {},
+    title: "queued benchmark",
+    payload: { benchmarkId: "sakura" },
   });
   assert.equal(res.status, 201);
   const job = await res.json();
   assert.equal(job.status, "queued");
   assert.equal(job.ref, "omlx:test");
+  assert.equal(job.type, "benchmark");
   // logPath must not leak through the DTO
   assert.equal("logPath" in job, false);
 });

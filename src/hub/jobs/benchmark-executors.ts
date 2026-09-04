@@ -5,9 +5,21 @@
 
 import { dirname, relative } from "node:path";
 
+import { mkdir } from "node:fs/promises";
+
+import { backendFor } from "../../backends.mjs";
 import { DATA_DIR } from "../../config.mjs";
+import { configuredHarness, harnessFor } from "../../harnesses.mjs";
+import {
+  modelAvailableOnServer,
+  preflightInference,
+  serverMatchesProfile,
+  serverReady,
+  startServer,
+  stopOrUnload,
+  waitForReady,
+} from "../../process.mjs";
 import { prepareBenchmarkRun } from "../../benchmark.mjs";
-import { configuredHarness } from "../../harnesses.mjs";
 
 import { allBenchmarks, resolveRunsRoot } from "../api/data.ts";
 import { parseModelRef } from "../api/model-ref.ts";
@@ -15,7 +27,7 @@ import { captureSingleRunMedia } from "../benchmark-core/capture-media.ts";
 import { exportComparisonVideo } from "../benchmark-core/comparison-video.ts";
 import { generateStaticExport } from "../benchmark-core/export.ts";
 import { scoreDsRun } from "../benchmark-core/score-ds-run.ts";
-import { baseProfileFor, runModelHeadless, type LaunchOptions } from "./executors.ts";
+import { baseProfileFor } from "./executors.ts";
 import type { JobContext } from "./runner.ts";
 
 export interface RunRef {
@@ -23,6 +35,160 @@ export interface RunRef {
   slug: string;
   runId: string;
 }
+
+// ── launch (Run in browser: pi headless, owned by the runner) ────────────────
+
+export interface LaunchOptions {
+  piBin?: string; // test seam: stub pi binary
+}
+
+/** Stream pi's `--mode json` events into job-log lines: tool calls as they
+ *  start/finish, assistant text as it types (flushed per newline). Non-JSON
+ *  stdout (banners, stub bins) passes through untouched. */
+function piEventLog() {
+  let textBuf = "";
+  let thinkingBuf = "";
+  return (line: string): string | null => {
+    let ev: any;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      return line; // not an event line — log it raw
+    }
+    switch (ev.type) {
+      case "session":
+        return "[pi] session started";
+      case "agent_start":
+        return "[pi] agent started";
+      case "tool_execution_start": {
+        const args = ev.args ?? {};
+        const detail =
+          typeof args.command === "string" ? args.command.split("\n")[0].slice(0, 160)
+          : typeof args.path === "string" ? args.path
+          : typeof args.url === "string" ? args.url
+          : typeof args.query === "string" ? args.query
+          : typeof args.pattern === "string" ? args.pattern
+          : "";
+        return `[pi] → ${ev.toolName}${detail ? `: ${detail}` : ""}`;
+      }
+      case "tool_execution_end":
+        return ev.isError ? `[pi] ✗ ${ev.toolName} failed` : null;
+      case "message_update": {
+        const delta = ev.assistantMessageEvent;
+        // Model text streams as it types; thinking streams dimmed
+        // ("… " prefix, like pi's TUI) as it thinks.
+        if (delta?.type === "thinking_delta" && typeof delta.delta === "string") {
+          thinkingBuf += delta.delta;
+          const parts = thinkingBuf.split("\n");
+          thinkingBuf = parts.pop() ?? "";
+          const lines = parts.filter((l) => l.trim());
+          return lines.length ? lines.map((l) => `[pi] … ${l.trim()}`).join("\n") : null;
+        }
+        if (delta?.type === "text_delta" && typeof delta.delta === "string") {
+          textBuf += delta.delta;
+          const parts = textBuf.split("\n");
+          textBuf = parts.pop() ?? "";
+          return parts.filter((l) => l.trim()).join("\n") || null;
+        }
+        return null;
+      }
+      case "message_end": {
+        const out: string[] = [];
+        if (thinkingBuf.trim()) out.push(`[pi] … ${thinkingBuf.trim()}`);
+        if (textBuf.trim()) out.push(textBuf);
+        thinkingBuf = "";
+        textBuf = "";
+        return out.length ? out.join("\n") : null;
+      }
+      case "agent_end":
+        return "[pi] agent finished";
+      default:
+        return null;
+    }
+  };
+}
+
+/** The one headless launch path: server up → preflight → pi spawn (owned
+ *  by the runner). Benchmark runs go through here — the deprecated
+ *  Run-in-browser job used to share it. */
+export async function runModelHeadless(
+  ctx: JobContext,
+  profile: any,
+  opts: { piBin?: string; message?: string; thinking?: string; keepServer?: boolean; cwd: string }
+): Promise<Record<string, unknown>> {
+  const backend = backendFor(profile.backend);
+  const started = Date.now();
+
+  ctx.log(`[hub] launching ${profile.label} (${backend.label})`);
+  const managed = backend.type === "managed-server";
+  if (managed) {
+    if (!(await serverReady(profile.baseUrl))) {
+      ctx.log(`[hub] starting ${backend.label}…`);
+      await startServer(profile);
+    }
+    const available = await modelAvailableOnServer(profile);
+    if (available === null) throw new Error(`couldn't reach ${backend.label} at ${profile.baseUrl} to confirm the model is available`);
+    if (!available) throw new Error(`${profile.modelAlias} is not available on ${backend.label}`);
+  } else {
+    if (await serverReady(profile.baseUrl)) {
+      const match = await serverMatchesProfile(profile);
+      if (!match.matches) throw new Error(`a different server is already responding at ${profile.baseUrl} — ${match.reason}`);
+      ctx.log(`[hub] reusing server at ${profile.baseUrl}`);
+    } else {
+      ctx.log("[hub] starting llama-server…");
+      const state = await startServer(profile);
+      ctx.progress(null, "waiting for the server");
+      await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
+    }
+  }
+
+  ctx.progress(null, "preflight inference test");
+  const preflight = await preflightInference(profile);
+  if (!preflight.ok) {
+    try {
+      await stopOrUnload(profile);
+    } catch {
+      /* best effort */
+    }
+    throw new Error(`model failed to generate a test token: ${preflight.error}`);
+  }
+  ctx.log("[hub] preflight ok — model loaded");
+
+  const harness = harnessFor((await configuredHarness()).id);
+  if (!(await harness.detect())) throw new Error(`${harness.label} is not installed — npm install -g ${harness.npm}`);
+  await harness.syncConfig(profile);
+
+  const piBin = opts.piBin ?? harness.bin;
+  const args = ["--model", `${profile.providerId}/${profile.modelAlias}`];
+  const level = opts.thinking ?? profile.thinkingLevel;
+  if (level) args.push("--thinking", level);
+  if (opts.message) args.push(opts.message);
+  // JSON mode streams live events (tool calls, text deltas) the job log
+  // renders — plain text mode prints nothing until the run is over.
+  args.unshift("--mode", "json");
+
+  await mkdir(opts.cwd, { recursive: true });
+  ctx.progress(null, "pi running");
+  ctx.log(`[hub] ${piBin} ${args.join(" ")}`);
+  const result = await ctx.spawnOwned(piBin, args, { cwd: opts.cwd, stdoutTransform: piEventLog() });
+
+  const metrics = {
+    exitCode: result.code,
+    durationMs: Date.now() - started,
+    piDurationMs: result.durationMs,
+    keepServer: Boolean(opts.keepServer),
+    workdir: opts.cwd,
+  };
+  if (!opts.keepServer) {
+    ctx.log("[hub] unloading/stopping the server");
+    await stopOrUnload(profile);
+  }
+  if (result.code !== 0) throw new Error(`pi exited with code ${result.code}`);
+  return metrics;
+}
+
+
+
 
 async function galleryRoot(): Promise<{ runsRoot: string; root: string }> {
   const runsRoot = await resolveRunsRoot();

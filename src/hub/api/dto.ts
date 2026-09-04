@@ -51,14 +51,6 @@ export const SetupFormDto = z
   })
   .strict();
 
-export const LaunchDto = z
-  .object({
-    message: z.string().max(100_000).optional(),
-    keepServer: z.boolean().optional(),
-    thinking: THINKING_LEVEL.optional(),
-  })
-  .strict();
-
 // Filesystem-safe run identity segments (the runs tree's own shape).
 const SEG = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, "invalid run path segment");
 
@@ -105,7 +97,6 @@ export const JobEnqueueDto = z
     type: z.enum([
       "download",
       "setup",
-      "launch",
       "benchmark",
       "capture",
       "score",
@@ -121,5 +112,4 @@ export const JobEnqueueDto = z
 
 export type DownloadInput = z.infer<typeof DownloadDto>;
 export type SetupForm = z.infer<typeof SetupFormDto>;
-export type LaunchInput = z.infer<typeof LaunchDto>;
 export type RunRefInput = z.infer<typeof RunRefDto>;
