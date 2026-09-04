@@ -4,6 +4,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.11.0] - 2026-09-04
+
+### Changed
+- Changed the models table: every backend bucket now sorts running models to the top, then by recency of use, with drafters and helpers sunk to the bottom in muted italics so useful models read at a glance.
+- Changed the running state to stand out: the whole row gets a green ring with a soft glow, and the badge is a green pill with a pulsing dot.
+
 ## [3.10.0] - 2026-09-04
 
 ### Added
@@ -28,6 +34,12 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 
 ### Added
 - Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
+## [3.11.0] - 2026-09-04
+
+### Changed
+- Changed the models table: every backend bucket now sorts running models to the top, then by recency of use, with drafters and helpers sunk to the bottom in muted italics so useful models read at a glance.
+- Changed the running state to stand out: the whole row gets a green ring with a soft glow, and the badge is a green pill with a pulsing dot.
 
 ## [3.10.0] - 2026-09-04
 

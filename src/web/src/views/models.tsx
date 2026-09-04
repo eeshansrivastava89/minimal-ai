@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/api";
 import { fmtBytes, fmtCtx } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { CapabilityBadges, SectionTitle, StatusBadge } from "@/components/shared";
 import { DownloadDialog } from "@/components/flows";
 import type { Navigate } from "@/App";
@@ -42,8 +43,17 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.ref}>
+            {rows.map((r) => {
+              const isRunning = running(r);
+              const isSidekick = r.status === "draft" || r.status === "helper";
+              return (
+              <TableRow
+                key={r.ref}
+                className={cn(
+                  isRunning && "bg-green-500/5 ring-1 ring-green-500/30 ring-inset shadow-[0_0_16px_-6px_theme(colors.green.500)]",
+                  isSidekick && "[&_td]:text-muted-foreground/70 [&_.font-medium]:italic"
+                )}
+              >
                 <TableCell>
                   <div className="truncate font-medium text-foreground" title={r.title}>{r.title}</div>
                 </TableCell>
@@ -53,8 +63,11 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                   {r.status === "draft" || r.status === "helper" ? "—" : <CapabilityBadges caps={r.capabilities} />}
                 </TableCell>
                 <TableCell>
-                  {running(r) ? (
-                    <StatusBadge status="active">running</StatusBadge>
+                  {isRunning ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
+                      <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+                      running
+                    </span>
                   ) : r.status === "ready" ? (
                     <StatusBadge status="ok">ready</StatusBadge>
                   ) : r.status === "setup" ? (
@@ -77,7 +90,8 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>
@@ -106,7 +120,6 @@ export function Models({ navigate }: { navigate: Navigate }) {
     const b = backends.find((x) => x.id === id);
     return `${n} model${n === 1 ? "" : "s"} · ${b?.up ? b.version ?? "running" : "not running"}`;
   };
-  const bucket = (id: string) => (data?.models ?? []).filter((m) => m.backend === id);
   // Running = the backend reports this exact model id loaded (llama.cpp's
   // server reports the profile alias, so that matches too).
   const runningFor = (backendId: string) => {
@@ -116,6 +129,22 @@ export function Models({ navigate }: { navigate: Navigate }) {
     const aliasFor = (m: ModelSummary) =>
       (data?.profiles ?? []).find((p) => p.id === m.profileId)?.modelAlias;
     return (m: ModelSummary) => ids.has(m.id) || (aliasFor(m) ? ids.has(aliasFor(m)!) : false);
+  };
+  // Every backend bucket sorts the same way: running models first, then
+  // recency of use, then the rest — drafters and helpers sink.
+  const lastUsedAt = (m: ModelSummary) =>
+    (data?.profiles ?? []).find((p) => p.id === m.profileId)?.lastUsedAt ?? "";
+  const bucket = (id: string) => {
+    const running = runningFor(id);
+    const rank = (m: ModelSummary) =>
+      running(m) ? 0 : m.status === "draft" || m.status === "helper" ? 2 : 1;
+    return (data?.models ?? [])
+      .filter((m) => m.backend === id)
+      .sort((a, b) =>
+        rank(a) - rank(b) ||
+        lastUsedAt(b).localeCompare(lastUsedAt(a)) ||
+        a.title.localeCompare(b.title)
+      );
   };
 
   return (
