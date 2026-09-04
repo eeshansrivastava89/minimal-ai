@@ -3,12 +3,18 @@
 // hand-rolled UI, no custom colors. Every visual is a shadcn component
 // using its default variants.
 
+import { LoaderCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { backendLabel, fmtTps } from "@/lib/format";
+import { backendLabel, fmtDateShort, fmtTps } from "@/lib/format";
+import {
+  runCardIdentity,
+  runCardMediaMessage,
+  runCardState,
+} from "@/lib/runs-view";
 import type { AutotuneRun, Run } from "@/data/types";
 import type { Navigate } from "@/App";
 
@@ -286,30 +292,49 @@ export function AutotuneTable({ autotune, navigate, limit }: { autotune?: Autotu
   );
 }
 
-export function RunCard({ run, onClick }: { run: Run; onClick?: () => void }) {
+// The green activity spinner — used wherever a job is running (sidebar,
+// jobs page, live sweep). One definition.
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <LoaderCircle
+      aria-hidden
+      className={cn("size-3.5 animate-spin text-green-600 dark:text-green-400", className)}
+    />
+  );
+}
+
+// One run card, ported from the gallery's workbench: preview, mode-aware
+// primary identity, model/harness/backend pills, state label + date.
+// `mode` mirrors the workbench view: "model" groups name the prompt on the
+// card, "benchmark" groups name the model.
+export function RunCard({ run, onClick, mode }: { run: Run; onClick?: () => void; mode?: "model" | "benchmark" }) {
+  const state = runCardState(run);
+  const message = runCardMediaMessage(run);
+  const id = runCardIdentity(run, mode ?? "model");
   return (
     <Card className="cursor-pointer overflow-hidden transition-colors hover:border-foreground/20" onClick={onClick}>
       <div className="relative aspect-[16/10] overflow-hidden bg-muted">
         {run.preview ? (
           <img src={run.preview} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            {run.ds ? `score ${run.ds.scorecard.pct}%` : "no preview"}
-          </div>
-        )}
-        {run.fps != null && (
-          <div className="absolute right-2 top-2 rounded border border-border bg-background/80 px-1.5 py-0.5 text-[10px] text-foreground">
-            {run.fps} fps
+          <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
+            {message}
           </div>
         )}
       </div>
       <CardContent className="flex flex-col gap-1.5 p-3">
-        <div className="text-[13px] leading-tight font-medium text-foreground">{run.benchTitle}</div>
-        <div className="truncate text-xs text-muted-foreground">{run.modelDisplay ?? run.model}</div>
-        <div className="flex flex-wrap gap-1">
+        <div className="truncate text-[13px] leading-tight font-medium text-foreground">{id.primary}</div>
+        <div className="flex flex-wrap gap-1 overflow-hidden text-xs">
+          {mode !== "benchmark" && run.model && <Badge variant="outline" className="max-w-full truncate">{run.model}</Badge>}
+          {run.harness && <Badge variant="secondary">{run.harness}</Badge>}
           {run.backend && <BackendBadge backend={run.backend} />}
-          {run.ds && <StatusBadge status="ok">score {run.ds.scorecard.pct}%</StatusBadge>}
-          <StatusBadge status={run.status} />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5">
+            <StatusBadge status={state.status}>{state.label}</StatusBadge>
+            {run.ds && <Badge variant="secondary">score {run.ds.scorecard.pct}%</Badge>}
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{fmtDateShort(run.updatedAt ?? run.createdAt)}</span>
         </div>
       </CardContent>
     </Card>

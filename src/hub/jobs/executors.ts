@@ -54,7 +54,7 @@ import type { JobContext } from "./runner.ts";
 
 export async function downloadExecutor(ctx: JobContext) {
   const { repo, filename } = ctx.job.payload as { repo: string; filename?: string | null };
-  ctx.progress(5, "fetching repo info");
+  ctx.progress(null, "fetching repo info");
   const tree = await getHfTree(repo); // throws a clear error on bad repo
 
   let file = filename ?? null;
@@ -91,7 +91,7 @@ export async function downloadExecutor(ctx: JobContext) {
     if (!ok) throw new Error("HuggingFace CLI is required — install with: pip3 install huggingface_hub");
   }
 
-  ctx.progress(10, `downloading ${downloadRef}`);
+  ctx.progress(null, `downloading ${downloadRef}`);
   ctx.log(`[hub] hf download ${downloadRef} → HF cache (${formatBytes(plan.totalSizeBytes)})`);
   const argv = ["download", repo];
   if (plan.format === "gguf" && plan.files[0]) {
@@ -103,7 +103,7 @@ export async function downloadExecutor(ctx: JobContext) {
   }
   const result = await ctx.spawnOwned("hf", argv);
   if (result.code !== 0) throw new Error(`hf download exited with code ${result.code}`);
-  ctx.progress(100, "download complete");
+
   ctx.log("[hub] download complete — the model appears in the llama.cpp bucket after a rescan");
   return { exitCode: result.code, durationMs: result.durationMs, repo, file, sizeBytes: plan.totalSizeBytes };
 }
@@ -185,7 +185,7 @@ export async function setupExecutor(ctx: JobContext) {
     ctx.log("[hub] applying thinking/MTP settings to the oMLX server…");
     await applyProfileSettingsToOmlx(configured); // warns (not throws) when the server is down
   }
-  ctx.progress(100, "profile saved");
+  ctx.progress(null, "profile saved");
   return { profileId: configured.id, created };
 }
 
@@ -193,6 +193,60 @@ export async function setupExecutor(ctx: JobContext) {
 
 export interface LaunchOptions {
   piBin?: string; // test seam: stub pi binary
+}
+
+/** Stream pi's `--mode json` events into job-log lines: tool calls as they
+ *  start/finish, assistant text as it types (flushed per newline). Non-JSON
+ *  stdout (banners, stub bins) passes through untouched. */
+function piEventLog() {
+  let textBuf = "";
+  return (line: string): string | null => {
+    let ev: any;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      return line; // not an event line — log it raw
+    }
+    switch (ev.type) {
+      case "session":
+        return "[pi] session started";
+      case "agent_start":
+        return "[pi] agent started";
+      case "tool_execution_start": {
+        const args = ev.args ?? {};
+        const detail =
+          typeof args.command === "string" ? args.command.split("\n")[0].slice(0, 160)
+          : typeof args.path === "string" ? args.path
+          : typeof args.url === "string" ? args.url
+          : typeof args.query === "string" ? args.query
+          : typeof args.pattern === "string" ? args.pattern
+          : "";
+        return `[pi] → ${ev.toolName}${detail ? `: ${detail}` : ""}`;
+      }
+      case "tool_execution_end":
+        return ev.isError ? `[pi] ✗ ${ev.toolName} failed` : null;
+      case "message_update": {
+        const delta = ev.assistantMessageEvent;
+        if (delta?.type === "text_delta" && typeof delta.delta === "string") {
+          textBuf += delta.delta;
+          const parts = textBuf.split("\n");
+          textBuf = parts.pop() ?? "";
+          return parts.filter((l) => l.trim()).join("\n") || null;
+        }
+        return null;
+      }
+      case "message_end": {
+        if (!textBuf.trim()) return null;
+        const out = textBuf;
+        textBuf = "";
+        return out;
+      }
+      case "agent_end":
+        return "[pi] agent finished";
+      default:
+        return null;
+    }
+  };
 }
 
 /** The one headless launch path: server up → preflight → pi spawn (owned
@@ -224,12 +278,12 @@ export async function runModelHeadless(
     } else {
       ctx.log("[hub] starting llama-server…");
       const state = await startServer(profile);
-      ctx.progress(20, "waiting for the server");
+      ctx.progress(null, "waiting for the server");
       await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
     }
   }
 
-  ctx.progress(30, "preflight inference test");
+  ctx.progress(null, "preflight inference test");
   const preflight = await preflightInference(profile);
   if (!preflight.ok) {
     try {
@@ -250,11 +304,14 @@ export async function runModelHeadless(
   const level = opts.thinking ?? profile.thinkingLevel;
   if (level) args.push("--thinking", level);
   if (opts.message) args.push(opts.message);
+  // JSON mode streams live events (tool calls, text deltas) the job log
+  // renders — plain text mode prints nothing until the run is over.
+  args.unshift("--mode", "json");
 
   await mkdir(opts.cwd, { recursive: true });
-  ctx.progress(50, "pi running");
+  ctx.progress(null, "pi running");
   ctx.log(`[hub] ${piBin} ${args.join(" ")}`);
-  const result = await ctx.spawnOwned(piBin, args, { cwd: opts.cwd });
+  const result = await ctx.spawnOwned(piBin, args, { cwd: opts.cwd, stdoutTransform: piEventLog() });
 
   const metrics = {
     exitCode: result.code,
@@ -282,15 +339,13 @@ export function launchExecutor(options: LaunchOptions = {}) {
     };
     const { profile } = await baseProfileFor(ref, false);
     if (!profile) throw new Error("no saved profile for this model — set it up first");
-    const metrics = await runModelHeadless(ctx, profile, {
+    return await runModelHeadless(ctx, profile, {
       piBin: options.piBin,
       message,
       keepServer,
       thinking,
       cwd: join(DATA_DIR, "hub", "runs", ctx.job.id),
     });
-    ctx.progress(100, "run complete");
-    return metrics;
   };
 }
 

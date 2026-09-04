@@ -96,6 +96,8 @@ export interface Run {
   status: string;
   createdAt: string | null;
   completedAt: string | null;
+  updatedAt: string | null;
+  html: boolean;
   fps: number | null;
   minFps: number | null;
   frames: number | null;

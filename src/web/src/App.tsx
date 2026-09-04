@@ -22,7 +22,8 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { api } from "@/api";
-import { StatusBadge } from "@/components/shared";
+import { Spinner, StatusBadge } from "@/components/shared";
+import { useSidebarActivity } from "@/hooks/use-sidebar-activity";
 
 // Legacy navigation shape the (not yet converted) views speak: view name +
 // optional model/tab/run ids. router.tsx's useNav() adapts it to URLs.
@@ -47,6 +48,7 @@ export default function App() {
 
   const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
   const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
+  const { activity, counts } = useSidebarActivity();
   const backends = modelsData?.backends ?? [];
   const backend = (id: string) => backends.find((b) => b.id === id);
   const omlx = backend("omlx");
@@ -78,10 +80,12 @@ export default function App() {
                     <SidebarMenuItem key={n.to}>
                       <SidebarMenuButton isActive={activeTop === n.to} asChild>
                         <Link to={n.to}>
+                          {activity[n.to] && <Spinner />}
                           {n.label}
                           {n.to === "/models" && modelsData && (
                             <SidebarMenuBadge>{modelsData.models.length}</SidebarMenuBadge>
                           )}
+                          {counts[n.to] != null && <SidebarMenuBadge>{counts[n.to]}</SidebarMenuBadge>}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

@@ -36,7 +36,7 @@ export interface Job {
   title: string;
   payload: Record<string, unknown>;
   status: JobStatus;
-  progress: number; // 0–100
+  progress: number; // 0–100, or -1 = indeterminate (spinner, not a bar)
   message: string | null;
   logPath: string | null;
   metrics: Record<string, unknown> | null;
@@ -53,7 +53,7 @@ export interface JobDto {
   ref: string | null;
   title: string;
   status: JobStatus;
-  progress: number;
+  progress: number | null; // null = indeterminate — no fake bars
   message: string | null;
   error: string | null;
   metrics: Record<string, unknown> | null;
@@ -63,8 +63,8 @@ export interface JobDto {
 }
 
 export function toJobDto(job: Job): JobDto {
-  const { logPath: _logPath, payload: _payload, ...dto } = job;
-  return dto;
+  const { logPath: _logPath, payload: _payload, progress, ...dto } = job;
+  return { ...dto, progress: progress < 0 ? null : progress };
 }
 
 export const JOBS_DIR = join(DATA_DIR, "hub");

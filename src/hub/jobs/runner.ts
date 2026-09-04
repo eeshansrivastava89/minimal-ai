@@ -32,9 +32,12 @@ export interface JobContext {
   signal: AbortSignal;
   /** Append a line to the job log (timestamped) and notify log subscribers. */
   log(line: string): void;
-  progress(pct: number, message?: string): void;
-  /** Spawn a child owned by the runner — cancelled with the job. */
-  spawnOwned(cmd: string, argv: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<SpawnResult>;
+  /** progress(null) = indeterminate: milestones as messages, spinner in the UI — never a fake bar. */
+  progress(pct: number | null, message?: string): void;
+  /** Spawn a child owned by the runner — cancelled with the job.
+   *  stdoutTransform, when given, converts each stdout line into the log
+   *  line(s) to record (null = drop) — used to stream pi's JSON events. */
+  spawnOwned(cmd: string, argv: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv; stdoutTransform?: (line: string) => string | null }): Promise<SpawnResult>;
   /** Enqueue a follow-up job (benchmark chaining: launch → capture/score). */
   enqueue(input: EnqueueInput): Promise<Job>;
   /** Publish partial metrics mid-run (live sweep matrix rides the jobs SSE). */
@@ -224,7 +227,8 @@ export class JobRunner {
         notify(line);
       },
       progress: (pct, message) => {
-        this.store.update(id, { progress: Math.max(0, Math.min(100, Math.round(pct))), message: message ?? null });
+        const value = pct == null ? -1 : Math.max(0, Math.min(100, Math.round(pct)));
+        this.store.update(id, { progress: value, message: message ?? null });
         this.emitJobs();
       },
       spawnOwned: (cmd, argv, opts) =>
@@ -252,7 +256,11 @@ export class JobRunner {
               buf += chunk.toString("utf8");
               const lines = buf.split("\n");
               buf = lines.pop() ?? "";
-              for (const line of lines) if (line.trim()) ctx.log(prefix ? `${prefix} ${line}` : line);
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                const mapped = opts?.stdoutTransform?.(line) ?? line;
+                if (mapped != null && mapped.trim()) ctx.log(prefix ? `${prefix} ${mapped}` : mapped);
+              }
             });
           };
           pipe(child.stdout, "");

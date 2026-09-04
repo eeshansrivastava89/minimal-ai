@@ -515,6 +515,15 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
     /* no preview */
   }
 
+  // html presence drives the card state ("needs capture" vs "slot") — same
+  // rule the gallery's runCardState uses.
+  let html = false;
+  try {
+    html = (await stat(join(m.runDirectory, "index.html"))).isFile();
+  } catch {
+    /* no html yet */
+  }
+
   // Constrained media: prefer the Safari-friendly mp4, fall back to webm.
   let video: string | null = null;
   for (const file of ["preview.mp4", "preview.webm"]) {
@@ -543,6 +552,8 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
     status: m.status ?? "prepared",
     createdAt: m.createdAt ?? null,
     completedAt: m.completedAt ?? null,
+    updatedAt: m.updatedAt ?? m.createdAt ?? null,
+    html,
     fps: num(cap.measuredFps),
     minFps: num(cap.minFps),
     frames: num(cap.frames),

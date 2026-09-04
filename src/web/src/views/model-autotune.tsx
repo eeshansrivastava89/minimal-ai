@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { api } from "@/api";
 import { fmtDate, fmtPct, fmtTps, backendLabel } from "@/lib/format";
-import { SectionTitle, StatusBadge, SweepMatrix, type SweepConfig } from "@/components/shared";
+import { SectionTitle, Spinner, StatusBadge, SweepMatrix, type SweepConfig } from "@/components/shared";
 import { useJobsLive } from "@/hooks/use-jobs";
 import type { Navigate } from "@/App";
 import type { AutotuneRun, Profile } from "@/data/types";
@@ -66,8 +66,12 @@ function LiveSweep({ modelRef, navigate }: { modelRef: string; navigate: Navigat
       <Card>
         <CardContent className="flex flex-col gap-4 p-4">
           <div className="flex items-center gap-3">
-            <Progress value={active.progress} className="flex-1" />
-            <span className="shrink-0 text-xs text-muted-foreground">{active.message ?? active.progress}%</span>
+            {active.progress != null ? (
+              <Progress value={active.progress} className="flex-1" />
+            ) : (
+              <Spinner className="size-4" />
+            )}
+            <span className="shrink-0 text-xs text-muted-foreground">{active.message ?? "working"}</span>
             {active.status === "running" && (
               <Button variant="destructive" size="sm" onClick={cancel}>
                 Cancel

@@ -52,7 +52,7 @@ export function benchmarkExecutor(options: LaunchOptions = {}) {
     const benchmark = benchmarks.find((b) => b.id === benchmarkId);
     if (!benchmark) throw new Error(`unknown benchmark: ${benchmarkId}`);
 
-    ctx.progress(5, "preparing run slot");
+    ctx.progress(null, "preparing run slot");
     const runDirectory = await prepareBenchmarkRun({
       repoPath: gallery.root,
       benchmark,
@@ -61,7 +61,7 @@ export function benchmarkExecutor(options: LaunchOptions = {}) {
     });
     const [bench, slug, runId] = relative(gallery.runsRoot, runDirectory).split("/");
     ctx.log(`[hub] run slot: ${bench}/${slug}/${runId}`);
-    ctx.progress(10, "run slot prepared");
+    ctx.progress(null, "run slot prepared");
 
     const metrics = await runModelHeadless(ctx, profile, {
       piBin: options.piBin,
@@ -86,7 +86,7 @@ export function benchmarkExecutor(options: LaunchOptions = {}) {
     });
     ctx.log(`[hub] queued ${followUp.type} job for the new run`);
 
-    ctx.progress(100, "agent run complete");
+
     return { ...metrics, runDirectory, bench, slug, runId };
   };
 }
@@ -102,14 +102,14 @@ export function captureExecutor(options: CaptureOptions = {}) {
     const { bench, slug, runId, force } = ctx.job.payload as unknown as RunRef & { force?: boolean };
     const { runsRoot } = await galleryRoot();
     const runDirectory = `${runsRoot}/${bench}/${slug}/${runId}`;
-    ctx.progress(20, "capturing preview + video");
+    ctx.progress(null, "capturing preview + video");
     const result = await (options.capture ?? captureSingleRunMedia)({
       runsRoot,
       runDirectory,
       force: force ?? false,
       logger: { log: ctx.log, warn: ctx.log, error: ctx.log },
     });
-    ctx.progress(100, `${result.captured} captured, ${result.skipped} skipped, ${result.failed} failed`);
+    ctx.progress(null, `${result.captured} captured, ${result.skipped} skipped, ${result.failed} failed`);
     return { ...result, runs: undefined };
   };
 }
@@ -121,9 +121,9 @@ export function scoreExecutor() {
     const { bench, slug, runId } = ctx.job.payload as unknown as RunRef;
     const { runsRoot } = await galleryRoot();
     const runDirectory = `${runsRoot}/${bench}/${slug}/${runId}`;
-    ctx.progress(30, "running deterministic scorer");
+    ctx.progress(null, "running deterministic scorer");
     const { scorecard } = await scoreDsRun({ runsRoot, runDirectory });
-    ctx.progress(100, `scored ${scorecard.earned}/${scorecard.total} (${scorecard.pct}%)`);
+    ctx.progress(null, `scored ${scorecard.earned}/${scorecard.total} (${scorecard.pct}%)`);
     return { earned: scorecard.earned, total: scorecard.total, pct: scorecard.pct };
   };
 }
@@ -135,13 +135,13 @@ export function comparisonVideoExecutor() {
     const { runs } = ctx.job.payload as unknown as { runs: RunRef[] };
     const { runsRoot } = await galleryRoot();
     const runDirectories = runs.map((r) => `${runsRoot}/${r.bench}/${r.slug}/${r.runId}`);
-    ctx.progress(30, "composing comparison video (ffmpeg)");
+    ctx.progress(null, "composing comparison video (ffmpeg)");
     const result = await exportComparisonVideo({
       runsRoot,
       runDirectories,
       outputRoot: `${DATA_DIR}/hub/comparison-exports`,
     });
-    ctx.progress(100, `comparison video ready (${result.runCount} runs, ${result.layout})`);
+    ctx.progress(null, `comparison video ready (${result.runCount} runs, ${result.layout})`);
     return { ...result };
   };
 }
@@ -152,7 +152,7 @@ export function exportExecutor() {
   return async function exportGallery(ctx: JobContext) {
     const { publish } = ctx.job.payload as { publish?: boolean };
     const { runsRoot, root } = await galleryRoot();
-    ctx.progress(10, "building gallery snapshot");
+    ctx.progress(null, "building gallery snapshot");
     const manifest = await generateStaticExport({
       benchmarkDirectory: `${root}/benchmarks`,
       runsRoot,
@@ -160,11 +160,11 @@ export function exportExecutor() {
     });
     ctx.log(`[hub] snapshot: ${manifest.runs.length} runs, ${manifest.benchmarks.length} benchmarks`);
     if (!publish) {
-      ctx.progress(100, "snapshot built");
+      ctx.progress(null, "snapshot built");
       return { runs: manifest.runs.length, published: false };
     }
 
-    ctx.progress(60, "committing snapshot");
+    ctx.progress(null, "committing snapshot");
     const git = (args: string[]) => ctx.spawnOwned("git", args, { cwd: root });
     await git(["add", "public/export"]);
     const diff = await git(["diff", "--cached", "--quiet"]);
@@ -173,11 +173,11 @@ export function exportExecutor() {
     } else {
       const commit = await git(["commit", "-m", `Publish benchmark export ${new Date().toISOString()}`]);
       if (commit.code !== 0) throw new Error(`git commit exited with code ${commit.code}`);
-      ctx.progress(80, "pushing");
+      ctx.progress(null, "pushing");
       const push = await git(["push"]);
       if (push.code !== 0) throw new Error(`git push exited with code ${push.code}`);
     }
-    ctx.progress(100, "published");
+    ctx.progress(null, "published");
     return { runs: manifest.runs.length, published: true };
   };
 }

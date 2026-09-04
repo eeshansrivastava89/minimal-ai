@@ -57,3 +57,15 @@ export function backendLabel(id: string): string {
     { "llama-cpp": "llama.cpp", omlx: "oMLX", ollama: "Ollama" }[id] ?? id
   );
 }
+
+// Short date for card/table rows: "Jun 25" / "Jun 25, 2025" for older years.
+export function fmtDateShort(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}

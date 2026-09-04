@@ -122,7 +122,7 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
     const baseUrl = profile.baseUrl;
     const modelId = effectiveModelId(profile);
 
-    ctx.progress(2, "probing the oMLX server");
+    ctx.progress(null, "probing the oMLX server");
     const { model, allModels, rows } = await probeForSweep(baseUrl, modelId);
     const tested = rows.filter((r: any) => r.tested);
     const baselineSettings = rows.find((r: any) => r.id === "vanilla").settings;
@@ -165,7 +165,7 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
         i += 1;
         if (ctx.signal.aborted) break;
         if (doneIds.has(row.id)) continue;
-        ctx.progress(2 + (95 * i) / tested.length, `${row.label} (${i}/${tested.length})`);
+        ctx.progress((100 * (i - 1)) / tested.length, `${row.label} (${i}/${tested.length})`);
         let result: any;
         try {
           result = await sweep(baseUrl, runDir, modelId, row);
@@ -208,7 +208,7 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
       }
 
       // Recommendation from the journal (covers resume + partial runs).
-      ctx.progress(98, "recommending");
+      ctx.progress(null, "recommending");
       const finalResults: any[] = resultsFromJournal(await readJournal(runDir), rows);
       const recommendation: any = recommendOptimal(finalResults);
       metrics.recommendation = recommendation.ok
@@ -238,7 +238,7 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
       }
       settled = true;
       metrics.applied = Boolean(apply && recommendation.ok && !recommendation.noChange);
-      ctx.progress(100, metrics.applied ? "recommendation applied" : "done");
+      ctx.progress(null, metrics.applied ? "recommendation applied" : "done");
       return metrics;
     } finally {
       if (!settled) await discardSweep(ctx, baseUrl, runDir, modelId, baselineSettings);

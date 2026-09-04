@@ -4,6 +4,20 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.8.0] - 2026-09-04
+
+### Added
+- Added live pi streaming into job logs: pi launches in `--mode json` and its events — tool calls as they start, assistant text as it types — stream into the Jobs log view while the run is still going.
+- Added honest progress: jobs with no real denominator (launch, benchmark, download, capture, score, export) show a green spinner instead of a fake bar — their API `progress` is null. Autotune keeps its real config-count bar.
+- Added sidebar activity and totals: a green spinner on Models/Benchmarks/Autotune/Jobs while a relevant job runs, plus total-run and total-autotune badges — one hook, all derived from the live queries.
+- Added the /benchmarks workbench ported from the benchmark gallery: Visual/Data-Science kind tabs, By-model/By-prompt/Compare views, collapsible filters, the include-cloud-models toggle, group summaries, and a paginated compare table feeding the comparison-video job.
+
+### Changed
+- Ported run cards to the gallery's structure: mode-aware identity (by-model groups name the prompt, by-prompt groups name the model), model/harness/backend pills, state label plus date.
+
+### Removed
+- Removed the catalog pill row and the tagline from /benchmarks — neither was in the original workbench.
+
 ## [3.7.0] - 2026-09-03
 
 ### Added

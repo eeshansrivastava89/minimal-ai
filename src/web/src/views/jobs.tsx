@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { api } from "@/api";
 import { useJobsLive } from "@/hooks/use-jobs";
 import { fmtBytes } from "@/lib/format";
-import { SectionTitle, StatusBadge } from "@/components/shared";
+import { SectionTitle, Spinner, StatusBadge } from "@/components/shared";
 import type { Job } from "@/data/types";
 
 const ACTIVE = new Set(["queued", "running"]);
@@ -95,9 +95,13 @@ function JobRow({ job, selected, onSelect }: { job: Job; selected: boolean; onSe
       </TableCell>
       <TableCell className="w-56">
         {job.status === "running" || job.status === "queued" ? (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">{job.message ?? "waiting"}</span>
-            <Progress value={job.progress} />
+          <div className="flex items-center gap-2">
+            {job.progress != null ? (
+              <Progress value={job.progress} className="flex-1" />
+            ) : (
+              <Spinner className="size-4" />
+            )}
+            <span className="shrink-0 text-xs text-muted-foreground">{job.message ?? "working"}</span>
           </div>
         ) : (
           <span className="text-xs text-muted-foreground">{job.message ?? job.error ?? ""}</span>
@@ -174,7 +178,9 @@ export function Jobs() {
             title={shown.title}
             meta={
               shown.status === "running"
-                ? `${shown.progress}% · live`
+                ? shown.progress != null
+                  ? `${shown.progress}% · live`
+                  : "live"
                 : `${shown.status}${shown.metrics?.durationMs != null ? ` · ${(Number(shown.metrics.durationMs) / 1000).toFixed(1)}s` : ""}`
             }
           />

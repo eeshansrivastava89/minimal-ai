@@ -1,106 +1,110 @@
-// The benchmarks section — the cross-model record. Catalog as a single pill
-// row (hover a pill for the detail card); runs grouped by benchmark OR by
-// model — one at a time, never both. Historical models (runs whose model is
-// no longer in the live catalog) stay grouped under their recorded identity
-// and marked read-only; deleting a model never orphans its runs.
+// The benchmarks workbench — ported from the benchmark gallery's
+// WorkbenchPage so the structure, positioning, and behavior match the
+// original: kind tabs (Visual / Data Science), view tabs (By model / By
+// prompt / Compare), collapsible filters (model, prompt, harness, search),
+// the include-cloud-models toggle, group summaries, and a paginated
+// compare table. Sorting is recency, inherited from the API. Runs whose
+// model is no longer in the live catalog stay grouped under their recorded
+// identity, marked read-only (a hub rule the gallery didn't need).
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChevronLeft, ChevronRight, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type RunRef } from "@/api";
-import { RunCard, SectionTitle } from "@/components/shared";
+import { fmtDateShort } from "@/lib/format";
+import {
+  benchmarkMatchesKind,
+  filterOptions,
+  filterRuns,
+  groupRuns,
+  runCardMediaMessage,
+  runCardState,
+  runSummaryText,
+  stackLabel,
+  type RunKind,
+} from "@/lib/runs-view";
+import { RunCard, StatusBadge } from "@/components/shared";
 import type { Navigate } from "@/App";
 import type { Benchmark, Run } from "@/data/types";
 
+const RUNS_PER_PAGE = 10;
 const keyOf = (r: Run) => `${r.bench}/${r.slug}/${r.id}`;
+
+const VIEW_META: Record<string, { title: string; subtitle: string }> = {
+  model: { title: "Model comparison", subtitle: "Group attempts by model and prompt." },
+  benchmark: { title: "Prompt comparison", subtitle: "Compare one prompt across models." },
+  compare: { title: "Compare", subtitle: "Select rows to compare outputs." },
+};
 
 export function Benchmarks({ navigate }: { navigate: Navigate }) {
   const queryClient = useQueryClient();
-  const { data: benchmarks } = useQuery({ queryKey: ["benchmarks"], queryFn: api.benchmarks, staleTime: 300_000 });
   const { data: runs } = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
+  const { data: benchmarks } = useQuery({ queryKey: ["benchmarks"], queryFn: api.benchmarks, staleTime: 300_000 });
   const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
 
-  const [groupBy, setGroupBy] = useState<"benchmark" | "model">("benchmark");
-  const [compareMode, setCompareMode] = useState(false);
+  const [kind, setKind] = useState<RunKind>("visual");
+  const [mode, setMode] = useState<"model" | "benchmark" | "compare">("model");
+  const [model, setModel] = useState("all");
+  const [benchmark, setBenchmark] = useState("all");
+  const [harness, setHarness] = useState("all");
+  const [search, setSearch] = useState("");
+  const [includeCloud, setIncludeCloud] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
 
-  const benchTitle = (id: string) => (benchmarks ?? []).find((b) => b.id === id)?.title ?? id;
-  const modelName = (r: Run) => r.modelDisplay ?? r.model ?? r.slug ?? "unknown";
+  // The kind's workspace — select options and filters derive from it, like
+  // the gallery's runsForCurrentWorkspace.
+  const kindRuns = useMemo(
+    () => (runs ?? []).filter((r) => benchmarkMatchesKind(r.bench, kind)),
+    [runs, kind]
+  );
+  const options = useMemo(() => filterOptions(kindRuns), [kindRuns]);
+  const filtered = useMemo(
+    () => filterRuns(runs ?? [], { kind, model, benchmark, harness, search, includeCloud }),
+    [runs, kind, model, benchmark, harness, search, includeCloud]
+  );
 
-  // Groups: benchmark → model → runs (the repo's own hierarchy) OR model →
-  // runs, never both at once.
+  const promptTitle = (id: string) => benchmarks?.find((b) => b.id === id)?.title ?? id;
   const groups = useMemo(() => {
-    const all = runs ?? [];
-    if (groupBy === "model") {
-      const models = new Map<string, { name: string; historical: boolean; runs: Run[] }>();
-      for (const r of all) {
-        const name = modelName(r);
-        if (!models.has(name)) models.set(name, { name, historical: true, runs: [] });
-        const m = models.get(name)!;
-        m.runs.push(r);
-        if (r.ownerRef) m.historical = false;
-      }
-      return [...models.values()].sort((a, b) => a.name.localeCompare(b.name)).map((m) => ({
-        key: m.name,
-        title: m.name,
-        historical: m.historical,
-        meta: `${m.runs.length} runs`,
-        runs: m.runs,
-      }));
-    }
-    const byBench = new Map<string, Run[]>();
-    for (const r of all) {
-      if (!byBench.has(r.bench)) byBench.set(r.bench, []);
-      byBench.get(r.bench)!.push(r);
-    }
-    const ordered = [
-      ...(benchmarks ?? []).map((b) => b.id),
-      ...[...byBench.keys()].filter((id) => !(benchmarks ?? []).some((b) => b.id === id)),
-    ];
-    const out = [];
-    for (const bench of ordered) {
-      const benchRuns = byBench.get(bench) ?? [];
-      if (benchRuns.length === 0) continue;
-      const models = new Map<string, { name: string; historical: boolean; runs: Run[] }>();
-      for (const r of benchRuns) {
-        const name = modelName(r);
-        if (!models.has(name)) models.set(name, { name, historical: true, runs: [] });
-        const m = models.get(name)!;
-        m.runs.push(r);
-        if (r.ownerRef) m.historical = false;
-      }
-      for (const m of models.values()) {
-        out.push({
-          key: `${bench}/${m.name}`,
-          title: `${benchTitle(bench)} · ${m.name}`,
-          historical: m.historical,
-          meta: `${m.runs.length} runs`,
-          runs: m.runs,
-        });
-      }
-    }
-    return out;
-  }, [groupBy, benchmarks, runs]);
+    if (mode === "compare") return [];
+    return mode === "model"
+      ? groupRuns(filtered, (r) => r.model ?? "Unknown model", (r) => r.benchTitle ?? r.bench)
+      : groupRuns(filtered, (r) => r.benchTitle ?? r.bench, (r) => r.model ?? "Unknown model");
+  }, [filtered, mode]);
 
-  const toggle = (r: Run) => {
-    const key = keyOf(r);
-    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  const activeFilterCount =
+    (model !== "all" ? 1 : 0) + (benchmark !== "all" ? 1 : 0) + (harness !== "all" ? 1 : 0) + (search.trim() ? 1 : 0);
+
+  const clearFilters = () => {
+    setModel("all");
+    setBenchmark("all");
+    setHarness("all");
+    setSearch("");
+    setSelected([]);
+    setPage(1);
   };
 
-  const compare = async () => {
-    const picked = (runs ?? []).filter((r) => selected.includes(keyOf(r)));
-    const refs: RunRef[] = picked.map((r) => ({ bench: r.bench, slug: r.slug ?? "", runId: r.id }));
+  const openRun = (r: Run) => navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" });
+
+  const selectedRuns = filtered.filter((r) => selected.includes(keyOf(r)));
+
+  const exportComparison = async () => {
+    const refs: RunRef[] = selectedRuns.map((r) => ({ bench: r.bench, slug: r.slug ?? "", runId: r.id }));
     try {
       await api.comparisonVideo(refs);
       toast("Comparison video queued — watch it in Jobs");
-      setCompareMode(false);
-      setSelected([]);
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
     } catch (err) {
       toast((err as Error).message);
@@ -120,32 +124,15 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
     }
   };
 
-  const runCount = (id: string) => (runs ?? []).filter((r) => r.bench === id).length;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / RUNS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRuns = filtered.slice((currentPage - 1) * RUNS_PER_PAGE, currentPage * RUNS_PER_PAGE);
 
   return (
     <div>
       <div className="flex items-center gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Benchmarks</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Every run ever produced — grouped by prompt or by model. Runs outlive their models.
-          </p>
-        </div>
+        <h1 className="text-3xl font-semibold tracking-tight">Benchmarks</h1>
         <div className="ml-auto flex gap-2">
-          {compareMode ? (
-            <>
-              <Button variant="outline" onClick={() => { setCompareMode(false); setSelected([]); }}>
-                Cancel
-              </Button>
-              <Button disabled={selected.length < 2 || selected.length > 6} onClick={compare}>
-                Compare ({selected.length})
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" onClick={() => setCompareMode(true)} disabled={(runs ?? []).length < 2}>
-              Compare runs
-            </Button>
-          )}
           {machine?.devMode && (
             <Button onClick={publish} disabled={publishing}>
               {publishing ? "Queueing…" : "Publish gallery"}
@@ -154,81 +141,239 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
         </div>
       </div>
 
-      {/* Catalog: one row of pills; hover for the detail card. */}
-      <div className="mt-5 flex flex-wrap items-center gap-1.5">
-        <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Catalog</span>
-        {(benchmarks ?? []).map((b: Benchmark) => (
-          <Tooltip key={b.id}>
-            <TooltipTrigger asChild>
-              <Badge variant="outline" className="cursor-default px-2.5 py-1 text-xs">
-                {b.title}
-                <span className="ml-1.5 text-muted-foreground">{runCount(b.id)}</span>
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-80 p-3 text-xs">
-              <div className="font-medium text-foreground">{b.title}</div>
-              <div className="mt-0.5 flex items-center gap-2">
-                <Badge variant="secondary">{b.kind === "data-science" ? "data science" : "visual"}</Badge>
-                <span className="text-muted-foreground">{runCount(b.id)} runs</span>
-              </div>
-              <p className="mt-1.5 text-muted-foreground">{b.description}</p>
-            </TooltipContent>
-          </Tooltip>
-        ))}
-        {(benchmarks ?? []).length === 0 && (
-          <span className="text-xs text-muted-foreground">No prompts — link the gallery repo (benchmarks/).</span>
-        )}
+      {/* Kind tabs — Visual / Data Science */}
+      <Tabs value={kind} onValueChange={(k) => { setKind(k as RunKind); setPage(1); }} className="mt-4">
+        <TabsList>
+          <TabsTrigger value="visual">Visual Benchmark</TabsTrigger>
+          <TabsTrigger value="data-science">Data Science Benchmark</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Toolbar — view tabs + filters */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Tabs value={mode} onValueChange={(m) => { setMode(m as typeof mode); setPage(1); }}>
+          <TabsList>
+            <TabsTrigger value="model">By model</TabsTrigger>
+            <TabsTrigger value="benchmark">By prompt</TabsTrigger>
+            <TabsTrigger value="compare">Compare</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+          >
+            <SlidersHorizontal className="size-4" />
+            Filters
+            {activeFilterCount > 0 && <Badge variant="secondary">{activeFilterCount}</Badge>}
+          </Button>
+        </div>
       </div>
 
-      <SectionTitle
-        title="Runs"
-        meta={`${(runs ?? []).length} total`}
-        action={
-          <Tabs value={groupBy} onValueChange={(v) => setGroupBy(v as "benchmark" | "model")}>
-            <TabsList>
-              <TabsTrigger value="benchmark">By benchmark</TabsTrigger>
-              <TabsTrigger value="model">By model</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        }
-      />
-      {groups.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No runs yet — prepare one from a model page.
-          </CardContent>
-        </Card>
-      ) : (
-        groups.map((g) => (
-          <div key={g.key} className="mb-4">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-sm font-medium text-foreground">{g.title}</span>
-              {g.historical && (
-                <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                  no longer on this machine
-                </Badge>
-              )}
-              <span className="text-xs text-muted-foreground">{g.meta}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {g.runs.map((r) => {
-                const selectedNow = selected.includes(keyOf(r));
-                return (
-                  <div key={keyOf(r)} className={selectedNow ? "rounded-lg ring-2 ring-primary" : ""}>
-                    <RunCard
-                      run={r}
-                      onClick={() => {
-                        if (compareMode) return toggle(r);
-                        navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" });
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))
+      {filtersOpen && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Select value={model} onValueChange={(v) => { setModel(v); setPage(1); }}>
+            <SelectTrigger className="w-44"><span className="truncate">{model === "all" ? "All run models" : model}</span></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All run models</SelectItem>
+              {options.models.map((m) => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={benchmark} onValueChange={(v) => { setBenchmark(v); setPage(1); }}>
+            <SelectTrigger className="w-44"><span className="truncate">{benchmark === "all" ? "All prompts" : promptTitle(benchmark)}</span></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All prompts</SelectItem>
+              {options.benchmarks.map((b) => (
+                <SelectItem key={b} value={b}>{promptTitle(b)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={harness} onValueChange={(v) => { setHarness(v); setPage(1); }}>
+            <SelectTrigger className="w-40"><span className="truncate">{harness === "all" ? "All harnesses" : harness}</span></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All harnesses</SelectItem>
+              {options.harnesses.map((h) => (
+                <SelectItem key={h} value={h}>{h}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="search"
+            className="w-64"
+            placeholder="Search runs, models, prompts, harnesses"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
       )}
+
+      {/* Summary — title, count, subtitle, run summary; cloud toggle + clear */}
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">{VIEW_META[mode].title}</h2>
+            <Badge variant="outline">{filtered.length}</Badge>
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">{VIEW_META[mode].subtitle}</p>
+          <p className="text-sm text-muted-foreground">{runSummaryText(filtered, kind)}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Switch checked={includeCloud} onCheckedChange={(v) => { setIncludeCloud(v); setPage(1); }} />
+            Include cloud models
+          </label>
+          {(activeFilterCount > 0 || selected.length > 0) && (
+            <Button variant="outline" size="sm" onClick={clearFilters}>
+              <X className="size-4" />
+              {activeFilterCount > 0 && selected.length > 0 ? "Reset view" : selected.length > 0 ? "Clear selection" : "Clear filters"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Surface */}
+      <div className="mt-4">
+        {filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              No runs match the current filters.
+            </CardContent>
+          </Card>
+        ) : mode === "compare" ? (
+          <>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10"><span className="sr-only">Compare</span></TableHead>
+                      <TableHead>Prompt</TableHead>
+                      <TableHead>Model</TableHead>
+                      <TableHead>Stack</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead>Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pageRuns.map((r) => {
+                      const key = keyOf(r);
+                      const state = runCardState(r);
+                      return (
+                        <TableRow key={key} className="cursor-pointer" onClick={() => openRun(r)}>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-primary"
+                              aria-label={`Compare ${r.benchTitle} on ${r.model}`}
+                              checked={selected.includes(key)}
+                              onChange={(e) => {
+                                setSelected((prev) =>
+                                  e.target.checked ? [...prev, key] : prev.filter((k) => k !== key)
+                                );
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="max-w-48 truncate font-medium text-foreground">{r.benchTitle}</TableCell>
+                          <TableCell className="max-w-48 truncate">{r.model ?? "—"}</TableCell>
+                          <TableCell className="max-w-56 truncate text-muted-foreground">{stackLabel(r)}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={state.status}>{state.label}</StatusBadge>
+                          </TableCell>
+                          <TableCell className="max-w-48 truncate text-muted-foreground">{runCardMediaMessage(r)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDateShort(r.updatedAt ?? r.createdAt)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                Showing {filtered.length === 0 ? 0 : (currentPage - 1) * RUNS_PER_PAGE + 1}–
+                {Math.min(currentPage * RUNS_PER_PAGE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
+                  <ChevronLeft className="size-4" /> Previous
+                </Button>
+                <Badge variant="outline">Page {currentPage} of {totalPages}</Badge>
+                <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>
+                  Next <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Selected runs, side by side + the comparison-video export */}
+            {selectedRuns.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center gap-3">
+                  <span className="text-sm font-medium text-foreground">Selected ({selectedRuns.length})</span>
+                  <Button
+                    size="sm"
+                    disabled={selectedRuns.length < 2 || selectedRuns.length > 6}
+                    onClick={exportComparison}
+                  >
+                    Export comparison video
+                  </Button>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {selectedRuns.map((r) => (
+                    <RunCard key={keyOf(r)} run={r} onClick={() => openRun(r)} mode="model" />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {groups.map((g) => (
+              <section key={g.title}>
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="text-base font-semibold tracking-tight text-foreground">{g.title}</h3>
+                  {mode === "benchmark" && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="cursor-default">See prompt</Badge>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-96 p-3 text-xs">
+                        <div className="font-medium text-foreground">{g.title}</div>
+                        <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                          {benchmarks?.find((b: Benchmark) => b.title === g.title)?.prompt ?? "Prompt unavailable."}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  {g.historical && (
+                    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      no longer on this machine
+                    </Badge>
+                  )}
+                  <span className="text-sm text-muted-foreground">
+                    {g.subtitles.length} {mode === "model" ? "prompt" : "model"}{g.subtitles.length === 1 ? "" : "s"}
+                  </span>
+                  <Badge variant="outline" className="ml-auto">{g.runs.length}</Badge>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {g.runs.map((r) => (
+                    <RunCard
+                      key={keyOf(r)}
+                      run={r}
+                      mode={mode === "model" ? "model" : "benchmark"}
+                      onClick={() => openRun(r)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
