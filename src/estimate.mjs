@@ -152,7 +152,7 @@ function booleanArrayMeta(meta, key) {
   return Array.isArray(value) && value.every((item) => typeof item === "boolean") ? value : undefined;
 }
 
-function bytesForCacheType(type) {
+export function bytesForCacheType(type) {
   const normalized = String(type ?? "").toLowerCase();
   if (normalized === "f32") return 4;
   if (normalized === "f16" || normalized === "bf16") return 2;

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { api } from "@/api";
 import { fmtBytes, fmtCtx, fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { BackendBadge, CapabilityBadges, SectionTitle, StatCard, StatusBadge } from "@/components/shared";
+import { BackendBadge, CapabilityBadges, SectionTitle, Spinner, StatCard, StatusBadge } from "@/components/shared";
 import { useJobsLive } from "@/hooks/use-jobs";
 import { ModelAutotune } from "@/views/model-autotune";
 import { ModelBenchmark } from "@/views/model-benchmark";
@@ -89,14 +89,10 @@ function SettingsTable({ rows }: { rows: [string, unknown][] }) {
 function OverviewTab({
   detail,
   profile,
-  heatmap,
-  ramBytes,
   navigate,
 }: {
   detail: ModelDetailT;
   profile?: Profile;
-  heatmap: MemoryHeatmap | null;
-  ramBytes: number;
   navigate: Navigate;
 }) {
   const caps = detail.capabilities;
@@ -125,28 +121,6 @@ function OverviewTab({
         <StatCard label="Architecture" value={String(caps.architecture ?? "—")} />
         <StatCard label="Thinking" value={profile ? (profile.thinkingOff ? "off" : (profile.thinkingLevel ?? "default")) : "—"} />
       </div>
-
-      <SectionTitle title="Context × cache heatmap" meta={heatmap ? "estimated memory vs installed RAM" : "llama.cpp models only"} />
-      <Card>
-        <CardContent className="p-4">
-          {heatmap ? (
-            <>
-              <Heatmap heatmap={heatmap} ramBytes={ramBytes} profile={profile} />
-              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-muted/40 align-[-1px]" />fits</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-muted align-[-1px]" />tight</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-destructive/15 align-[-1px]" />doesn't fit</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm ring-2 ring-ring align-[-1px]" />current config</span>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              The heatmap is computed from GGUF metadata by the local estimator — managed backends
-              (oMLX, Ollama) size memory server-side.
-            </p>
-          )}
-        </CardContent>
-      </Card>
 
       <SectionTitle title="Run" meta={profile ? undefined : "set the model up first"} />
       <Card>
@@ -218,7 +192,7 @@ function RecentActivity({ modelRef, navigate }: { modelRef: string; navigate: Na
   );
 }
 
-function ConfigurationTab({ detail, navigate }: { detail: ModelDetailT; navigate: Navigate }) {
+function ConfigurationTab({ detail, heatmap, ramBytes, navigate }: { detail: ModelDetailT; heatmap: MemoryHeatmap | null; ramBytes: number; navigate: Navigate }) {
   const queryClient = useQueryClient();
   const profile = detail.profile;
   const settings = detail.omlxModelSettings ?? null;
@@ -238,6 +212,31 @@ function ConfigurationTab({ detail, navigate }: { detail: ModelDetailT; navigate
 
   return (
     <div>
+      {heatmap && (
+        <>
+          <SectionTitle
+            title="Context × cache heatmap"
+            meta="estimated weights + KV cache vs installed RAM"
+          />
+          <Card>
+            <CardContent className="p-4">
+              <Heatmap heatmap={heatmap} ramBytes={ramBytes} profile={profile} />
+              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-muted/40 align-[-1px]" />fits</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-muted align-[-1px]" />tight</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-destructive/15 align-[-1px]" />doesn't fit</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm ring-2 ring-ring align-[-1px]" />current config</span>
+              </div>
+              {detail.backend !== "llama-cpp" && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Estimated from the model's own architecture facts (weights + KV cache). Runtime
+                  overhead is backend-specific and not included.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
       {settings && (
         <>
           <SectionTitle title="oMLX settings" meta="applied on the server" />
@@ -274,6 +273,7 @@ function ConfigurationTab({ detail, navigate }: { detail: ModelDetailT; navigate
 export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; navigate: Navigate }) {
   const { data: detail, isLoading, error } = useQuery({ queryKey: ["model", id], queryFn: () => api.model(id) });
   const { data: setup } = useQuery({ queryKey: ["setup", id], queryFn: () => api.setup(id) });
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
   const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
   const { data: autotune } = useQuery({ queryKey: ["autotune", id], queryFn: () => api.autotune(id), enabled: tab === "autotune" });
   const { data: runs } = useQuery({ queryKey: ["modelRuns", id], queryFn: () => api.modelRuns(id), enabled: tab === "benchmark" });
@@ -292,12 +292,24 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
   }
 
   const profile = detail.profile;
+  // Running now: this backend reports this model loaded (a hub job or a
+  // session the user started with the copied command).
+  const runningIds = new Set(
+    modelsData?.backends.find((b) => b.id === detail.backend)?.runningModels ?? []
+  );
+  const alias = profile?.modelAlias;
+  const runningNow = runningIds.has(detail.id) || (alias ? runningIds.has(alias) : false);
 
   return (
     <div>
       <div className="flex items-baseline gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{profile?.label ?? detail.title}</h1>
         <span className="text-sm text-muted-foreground">{detail.id}</span>
+        {runningNow && (
+          <span className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+            <Spinner /> running now
+          </span>
+        )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <BackendBadge backend={detail.backend} />
@@ -315,16 +327,15 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
       </Tabs>
 
       <div className="mt-4">
-        {tab === "overview" && (
-          <OverviewTab
+        {tab === "overview" && <OverviewTab detail={detail} profile={profile} navigate={navigate} />}
+        {tab === "configuration" && (
+          <ConfigurationTab
             detail={detail}
-            profile={profile}
             heatmap={setup?.heatmap ?? null}
             ramBytes={machine?.ramBytes ?? 0}
             navigate={navigate}
           />
         )}
-        {tab === "configuration" && <ConfigurationTab detail={detail} navigate={navigate} />}
         {tab === "logs" && <ModelLogs logs={logs} />}
         {tab === "autotune" && <ModelAutotune backend={detail.backend} run={autotune ?? null} profile={profile} modelRef={id} navigate={navigate} />}
         {tab === "benchmark" && <ModelBenchmark runs={runs} profile={profile} navigate={navigate} />}

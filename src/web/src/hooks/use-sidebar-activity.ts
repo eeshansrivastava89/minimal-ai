@@ -23,13 +23,17 @@ export function useSidebarActivity(): {
   const { jobs } = useJobsLive();
   const { data: runs } = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
   const { data: autotune } = useQuery({ queryKey: ["autotune"], queryFn: api.allAutotune, staleTime: 60_000 });
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
 
   const activeTypes = new Set(
     (jobs ?? []).filter((j) => j.status === "running" || j.status === "queued").map((j) => j.type)
   );
+  // A model is "in use" when its backend reports it running — including
+  // sessions the user started themselves (the copied pi command).
+  const backendRunning = (modelsData?.backends ?? []).some((b) => b.runningModels.length > 0);
   const activity: Record<string, boolean> = {};
   for (const [section, types] of Object.entries(SECTION_TYPES)) {
-    activity[section] = types.some((t) => activeTypes.has(t));
+    activity[section] = types.some((t) => activeTypes.has(t)) || (section === "/models" && backendRunning);
   }
   activity["/jobs"] = activeTypes.size > 0;
 

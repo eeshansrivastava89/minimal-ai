@@ -149,6 +149,10 @@ export interface BackendStatus {
   modelsLoaded?: number;
   modelsDiscovered?: number;
   modelCount: number;
+  // Backend model ids currently loaded/running — the spinner/badge signal
+  // for "this model is in use", including sessions the user started
+  // themselves (a copied pi command).
+  runningModels: string[];
 }
 
 // One row of the catalog; a saved profile rides along when present.

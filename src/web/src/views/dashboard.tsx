@@ -36,19 +36,25 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
           value={machine?.ramLabel ?? "…"}
           unit="unified memory"
         />
-        {(["omlx", "ollama", "llama-cpp"] as const).map((id) => {
-          const b = backend(id);
-          const n = countFor(id);
-          return (
-            <SummaryCard
-              key={id}
-              name={b?.label ?? id}
-              meta={b?.up ? b.version ?? "running" : "not running"}
-              value={b?.up || n > 0 ? n : "—"}
-              unit={n === 1 ? "model" : "models"}
-            />
-          );
-        })}
+          {(["omlx", "ollama", "llama-cpp"] as const).map((id) => {
+            const b = backend(id);
+            const n = countFor(id);
+            const running = b?.runningModels.length ?? 0;
+            const meta = b?.up
+              ? [b.version ?? "running", running > 0 ? `${running} running now` : null]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "not running";
+            return (
+              <SummaryCard
+                key={id}
+                name={b?.label ?? id}
+                meta={meta}
+                value={b?.up || n > 0 ? n : "—"}
+                unit={n === 1 ? "model" : "models"}
+              />
+            );
+          })}
       </div>
 
       <SectionTitle

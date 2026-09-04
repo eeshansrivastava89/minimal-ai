@@ -14,7 +14,9 @@ import { fileURLToPath } from "node:url";
 import { BACKENDS, backendFor } from "../../backends.mjs";
 import { loadConfig, getModelScanDirs } from "../../config.mjs";
 import { listHarnesses } from "../../harnesses.mjs";
-import { prepareMemoryEstimate, computeMemoryTotal } from "../../estimate.mjs";
+import { bytesForCacheType, prepareMemoryEstimate, computeMemoryTotal } from "../../estimate.mjs";
+import { findOmlxModelDir, readOmlxModelConfig } from "../../mlx-discovery.mjs";
+import { ollamaModelInfo } from "../../ollama-runtime.mjs";
 import { readOmlxModelSettings, scanOmlxModelSizes } from "../../mlx-discovery.mjs";
 import { installedRamGB, availableRamBytes } from "../../hardware.mjs";
 import { findLlamaServer } from "../../config.mjs";
@@ -87,19 +89,26 @@ interface OmlxStatus {
   modelsLoaded?: number;
   modelsDiscovered?: number;
   liveModels: { id: string; maxModelLen: number | null }[];
+  runningModels: string[];
 }
 
 async function omlxStatus(): Promise<OmlxStatus> {
   const base = BACKENDS.omlx.apiBaseUrl;
-  const [status, models] = await Promise.all([
+  const [status, models, admin] = await Promise.all([
     fetchJson(`${base}/api/status`),
     fetchJson(`${base}/v1/models`),
+    fetchJson(`${base}/admin/api/models`),
   ]);
   const liveModels = Array.isArray(models?.data)
     ? (models!.data as any[]).map((m) => ({
         id: String(m.id),
         maxModelLen: typeof m.max_model_len === "number" ? m.max_model_len : null,
       }))
+    : [];
+  const runningModels = Array.isArray(admin?.models)
+    ? admin!.models
+        .filter((m: any) => m.loaded === true && (m.engine_type ?? "") !== "markitdown" && m.is_loading !== true)
+        .map((m: any) => String(m.id))
     : [];
   return {
     up: status?.status === "ok" || liveModels.length > 0,
@@ -108,25 +117,43 @@ async function omlxStatus(): Promise<OmlxStatus> {
     modelsDiscovered:
       typeof status?.models_discovered === "number" ? status.models_discovered : undefined,
     liveModels,
+    runningModels,
   };
 }
 
-async function ollamaTags(): Promise<{ up: boolean; version?: string; models: any[] }> {
+async function ollamaTags(): Promise<{ up: boolean; version?: string; models: any[]; runningModels: string[] }> {
   const base = BACKENDS.ollama.apiBaseUrl;
-  const [version, tags] = await Promise.all([
+  const [version, tags, ps] = await Promise.all([
     fetchJson(`${base}/api/version`),
     fetchJson(`${base}/api/tags`),
+    fetchJson(`${base}/api/ps`),
   ]);
+  const runningModels = Array.isArray(ps?.models) ? ps!.models.map((m: any) => String(m.model ?? m.name)) : [];
   return {
     up: tags != null,
     version: typeof version?.version === "string" ? version.version : undefined,
     models: Array.isArray(tags?.models) ? (tags!.models as any[]) : [],
+    runningModels,
   };
 }
 
 // llama.cpp version comes from the binary itself (it's not a daemon) —
 // read once per process.
 let llamaCppVersion: string | undefined | null;
+/** Loaded model ids across every llama.cpp profile's server (deduped by
+ *  baseUrl). null fetch = server down — no models running there. */
+async function llamaCppRunning(profiles: Profile[]): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of profiles.filter((x) => x.backend === "llama-cpp")) {
+    if (seen.has(p.baseUrl)) continue;
+    seen.add(p.baseUrl);
+    const models = await fetchJson(`${p.baseUrl}/models`);
+    if (Array.isArray(models?.data)) for (const m of models!.data) out.push(String(m.id));
+  }
+  return out;
+}
+
 async function llamaCppInfo(): Promise<{ installed: boolean; version?: string }> {
   const binary = await findLlamaServer();
   if (!binary) return { installed: false };
@@ -260,6 +287,7 @@ export async function catalog(): Promise<{
     });
   }
 
+  const llamaRunning = await llamaCppRunning(profiles as Profile[]);
   const backends: BackendStatus[] = [
     {
       id: "omlx",
@@ -272,6 +300,7 @@ export async function catalog(): Promise<{
       modelsLoaded: omlx.modelsLoaded,
       modelsDiscovered: omlx.modelsDiscovered,
       modelCount: models.filter((m) => m.backend === "omlx").length,
+      runningModels: omlx.runningModels,
     },
     {
       id: "ollama",
@@ -282,6 +311,7 @@ export async function catalog(): Promise<{
       up: ollama.up,
       version: ollama.version,
       modelCount: models.filter((m) => m.backend === "ollama").length,
+      runningModels: ollama.runningModels,
     },
     {
       id: "llama-cpp",
@@ -292,6 +322,7 @@ export async function catalog(): Promise<{
       up: llamaCpp.installed,
       version: llamaCpp.version,
       modelCount: models.filter((m) => m.backend === "llama-cpp").length,
+      runningModels: llamaRunning,
     },
   ];
 
@@ -377,7 +408,101 @@ export async function setupInfo(ref: ModelRef): Promise<{
       };
     }
   }
+  if (ref.backend === "omlx" || ref.backend === "ollama") {
+    heatmap = await managedHeatmap(ref);
+    maxCtx = heatmap?.maxCtx;
+  }
   return { ref: detail.ref, heatmap, profile: detail.profile, capabilities, maxCtx };
+}
+
+// ── Managed-backend heatmap (oMLX / Ollama) ────────────────────────────────
+//
+// The same ctx × KV-quant grid as the GGUF one, derived from each backend's
+// own architecture facts using the CLI's canonical per-element byte factors
+// (bytesForCacheType), so a cell means the same thing on every backend:
+//   oMLX    — config.json on disk (works with the server down); the KV-quant
+//             axis is turboquant (bf16 / q4 / q8)
+//   Ollama  — /api/show model_info (needs the server up; honest null + the
+//             reason when it's down); the axis is OLLAMA_KV_CACHE_TYPE
+// Cells are weights + KV cache (runtime overhead is backend-specific and
+// excluded — the numbers stay derived, never invented).
+
+const MANAGED_CACHES = {
+  omlx: ["bf16", "q4", "q8"],
+  ollama: ["bf16", "q8_0", "q4_0"],
+} as const;
+
+async function managedHeatmap(ref: ModelRef): Promise<MemoryHeatmap | null> {
+  // Architecture facts → { layers, kvHeads, headDim, maxCtx } | null
+  let facts: { layers: number; kvHeads: number; headDim: number; maxCtx: number } | null = null;
+  let modelBytes = 0;
+  if (ref.backend === "omlx") {
+    const modelDir = await findOmlxModelDir(ref.id);
+    const raw = modelDir ? await readOmlxModelConfig(modelDir).catch(() => null) : null;
+    if (!raw) return null;
+    // Vision/multimodal checkpoints keep the text-model facts under
+    // text_config; plain models have them at the root.
+    const config = (raw.text_config && typeof raw.text_config === "object" ? raw.text_config : raw);
+    const layers = Number(config.num_hidden_layers) || 0;
+    const attnHeads = Number(config.num_attention_heads) || 0;
+    const kvHeads = Number(config.num_key_value_heads) || attnHeads;
+    const headDim = Number(config.head_dim) || (attnHeads ? Math.floor(Number(config.hidden_size) / attnHeads) : 0);
+    if (!layers || !kvHeads || !headDim) return null; // facts not derivable — no fake grid
+    facts = { layers, kvHeads, headDim, maxCtx: Number(config.max_position_embeddings) || 32768 };
+    modelBytes = (await scanOmlxModelSizes().catch(() => new Map<string, never>())).get(ref.id)?.sizeBytes ?? 0;
+  } else {
+    let info: any;
+    try {
+      info = await ollamaModelInfo(ref.id);
+    } catch {
+      return null; // server down — the setup read explains why there's no grid
+    }
+    const mi = info?.model_info ?? {};
+    // model_info keys are prefixed by the model's architecture family
+    // ("general.architecture": "qwen3" → "qwen3.block_count", …).
+    const arch = String(mi["general.architecture"] ?? "");
+    const num = (key: string) => Number(arch ? mi[`${arch}.${key}`] : undefined) || 0;
+    const layers = num("block_count");
+    const embedding = num("embedding_length");
+    const headCount = num("attention.head_count");
+    const kvHeads = num("attention.head_count_kv") || headCount;
+    if (!layers || !embedding || !headCount) return null;
+    facts = {
+      layers,
+      kvHeads,
+      headDim: Math.floor(embedding / headCount),
+      maxCtx: num("context_length") || 32768,
+    };
+    modelBytes =
+      (await scanOllamaModels().catch(() => [])).find((m) => m.name === ref.id)?.sizeBytes ?? 0;
+  }
+
+  const caches = [...MANAGED_CACHES[ref.backend as "omlx" | "ollama"]];
+  const kvBytesPerToken = (cache: string) => {
+    // oMLX turboquant bits map onto the same per-element factors the GGUF
+    // estimator uses (q4 → q4_0, q8 → q8_0).
+    const type = cache === "q4" ? "q4_0" : cache === "q8" ? "q8_0" : cache;
+    const perElement = bytesForCacheType(type) ?? 2;
+    return 2 * facts!.layers * facts!.kvHeads * facts!.headDim * perElement;
+  };
+  const ctxs = HEATMAP_CTXS.filter((ctx) => ctx <= facts!.maxCtx);
+  const grid = (ctxs.length ? ctxs : [HEATMAP_CTXS[0]]).map((ctx) => ({
+    ctx,
+    cells: caches.map((c) => modelBytes + ctx * kvBytesPerToken(c)),
+  }));
+  return {
+    modelId: ref.id,
+    ramInstalledGB: installedRamGB(),
+    ramAvailable: availableRamBytes(),
+    fixedBytes: modelBytes,
+    modelBytes,
+    mmprojBytes: 0,
+    overheadBytes: 0,
+    kvLayers: facts.layers,
+    maxCtx: facts.maxCtx,
+    caches,
+    grid,
+  };
 }
 
 // ── Autotune ────────────────────────────────────────────────────────────────

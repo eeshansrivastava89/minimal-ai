@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.10.0] - 2026-09-04
+
+### Added
+- Added context×cache heatmaps for oMLX and Ollama on the configuration tab (moved from the overview tab), using the CLI estimator's canonical per-element byte factors.
+- Added the oMLX heatmap: derived from the model's own config.json on disk (works with the server down), KV axis is turboquant (bf16/q4/q8).
+- Added the Ollama heatmap: derived from /api/show when the server is up, with an honest empty state when it's down.
+- Added live running-model awareness: backends report loaded/running models (oMLX admin API, Ollama /api/ps, per-profile probes for llama.cpp).
+- Added the running signal to the sidebar spinner, models-page rows, model-page header, and homepage backend cards — including sessions started with the copied pi command.
+
 ## [3.9.0] - 2026-09-04
 
 ### Changed
@@ -19,6 +28,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 
 ### Added
 - Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
+## [3.10.0] - 2026-09-04
+
+### Added
+- Added context×cache heatmaps for oMLX and Ollama on the configuration tab (moved from the overview tab), using the CLI estimator's canonical per-element byte factors.
+- Added the oMLX heatmap: derived from the model's own config.json on disk (works with the server down), KV axis is turboquant (bf16/q4/q8).
+- Added the Ollama heatmap: derived from /api/show when the server is up, with an honest empty state when it's down.
+- Added live running-model awareness: backends report loaded/running models (oMLX admin API, Ollama /api/ps, per-profile probes for llama.cpp).
+- Added the running signal to the sidebar spinner, models-page rows, model-page header, and homepage backend cards — including sessions started with the copied pi command.
 
 ## [3.9.0] - 2026-09-04
 

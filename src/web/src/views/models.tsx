@@ -23,7 +23,9 @@ const COLS = (
   </colgroup>
 );
 
-function ModelTable({ rows, navigate }: { rows: ModelSummary[]; navigate: Navigate }) {
+// A model is running when its backend reports it loaded — hub jobs and
+// copy-pasted pi sessions alike.
+function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running: (m: ModelSummary) => boolean; navigate: Navigate }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -51,7 +53,9 @@ function ModelTable({ rows, navigate }: { rows: ModelSummary[]; navigate: Naviga
                   {r.status === "draft" || r.status === "helper" ? "—" : <CapabilityBadges caps={r.capabilities} />}
                 </TableCell>
                 <TableCell>
-                  {r.status === "ready" ? (
+                  {running(r) ? (
+                    <StatusBadge status="active">running</StatusBadge>
+                  ) : r.status === "ready" ? (
                     <StatusBadge status="ok">ready</StatusBadge>
                   ) : r.status === "setup" ? (
                     <StatusBadge status="needs-setup">needs setup</StatusBadge>
@@ -103,6 +107,16 @@ export function Models({ navigate }: { navigate: Navigate }) {
     return `${n} model${n === 1 ? "" : "s"} · ${b?.up ? b.version ?? "running" : "not running"}`;
   };
   const bucket = (id: string) => (data?.models ?? []).filter((m) => m.backend === id);
+  // Running = the backend reports this exact model id loaded (llama.cpp's
+  // server reports the profile alias, so that matches too).
+  const runningFor = (backendId: string) => {
+    const b = backends.find((x) => x.id === backendId);
+    const ids = new Set(b?.runningModels ?? []);
+    if (ids.size === 0) return () => false;
+    const aliasFor = (m: ModelSummary) =>
+      (data?.profiles ?? []).find((p) => p.id === m.profileId)?.modelAlias;
+    return (m: ModelSummary) => ids.has(m.id) || (aliasFor(m) ? ids.has(aliasFor(m)!) : false);
+  };
 
   return (
     <div>
@@ -120,7 +134,7 @@ export function Models({ navigate }: { navigate: Navigate }) {
         return (
           <Fragment key={id}>
             <SectionTitle title={label} meta={isLoading ? "…" : metaFor(id, rows.length)} />
-            <ModelTable rows={rows} navigate={navigate} />
+            <ModelTable rows={rows} running={runningFor(id)} navigate={navigate} />
           </Fragment>
         );
       })}
