@@ -258,7 +258,9 @@ export class JobRunner {
               buf = lines.pop() ?? "";
               for (const line of lines) {
                 if (!line.trim()) continue;
-                const mapped = opts?.stdoutTransform?.(line) ?? line;
+                // null from the transform MEANS "drop" — never fall back to
+                // the raw line (`??` here once dumped every dropped event).
+                const mapped = opts?.stdoutTransform ? opts.stdoutTransform(line) : line;
                 if (mapped != null && mapped.trim()) ctx.log(prefix ? `${prefix} ${mapped}` : mapped);
               }
             });

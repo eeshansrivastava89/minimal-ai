@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.8.1] - 2026-09-04
+
+### Fixed
+- Fixed the job log dumping raw pi JSON events: a `??` in the stream pipe treated the parser's "drop this line" as "no transform", so every discarded event printed raw (390 of 452 lines in a real run). Logs now read like a pi session — tool calls and the model's text as it types.
+
 ## [3.8.0] - 2026-09-04
 
 ### Added
