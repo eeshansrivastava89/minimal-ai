@@ -4,6 +4,16 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.8.2] - 2026-09-04
+
+### Added
+- Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
+## [3.8.2] - 2026-09-04
+
+### Added
+- Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
 ## [3.8.1] - 2026-09-04
 
 ### Fixed

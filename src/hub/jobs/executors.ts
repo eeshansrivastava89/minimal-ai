@@ -200,6 +200,7 @@ export interface LaunchOptions {
  *  stdout (banners, stub bins) passes through untouched. */
 function piEventLog() {
   let textBuf = "";
+  let thinkingBuf = "";
   return (line: string): string | null => {
     let ev: any;
     try {
@@ -227,6 +228,15 @@ function piEventLog() {
         return ev.isError ? `[pi] ✗ ${ev.toolName} failed` : null;
       case "message_update": {
         const delta = ev.assistantMessageEvent;
+        // Model text streams as it types; thinking streams dimmed
+        // ("… " prefix, like pi's TUI) as it thinks.
+        if (delta?.type === "thinking_delta" && typeof delta.delta === "string") {
+          thinkingBuf += delta.delta;
+          const parts = thinkingBuf.split("\n");
+          thinkingBuf = parts.pop() ?? "";
+          const lines = parts.filter((l) => l.trim());
+          return lines.length ? lines.map((l) => `[pi] … ${l.trim()}`).join("\n") : null;
+        }
         if (delta?.type === "text_delta" && typeof delta.delta === "string") {
           textBuf += delta.delta;
           const parts = textBuf.split("\n");
@@ -236,10 +246,12 @@ function piEventLog() {
         return null;
       }
       case "message_end": {
-        if (!textBuf.trim()) return null;
-        const out = textBuf;
+        const out: string[] = [];
+        if (thinkingBuf.trim()) out.push(`[pi] … ${thinkingBuf.trim()}`);
+        if (textBuf.trim()) out.push(textBuf);
+        thinkingBuf = "";
         textBuf = "";
-        return out;
+        return out.length ? out.join("\n") : null;
       }
       case "agent_end":
         return "[pi] agent finished";
