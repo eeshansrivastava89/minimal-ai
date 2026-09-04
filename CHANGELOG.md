@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.6.0] - 2026-09-03
+
+### Added
+- Added the Phase 5 autotune engine as a hub job (#28): one `autotune` job runs the CLI wizard — probe, config grid, snapshot, per-config sweep (safety layer unchanged: one model at a time, RAM gate, journal), recommendation, apply-or-discard, and an oMLX restart to reclaim memory.
+- Added a live sweep matrix on the model's autotune tab: progress, config-by-config medians, and cancel, all riding the jobs SSE (partial results publish through the job's metrics mid-run).
+- Added a read-only plan preview (`GET /api/models/:id/autotune/plan`) and a start endpoint (`POST /api/models/:id/autotune`), plus the live "New sweep" page rendering the plan grid with an apply-when-done switch.
+- Added the model's sweep job history to the autotune tab, and a "Recent activity" list of every job recorded against the model (launches, sweeps, benchmarks) on its overview tab.
+- Added one shared sweep-matrix component rendering all three states — plan (✓/–/NA), live, and results (★ on the pick).
+- Added job chaining's live sibling: `setMetrics` on the job context so executors publish structured progress mid-run.
+
+### Changed
+- Converted the autotune tab to live job state: a running sweep shows its matrix inline, and the finished recommendation polls in without a refresh; cancel takes effect between configs and always restores the snapshotted settings.
+
 ## [3.5.0] - 2026-09-03
 
 ### Added

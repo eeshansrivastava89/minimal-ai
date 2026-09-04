@@ -1,151 +1,105 @@
-import { useEffect, useState } from "react";
+// New autotune sweep — the live plan preview (probe + grid, read-only) and
+// the Start button that enqueues the sweep job. The same matrix component
+// renders the plan here and the live/results matrix on the model tab.
+
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { profileById } from "@/lib/lookup";
-import { StatusBadge } from "@/components/shared";
+import { api } from "@/api";
+import { SectionTitle, StatusBadge, SweepMatrix, type SweepConfig } from "@/components/shared";
 import type { Navigate } from "@/App";
 
-const SWEEP_CONFIGS = ["vanilla", "MTP on", "DFlash on", "thinking + budget", "MTP + thinking", "ANE prefill", "turboquant q4", "turboquant q8"];
+export function AutotuneNew({ modelRef, navigate }: { modelRef: string; navigate: Navigate }) {
+  const { data: detail } = useQuery({ queryKey: ["model", modelRef], queryFn: () => api.model(modelRef) });
+  const { data: plan, isLoading, error } = useQuery({
+    queryKey: ["autotunePlan", modelRef],
+    queryFn: () => api.autotunePlan(modelRef),
+  });
+  const [apply, setApply] = useState(true);
+  const [starting, setStarting] = useState(false);
 
-export function AutotuneNew({ modelId, navigate }: { modelId: string; navigate: Navigate }) {
-  const profile = profileById(modelId);
-  const model = profile?.modelAlias ?? "";
-  const [step, setStep] = useState<"form" | "probe" | "sweep" | "done">("form");
-  const [warm, setWarm] = useState("4");
-  const [progress, setProgress] = useState(0);
+  const back = () => navigate("model", { modelId: modelRef, tab: "autotune" });
 
-  const medians = model.includes("27B")
-    ? [13.3, null, 17.2, 14.0, null, 14.2, 13.7, 13.7]
-    : model.includes("4B")
-      ? [57.5, null, null, 54.9, null, 56.1, 56.25, 54.45]
-      : [31.95, 38.5, 28.35, 30.15, 47.95, 31.0, 31.0, 30.5];
-
-  useEffect(() => {
-    if (step !== "sweep") return;
-    const iv = setInterval(() => {
-      setProgress((p) => {
-        const next = p + 100 / SWEEP_CONFIGS.length;
-        if (next >= 100) {
-          clearInterval(iv);
-          setStep("done");
-          return 100;
-        }
-        return next;
-      });
-    }, 400);
-    return () => clearInterval(iv);
-  }, [step]);
-
-  if (!profile) {
-    return (
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
-        <p className="mt-1 text-sm text-muted-foreground">No profile "{modelId}".</p>
-      </div>
-    );
-  }
-
-  const back = () => navigate("model", { modelId, tab: "autotune" });
+  const start = async () => {
+    setStarting(true);
+    try {
+      await api.autotuneStart(modelRef, apply);
+      toast("Sweep queued — live progress on the model page");
+      navigate("model", { modelId: modelRef, tab: "autotune" });
+    } catch (err) {
+      toast((err as Error).message);
+      setStarting(false);
+    }
+  };
 
   return (
     <div>
       <h1 className="text-3xl font-semibold tracking-tight">New autotune sweep</h1>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        <strong className="text-foreground">{profile.label}</strong> — a sweep measures ~8 configs against the live
-        oMLX server, each a cold load + warm runs, then recommends the fastest.
+        <strong className="text-foreground">{detail?.profile?.label ?? detail?.title ?? modelRef}</strong> — a sweep
+        measures every config in the grid against the live oMLX server (one model loaded at a time, RAM-gated), then
+        recommends the fastest.
       </p>
 
-      {step === "form" && (
-        <Card className="mt-4 max-w-xl">
-          <CardHeader>
-            <CardTitle>Configure the sweep</CardTitle>
-            <CardDescription>{model} on the oMLX server.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label>Warm runs per config</Label>
-              <Select value={warm} onValueChange={setWarm}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["2", "4", "6"].map((w) => (
-                    <SelectItem key={w} value={w}>{w}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={back}>Back</Button>
-              <Button onClick={() => setStep("probe")}>Probe &amp; plan</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {step === "probe" && (
-        <Card className="mt-4 max-w-xl">
-          <CardHeader>
-            <CardTitle>Probe results</CardTitle>
-            <CardDescription>{model} on the oMLX server.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Table>
-              <TableBody>
-                {[
-                  ["MTP", "compatible"],
-                  ["DFlash", `compatible (draft z-lab/${model.includes("27B") ? "Qwen3.8-27B-DFlash2" : "Qwen3.5-9B-DFlash"})`],
-                  ["Thinking default", "true"],
-                  ["Tested configs", "8/8"],
-                ].map(([k, v]) => (
-                  <TableRow key={k}>
-                    <TableCell className="w-44 text-muted-foreground">{k}</TableCell>
-                    <TableCell className="text-foreground">{v}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <p className="text-xs text-muted-foreground">Estimated total ~{model.includes("27B") ? "64" : "48"}m across 8 configs.</p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep("form")}>Back</Button>
-              <Button onClick={() => { setProgress(0); setStep("sweep"); }}>Start sweep</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {(step === "sweep" || step === "done") && (
-        <Card className="mt-4 max-w-xl">
-          <CardHeader>
-            <CardTitle>{step === "done" ? "Sweep complete" : "Sweep running"}</CardTitle>
-            <CardDescription>{model}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {SWEEP_CONFIGS.map((c, i) => {
-              const done = progress >= ((i + 1) / SWEEP_CONFIGS.length) * 100;
-              const m = medians[i];
-              return (
-                <div key={c} className="flex items-center gap-2 text-sm">
-                  <StatusBadge status={done ? (m == null ? "warn" : "ok") : "running"}>
-                    {done ? (m == null ? "skipped" : `${m.toFixed(1)} tps`) : "…"}
-                  </StatusBadge>
-                  <span className={done ? "text-foreground" : "text-muted-foreground"}>{c}</span>
-                </div>
-              );
-            })}
-            <Progress value={progress} className="mt-2" />
-            {step === "done" && (
-              <div className="mt-2 flex gap-2">
-                <Button onClick={() => toast("Recommendation applied — simulated")}>Apply recommendation</Button>
-                <Button variant="outline" onClick={back}>Back to model</Button>
+      <SectionTitle title="Plan" meta="read-only preview — nothing is changed yet" />
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Probing the oMLX server…</p>
+          ) : error ? (
+            <p className="text-sm text-destructive">{(error as Error).message}</p>
+          ) : !plan ? (
+            <p className="text-sm text-muted-foreground">No plan.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{plan.model.displayName}</span>
+                <StatusBadge status={plan.model.mtpCompatible ? "ok" : "warn"}>
+                  MTP {plan.model.mtpCompatible ? "compatible" : "off"}
+                </StatusBadge>
+                <StatusBadge status={plan.model.dflashCompatible ? "ok" : "warn"}>
+                  DFlash {plan.model.dflashCompatible ? "compatible" : "off"}
+                </StatusBadge>
+                <span>{plan.testedCount} of {plan.rows.length} configs will be measured</span>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              <SweepMatrix configs={plan.rows as SweepConfig[]} />
+              <p className="text-xs text-muted-foreground">
+                ✓ will measure · – compatible, not measured · NA not possible. The sweep unloads between configs and
+                restores your settings at the end (or applies the recommendation).
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <SectionTitle title="Start" />
+      <Card className="max-w-xl">
+        <CardHeader>
+          <CardTitle>Run the sweep</CardTitle>
+          <CardDescription>One job in the queue — progress and the live matrix stream on the model page.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <Switch id="apply" checked={apply} onCheckedChange={setApply} />
+            <Label htmlFor="apply">Apply the recommendation when the sweep finishes</Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {apply
+              ? "The winning config is PUT to the server (echo-verified) and applied to the profile's oMLX settings."
+              : "Your current settings are restored when the sweep finishes; the recommendation is saved for later."}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={back}>Back</Button>
+            <Button onClick={start} disabled={starting || !plan}>
+              {starting ? "Queueing…" : "Start sweep"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

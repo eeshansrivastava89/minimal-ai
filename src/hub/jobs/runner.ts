@@ -37,6 +37,8 @@ export interface JobContext {
   spawnOwned(cmd: string, argv: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<SpawnResult>;
   /** Enqueue a follow-up job (benchmark chaining: launch → capture/score). */
   enqueue(input: EnqueueInput): Promise<Job>;
+  /** Publish partial metrics mid-run (live sweep matrix rides the jobs SSE). */
+  setMetrics(metrics: Record<string, unknown>): void;
 }
 
 export type Executor = (ctx: JobContext) => Promise<Record<string, unknown> | void>;
@@ -213,6 +215,10 @@ export class JobRunner {
       job: this.store.get(id)!,
       signal: controller.signal,
       enqueue: (input) => this.enqueue(input),
+      setMetrics: (metrics) => {
+        this.store.update(id, { metrics });
+        this.emitJobs();
+      },
       log: (line) => {
         void appendFile(logPath, `${line}\n`).catch(() => {});
         notify(line);

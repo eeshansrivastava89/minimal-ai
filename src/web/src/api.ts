@@ -2,6 +2,7 @@
 // Used through TanStack Query; every function throws on non-2xx.
 
 import type {
+  AutotunePlan,
   AutotuneRun,
   BackendStatus,
   Benchmark,
@@ -80,6 +81,12 @@ export const api = {
     send<{ opened: boolean; scriptPath: string }>(`/api/models/${seg(ref)}/terminal`, "POST"),
   hfQuants: (repo: string) =>
     get<{ repo: string; files: { path: string; sizeBytes: number }[] }>(`/api/hf/quants?repo=${seg(repo)}`),
+
+  // ── Autotune (Phase 5) ────────────────────────────────────────────────────
+  autotunePlan: (ref: string) =>
+    get<AutotunePlan>(`/api/models/${seg(ref)}/autotune/plan`),
+  autotuneStart: (ref: string, apply: boolean) =>
+    send<Job>(`/api/models/${seg(ref)}/autotune`, "POST", { apply }),
 
   // ── Benchmark engine (Phase 4) ──────────────────────────────────────────────
   benchmarkLaunch: (ref: string, benchmarkId: string, opts?: { keepServer?: boolean; thinking?: string }) =>

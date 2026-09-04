@@ -3,7 +3,7 @@
 // live logs via per-job SSE. Cancel while queued/running; restart anything.
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { api } from "@/api";
+import { useJobsLive } from "@/hooks/use-jobs";
 import { fmtBytes } from "@/lib/format";
 import { SectionTitle, StatusBadge } from "@/components/shared";
 import type { Job } from "@/data/types";
@@ -21,21 +22,6 @@ const RESTARTABLE = new Set(["failed", "cancelled", "interrupted"]);
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-/** One SSE-driven live query: initial fetch, then /api/jobs/stream updates. */
-function useJobsLive() {
-  const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["jobs"], queryFn: api.jobs });
-  useEffect(() => {
-    const es = new EventSource("/api/jobs/stream");
-    es.addEventListener("jobs", (e) => {
-      queryClient.setQueryData(["jobs"], JSON.parse((e as MessageEvent).data) as Job[]);
-    });
-    es.onerror = () => es.close();
-    return () => es.close();
-  }, [queryClient]);
-  return { jobs: data, isLoading };
 }
 
 /** Live tail of one job's log while it's active (initial content + stream). */

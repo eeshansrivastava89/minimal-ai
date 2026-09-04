@@ -34,6 +34,28 @@ export interface SetupInfo {
   maxCtx?: number;
 }
 
+// Autotune plan preview (GET /api/models/:id/autotune/plan) — probe + grid,
+// read-only. Rows feed the shared SweepMatrix (median null = planned).
+export interface AutotunePlan {
+  model: {
+    id: string;
+    displayName: string;
+    mtpCompatible: boolean;
+    dflashCompatible: boolean;
+    thinkingDefault: string | null;
+  };
+  rows: {
+    id: string;
+    label: string;
+    family: string;
+    settings: Record<string, unknown>;
+    tested: boolean;
+    skipReason?: string;
+    estMinutes?: number;
+  }[];
+  testedCount: number;
+}
+
 // Static mock snapshot — only pages not yet on live data read this
 // (jobs, learn, settings, and the Phase 3–5 write flows).
 export interface HubData {

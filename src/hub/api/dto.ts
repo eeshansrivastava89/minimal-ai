@@ -94,9 +94,25 @@ export const ExportDto = z
   })
   .strict();
 
+export const AutotuneStartDto = z
+  .object({
+    apply: z.boolean().default(true),
+  })
+  .strict();
+
 export const JobEnqueueDto = z
   .object({
-    type: z.enum(["download", "setup", "launch", "benchmark", "capture", "score", "comparison-video", "export"]),
+    type: z.enum([
+      "download",
+      "setup",
+      "launch",
+      "benchmark",
+      "capture",
+      "score",
+      "comparison-video",
+      "export",
+      "autotune",
+    ]),
     ref: z.string().optional(),
     title: z.string().max(200).optional(),
     payload: z.record(z.string(), z.unknown()).optional(),

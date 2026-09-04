@@ -36,6 +36,7 @@ import {
 import { parseModelRef } from "./api/model-ref.ts";
 import {
   BenchmarkLaunchDto,
+  AutotuneStartDto,
   CaptureDto,
   ComparisonVideoDto,
   DownloadDto,
@@ -58,6 +59,7 @@ import {
   exportExecutor,
   scoreExecutor,
 } from "./jobs/benchmark-executors.ts";
+import { autotuneExecutor, omlxDefaultBaseUrl, probeForSweep } from "./jobs/autotune-executors.ts";
 import { JobRunner } from "./jobs/runner.ts";
 import { toJobDto } from "./jobs/store.ts";
 import { deleteRunDirectory } from "./benchmark-core/runs.ts";
@@ -269,7 +271,9 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
                     ? ComparisonVideoDto.safeParse(payload)
                     : type === "export"
                       ? ExportDto.safeParse(payload)
-                      : SetupFormDto.safeParse(payload);
+                      : type === "autotune"
+                        ? AutotuneStartDto.safeParse(payload)
+                        : SetupFormDto.safeParse(payload);
       if (!typed.success) return zodError(c, typed.error.issues);
       const job = await runner.enqueue({
         type,
@@ -469,6 +473,65 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     return c.json(toJobDto(job), 201);
   });
 
+  // ── Autotune (Phase 5) ─────────────────────────────────────────────────────
+
+  // Plan preview: probe + grid, read-only (the MTPLX side-car import the real
+  // sweep performs is skipped so a preview never mutates the server).
+  app.get("/api/models/:id/autotune/plan", async (c) => {
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    if (ref.backend !== "omlx") return c.json({ error: `autotune is an oMLX workflow — this model runs on ${ref.backend}` }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    const { profiles } = await catalog();
+    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
+    const baseUrl = profile?.baseUrl ?? omlxDefaultBaseUrl();
+    try {
+      const { model, rows } = await probeForSweep(baseUrl, ref.id, { importSidecar: false });
+      return c.json({
+        model: {
+          id: model.id,
+          displayName: model.displayName,
+          mtpCompatible: model.mtpCompatible,
+          dflashCompatible: model.dflashCompatible,
+          thinkingDefault: model.thinkingDefault,
+        },
+        rows: rows.map((r: any) => ({
+          id: r.id,
+          label: r.label,
+          family: r.family,
+          settings: r.settings,
+          tested: r.tested,
+          ...(r.skipReason ? { skipReason: r.skipReason } : {}),
+          ...(r.estMinutes ? { estMinutes: r.estMinutes } : {}),
+        })),
+        testedCount: rows.filter((r: any) => r.tested).length,
+      });
+    } catch (err) {
+      return c.json({ error: String((err as Error).message ?? err) }, 502);
+    }
+  });
+
+  // Start the sweep: one job — probe, snapshot, sweep, recommend, apply (or
+  // discard), reclaim. Progress + the live matrix ride the jobs SSE.
+  app.post("/api/models/:id/autotune", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    if (ref.backend !== "omlx") return c.json({ error: `autotune is an oMLX workflow — this model runs on ${ref.backend}` }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    const dto = AutotuneStartDto.safeParse(await c.req.json().catch(() => ({})));
+    if (!dto.success) return zodError(c, dto.error.issues);
+    const job = await runner.enqueue({
+      type: "autotune",
+      ref: detail.ref,
+      title: `Autotune ${detail.profile?.label ?? detail.title}`,
+      payload: dto.data as Record<string, unknown>,
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
   // Open in Terminal: the hub writes a start script and asks the OS to open
   // Terminal with it. The hub never owns the process — read-back stays
   // backend-level (server up? model loaded?), same as the plan.
@@ -526,6 +589,7 @@ function createRunner(): JobRunner {
   runner.registerExecutor("score", scoreExecutor());
   runner.registerExecutor("comparison-video", comparisonVideoExecutor());
   runner.registerExecutor("export", exportExecutor());
+  runner.registerExecutor("autotune", autotuneExecutor());
   return runner;
 }
 

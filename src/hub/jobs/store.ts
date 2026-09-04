@@ -19,7 +19,8 @@ export type JobType =
   | "capture"
   | "score"
   | "comparison-video"
-  | "export";
+  | "export"
+  | "autotune";
 export type JobStatus =
   | "queued"
   | "running"

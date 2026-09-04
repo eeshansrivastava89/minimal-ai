@@ -7,9 +7,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { api } from "@/api";
-import { fmtBytes, fmtCtx } from "@/lib/format";
+import { fmtBytes, fmtCtx, fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { BackendBadge, CapabilityBadges, SectionTitle, StatCard } from "@/components/shared";
+import { BackendBadge, CapabilityBadges, SectionTitle, StatCard, StatusBadge } from "@/components/shared";
+import { useJobsLive } from "@/hooks/use-jobs";
 import { ModelAutotune } from "@/views/model-autotune";
 import { ModelBenchmark } from "@/views/model-benchmark";
 import { ModelLogs } from "@/views/model-logs";
@@ -186,7 +187,48 @@ function OverviewTab({
           )}
         </CardContent>
       </Card>
+
+      <RecentActivity modelRef={detail.ref} navigate={navigate} />
     </div>
+  );
+}
+
+/** Every job recorded against this model — launches, sweeps, benchmarks.
+ *  The spine law: a job names its parent; this is the model's own record. */
+function RecentActivity({ modelRef, navigate }: { modelRef: string; navigate: Navigate }) {
+  const { jobs } = useJobsLive();
+  const rows = (jobs ?? []).filter((j) => j.ref === modelRef).slice(0, 8);
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <SectionTitle
+        title="Recent activity"
+        meta="jobs recorded against this model"
+        action={
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("jobs")}>
+            All jobs
+          </Button>
+        }
+      />
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableBody>
+              {rows.map((j) => (
+                <TableRow key={j.id}>
+                  <TableCell className="font-medium text-foreground">{j.title}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{j.type}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={j.status} />
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{fmtRelative(j.createdAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
@@ -298,7 +340,7 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
         )}
         {tab === "configuration" && <ConfigurationTab detail={detail} navigate={navigate} />}
         {tab === "logs" && <ModelLogs logs={logs} />}
-        {tab === "autotune" && <ModelAutotune backend={detail.backend} run={autotune ?? null} profile={profile} navigate={navigate} />}
+        {tab === "autotune" && <ModelAutotune backend={detail.backend} run={autotune ?? null} profile={profile} modelRef={id} navigate={navigate} />}
         {tab === "benchmark" && <ModelBenchmark runs={runs} profile={profile} navigate={navigate} />}
       </div>
     </div>

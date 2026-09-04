@@ -72,13 +72,6 @@ export function useNav(): Navigate {
   };
 }
 
-// Mock pages key on profile id (or raw model id), not refs — convert.
-function useMockId(ref: string): string {
-  const { data } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
-  const m = data?.models.find((x) => x.ref === ref);
-  return m?.profileId ?? (ref.includes(":") ? decodeURIComponent(ref.slice(ref.indexOf(":") + 1)) : ref);
-}
-
 const rootRoute = createRootRoute({ component: App });
 
 const indexRoute = createRoute({
@@ -110,7 +103,7 @@ function SetupPage() {
 
 function AutotuneNewPage() {
   const { id } = useParams({ from: autotuneNewRoute.id });
-  return <AutotuneNew modelId={useMockId(id)} navigate={useNav()} />;
+  return <AutotuneNew modelRef={id} navigate={useNav()} />;
 }
 
 function BenchmarkNewPage() {
