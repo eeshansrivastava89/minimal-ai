@@ -271,6 +271,8 @@ function ConfigurationTab({ detail, heatmap, ramBytes, navigate }: { detail: Mod
 }
 
 export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; navigate: Navigate }) {
+  const queryClient = useQueryClient();
+  const [stopping, setStopping] = useState(false);
   const { data: detail, isLoading, error } = useQuery({ queryKey: ["model", id], queryFn: () => api.model(id) });
   const { data: setup } = useQuery({ queryKey: ["setup", id], queryFn: () => api.setup(id) });
   const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
@@ -300,15 +302,36 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
   const alias = profile?.modelAlias;
   const runningNow = runningIds.has(detail.id) || (alias ? runningIds.has(alias) : false);
 
+  const stopModel = async () => {
+    if (!window.confirm(`Stop ${profile?.label ?? detail.title}? Any active session using it will end.`)) return;
+    setStopping(true);
+    try {
+      const r = await api.stopModel(detail.ref);
+      toast(r.stopped ? r.message : `Could not stop: ${r.message}`);
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+      await queryClient.invalidateQueries({ queryKey: ["model", detail.ref] });
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   return (
     <div>
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{profile?.label ?? detail.title}</h1>
-        <span className="text-sm text-muted-foreground">{detail.id}</span>
+        <span className="min-w-0 truncate text-sm text-muted-foreground">{detail.id}</span>
         {runningNow && (
-          <span className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-            <Spinner /> running now
+          <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-green-500/15 px-3 py-1 text-sm font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
+            <span className="size-2 animate-pulse rounded-full bg-green-500" />
+            running now
           </span>
+        )}
+        {runningNow && (
+          <Button variant="destructive" size="sm" disabled={stopping} onClick={stopModel}>
+            {stopping ? "Stopping…" : "Stop model"}
+          </Button>
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">

@@ -74,6 +74,8 @@ export const api = {
   restartJob: (id: string) => send<Job>(`/api/jobs/${seg(id)}/restart`, "POST"),
 
   // ── Model write actions ──────────────────────────────────────────────────
+  stopModel: (ref: string) =>
+    send<{ stopped: boolean; message: string }>(`/api/models/${seg(ref)}/stop`, "POST"),
   setupProfile: (ref: string, form: Record<string, unknown>) =>
     send<Job>(`/api/models/${seg(ref)}/profile`, "PUT", form),
   removeProfile: (ref: string) => send<unknown>(`/api/models/${seg(ref)}/profile`, "DELETE"),

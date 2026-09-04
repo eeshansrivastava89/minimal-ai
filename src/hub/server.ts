@@ -14,6 +14,7 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 
 import { deleteProfile } from "../profiles.mjs";
+import { stopProfile, unloadModelFromServer } from "../server-lifecycle.mjs";
 import { configuredHarness } from "../harnesses.mjs";
 import { getHfTree, listGgufFiles } from "../huggingface.mjs";
 
@@ -302,6 +303,28 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     } catch (err) {
       return c.json({ error: String((err as Error).message ?? err) }, 502);
     }
+  });
+
+  // Stop/unload a running model — the inverse of the copied launch command.
+  // oMLX/Ollama unload via their admin APIs; llama.cpp stops the tracked
+  // server (SIGTERM → SIGKILL), refusing honestly when the hub doesn't own
+  // the process. Soft results (unload refused, no tracked pid) come back
+  // 200 with the reason — the UI surfaces it.
+  app.post("/api/models/:id/stop", async (c) => {
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const { profiles } = await catalog();
+    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
+    if (!profile) return c.json({ error: "no saved profile for this model" }, 404);
+    if (ref.backend === "llama-cpp") {
+      const result: any = await stopProfile(profile);
+      return c.json({ stopped: result.stopped, message: result.message });
+    }
+    const result: any = await unloadModelFromServer(profile);
+    return c.json({
+      stopped: Boolean(result.unloaded),
+      message: result.unloaded ? `${profile.label} unloaded` : (result.reason ?? result.error ?? "unload failed"),
+    });
   });
 
   // Setup/reconfigure: a job (it touches the network for HF sampler recs

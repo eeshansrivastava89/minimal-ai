@@ -7,7 +7,7 @@
 // sits on PATH before any hub import (config.mjs snapshots the env).
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -49,6 +49,11 @@ function waitFor(predicate, timeoutMs = 15_000, stepMs = 25) {
     tick();
   });
 }
+
+// Stub servers tracked + closed after the file so a mid-test failure can't
+// leak a listener and hang the node --test child process.
+const stubServers = [];
+after(() => { for (const s of stubServers) s.close(); });
 
 function newRunner(name, executors = {}) {
   const runner = new JobRunner({ store: new JobStore(dbPath(name), logDir) });
@@ -230,6 +235,69 @@ test("setup executor: form overrides land on the saved profile", async () => {
   assert.equal(saved.flags.temperature, 0.6);
   assert.equal(saved.thinkingLevel, "low");
   assert.equal(saved.flags.flashAttention, "on");
+});
+
+// ── stop/unload endpoint (stub oMLX admin server) ───────────────────────────
+
+test("POST /api/models/:id/stop unloads a running managed model", async () => {
+  assert.equal(homedir(), HOME, "HOME sandbox not in effect — refusing to run");
+  // A model on disk (catalog source) + a stub oMLX admin API for the unload.
+  const mlxDir = join(HOME, ".omlx", "models", "Stub-9B");
+  mkdirSync(mlxDir, { recursive: true });
+  writeFileSync(join(mlxDir, "config.json"), JSON.stringify({ model_type: "qwen3" }));
+  writeFileSync(join(mlxDir, "model.safetensors"), "stub");
+  const unloadCalls = [];
+  const server = createServer((req, res) => {
+    if (req.method === "POST" && /\/admin\/api\/models\/[^/]+\/unload$/.test(req.url)) {
+      unloadCalls.push(req.url);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ unloaded: true }));
+      return;
+    }
+    if (req.method === "GET" && req.url.endsWith("/v1/models")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "Stub-9B" }] }));
+      return;
+    }
+    res.writeHead(404);
+    res.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  stubServers.push(server);
+  const port = server.address().port;
+
+  const profilesDir = join(DATA, "profiles", "stub-stop");
+  mkdirSync(profilesDir, { recursive: true });
+  writeFileSync(
+    join(profilesDir, "profile.json"),
+    JSON.stringify({
+      id: "stub-stop",
+      label: "Stub Stop",
+      backend: "omlx",
+      providerId: "omlx",
+      modelAlias: "Stub-9B",
+      omlxModel: "Stub-9B",
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      capabilities: {},
+    })
+  );
+
+  const runner = newRunner("stop", { stub: async () => ({}) });
+  const app = createApp({ runner });
+  const ref = `omlx:Stub-9B`;
+  const res = await app.request(`/api/models/${ref}/stop`, { method: "POST" });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.stopped, true, JSON.stringify(body));
+  assert.equal(unloadCalls.length, 1);
+  assert.match(unloadCalls[0], /Stub-9B\/unload$/);
+
+  // Unknown model → 404, no unload call.
+  assert.equal(
+    (await app.request(`/api/models/omlx:ghost-model/stop`, { method: "POST" })).status,
+    404
+  );
+  assert.equal(unloadCalls.length, 1);
 });
 
 // ── API contracts (Zod DTOs at the write seam) ─────────────────────────────

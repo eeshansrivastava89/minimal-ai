@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.12.0] - 2026-09-04
+
+### Added
+- Added stop/unload for running models: `POST /api/models/:id/stop` unloads oMLX and Ollama models via their admin APIs and stops a tracked llama.cpp server (SIGTERM → SIGKILL), refusing honestly when the hub doesn't own the process.
+- Added the stop action where running models show: a Stop button next to Open in the models table (running rows only) and a Stop model button beside the running-now pill on the model page.
+
+### Changed
+- Changed the model page's running indicator to a prominent green pill on the right of the header with a pulsing dot — the small inline spinner is gone.
+
 ## [3.11.0] - 2026-09-04
 
 ### Changed
@@ -34,6 +43,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 
 ### Added
 - Added the model's thinking to job logs: reasoning deltas stream dimmed with a `[pi] …` prefix (pi TUI style) while the model thinks, before its answer.
+
+## [3.12.0] - 2026-09-04
+
+### Added
+- Added stop/unload for running models: `POST /api/models/:id/stop` unloads oMLX and Ollama models via their admin APIs and stops a tracked llama.cpp server (SIGTERM → SIGKILL), refusing honestly when the hub doesn't own the process.
+- Added the stop action where running models show: a Stop button next to Open in the models table (running rows only) and a Stop model button beside the running-now pill on the model page.
+
+### Changed
+- Changed the model page's running indicator to a prominent green pill on the right of the header with a pulsing dot — the small inline spinner is gone.
 
 ## [3.11.0] - 2026-09-04
 

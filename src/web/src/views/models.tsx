@@ -1,9 +1,10 @@
-import { Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/api";
+import { toast } from "sonner";
 import { fmtBytes, fmtCtx } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CapabilityBadges, SectionTitle, StatusBadge } from "@/components/shared";
@@ -26,6 +27,29 @@ const COLS = (
 
 // A model is running when its backend reports it loaded — hub jobs and
 // copy-pasted pi sessions alike.
+function StopButton({ ref, label }: { ref: string; label: string }) {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const stop = async () => {
+    if (!window.confirm(`Stop ${label}? Any active session using it will end.`)) return;
+    setBusy(true);
+    try {
+      const r = await api.stopModel(ref);
+      toast(r.stopped ? r.message : `Could not stop: ${r.message}`);
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="destructive" disabled={busy} onClick={stop}>
+      {busy ? "Stopping…" : "Stop"}
+    </Button>
+  );
+}
+
 function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running: (m: ModelSummary) => boolean; navigate: Navigate }) {
   return (
     <Card>
@@ -79,15 +103,20 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {r.status === "setup" ? (
-                    <Button size="sm" variant="outline" onClick={() => navigate("setupNew", { modelId: r.ref, tab: r.backend })}>
-                      Set up
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: r.ref })}>
-                      Open
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-end gap-1.5">
+                    {running(r) && (
+                      <StopButton ref={r.ref} label={r.title} />
+                    )}
+                    {r.status === "setup" ? (
+                      <Button size="sm" variant="outline" onClick={() => navigate("setupNew", { modelId: r.ref, tab: r.backend })}>
+                        Set up
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: r.ref })}>
+                        Open
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
               );
