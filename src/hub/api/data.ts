@@ -12,14 +12,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BACKENDS, backendFor } from "../../backends.mjs";
-import { loadConfig } from "../../config.mjs";
+import { loadConfig, getModelScanDirs } from "../../config.mjs";
+import { listHarnesses } from "../../harnesses.mjs";
 import { prepareMemoryEstimate, computeMemoryTotal } from "../../estimate.mjs";
 import { readOmlxModelSettings, scanOmlxModelSizes } from "../../mlx-discovery.mjs";
 import { installedRamGB, availableRamBytes } from "../../hardware.mjs";
 import { findLlamaServer } from "../../config.mjs";
-import { DATA_DIR, LOG_DIR } from "../../config.mjs";
+import { DATA_DIR, HF_HUB_DIR, LOG_DIR } from "../../config.mjs";
 import { loadProfiles } from "../../profiles.mjs";
-import { scanGgufModels } from "../../scan.mjs";
+import { scanGgufModels, scanOllamaModels } from "../../scan.mjs";
 
 import { slugModelId } from "../benchmark-core/paths.ts";
 import { listRunMetadata } from "../benchmark-core/runs.ts";
@@ -38,6 +39,7 @@ import type {
   ModelSummary,
   Profile,
   Run,
+  Settings,
 } from "./types.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -192,8 +194,34 @@ export async function catalog(): Promise<{
     });
   }
 
+  // Ollama: disk is the catalog (manifests under ~/.ollama/models — works
+  // with the server down, same policy as oMLX); live tags enrich with
+  // capabilities and reported sizes when the server is up.
+  const liveOllama = new Map(ollama.models.map((m) => [String(m.name ?? m.model), m]));
+  const ollamaNames = new Set<string>();
+  for (const disk of await scanOllamaModels()) {
+    ollamaNames.add(disk.name);
+    const live = liveOllama.get(disk.name);
+    const caps: Record<string, unknown> = Object.fromEntries(
+      (Array.isArray(live?.capabilities) ? live!.capabilities : []).map((c: string) => [c, true])
+    );
+    if (live?.details?.quantization_level) caps.quant = live.details.quantization_level;
+    const profile = profiles.find((p) => profileMatchesModel(p, "ollama", disk.name));
+    models.push({
+      ref: formatModelRef({ backend: "ollama", id: disk.name }),
+      backend: "ollama",
+      id: disk.name,
+      title: disk.name,
+      sizeBytes: (typeof live?.size === "number" ? live.size : disk.sizeBytes) || profile?.modelSizeBytes,
+      contextLength: profile?.capabilities?.contextLength as number | undefined,
+      capabilities: profile?.capabilities ?? (Object.keys(caps).length ? caps : {}),
+      status: profile ? "ready" : "setup",
+      profileId: profile?.id,
+    });
+  }
   for (const m of ollama.models) {
     const id = String(m.name ?? m.model);
+    if (ollamaNames.has(id)) continue; // already covered from disk
     const profile = profiles.find((p) => profileMatchesModel(p, "ollama", id));
     const caps: Record<string, unknown> = Object.fromEntries(
       (Array.isArray(m.capabilities) ? m.capabilities : []).map((c: string) => [c, true])
@@ -605,20 +633,62 @@ export async function allBenchmarks(): Promise<Benchmark[]> {
   if (!runsRoot) return [];
   const benchmarksDir = join(dirname(runsRoot), "benchmarks");
   const { loadBenchmarks } = await import("../benchmark-core/benchmarks.ts");
+  let defs;
   try {
-    const defs = await loadBenchmarks(benchmarksDir);
-    return defs.map((d) => ({
-      id: d.id,
-      title: d.title,
-      // Benchmark frontmatter carries no kind field — the A/B analysis is
-      // the one data-science prompt (same rule as the CLI loader).
-      kind: d.id === "ab-test-analysis" ? "data-science" : "visual",
-      description: d.description,
-      prompt: d.prompt,
-    }));
-  } catch {
-    return [];
+    defs = await loadBenchmarks(benchmarksDir);
+  } catch (err) {
+    // A missing/unreadable dir is an honest empty catalog; a parse error
+    // (bad frontmatter, duplicate id) must not silently hide every prompt.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+    throw err;
   }
+  return defs.map((d) => ({
+    id: d.id,
+    title: d.title,
+    kind: d.id === "ab-test-analysis" ? "data-science" : "visual",
+    description: d.description,
+    prompt: d.prompt,
+  }));
+}
+
+// ── Settings (read model — real config, paths, harness, oMLX server) ────────
+
+export async function settingsInfo(): Promise<Settings> {
+  const config = await loadConfig();
+  const pkg = JSON.parse(await readFile(join(REPO_ROOT, "package.json"), "utf8"));
+  const scanDirs = await getModelScanDirs();
+  const runsRoot = await resolveRunsRoot();
+
+  // The oMLX app's own settings file — sections keyed, read-only display.
+  let omlxServerSettings: Record<string, Record<string, unknown>> | null = null;
+  try {
+    omlxServerSettings = JSON.parse(
+      await readFile(join(homedir(), ".omlx", "settings.json"), "utf8")
+    );
+  } catch {
+    /* oMLX not installed or settings not created yet */
+  }
+
+  return {
+    version: pkg.version,
+    dataDir: DATA_DIR,
+    logDir: LOG_DIR,
+    hfCacheDir: HF_HUB_DIR,
+    benchmarkRepoPath: config.benchmarkRepoPath ?? null,
+    benchmarkRepoFound: runsRoot != null,
+    scanDirs,
+    harness: config.harness,
+    harnesses: listHarnesses().map((h: any) => ({ id: h.id, label: h.label, active: h.id === config.harness })),
+    config: {
+      modelScanDirs: config.modelScanDirs ?? [],
+      binaryOverrides: config.binaryOverrides ?? {},
+      lastSeenVersion: config.lastSeenVersion ?? null,
+      enable_benchmarking: Boolean(config.enable_benchmarking),
+      enable_omlx: Boolean(config.enable_omlx),
+      enable_ollama: Boolean(config.enable_ollama),
+    },
+    omlxServerSettings,
+  };
 }
 
 // ── Logs ────────────────────────────────────────────────────────────────────

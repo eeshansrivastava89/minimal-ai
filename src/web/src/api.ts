@@ -14,6 +14,7 @@ import type {
   ModelsResponse,
   Profile,
   Run,
+  Settings,
   SetupInfo,
 } from "@/data/types";
 
@@ -52,6 +53,7 @@ const seg = encodeURIComponent;
 
 export const api = {
   machine: () => get<MachineInfo>("/api/machine"),
+  settings: () => get<Settings>("/api/settings"),
   backends: () => get<BackendStatus[]>("/api/backends"),
   models: () => get<ModelsResponse>("/api/models"),
   model: (ref: string) => get<ModelDetail>(`/api/models/${seg(ref)}`),

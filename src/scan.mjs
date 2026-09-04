@@ -1,10 +1,77 @@
 import { statSync } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { getModelScanDirs } from "./config.mjs";
 import { readGgufMetadataSafe, resolveQuant } from "./gguf.mjs";
 import { parseModelName } from "./model-name.mjs";
 import { inferSourceLabel, MIN_MODEL_SIZE_BYTES, EMBEDDING_MODEL_TYPES, drafterTargetHint } from "./discovery-shared.mjs";
+
+// ── Scan for Ollama models (disk-first; works with the server down) ─────
+//
+// Ollama stores models as OCI-ish manifests: ~/.ollama/models/manifests/
+// <registry>/<namespace>/<repo>/<tag> is one model (name "ns/repo:tag",
+// "library" ns dropped, matching how ollama itself displays names), and
+// ~/.ollama/models/blobs/sha256-<digest> holds the layers. Model size =
+// the sum of its unique blob sizes on disk. Same disk-first policy as
+// oMLX: the live /api/tags only enriches when the server is up.
+
+export async function scanOllamaModels() {
+  const manifestsRoot = join(homedir(), ".ollama", "models", "manifests");
+  const blobsRoot = join(homedir(), ".ollama", "models", "blobs");
+  const manifestPaths = await collectFiles(manifestsRoot);
+  const models = [];
+
+  for (const manifestPath of manifestPaths) {
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    } catch {
+      continue; // unreadable manifest — ollama would ignore it too
+    }
+    const rel = manifestPath.slice(manifestsRoot.length + 1).split("/");
+    if (rel.length < 4) continue; // not registry/ns/repo/tag — not a model
+    const registry = rel[0];
+    const ns = rel[1];
+    const tag = rel[rel.length - 1];
+    const repo = rel.slice(2, -1).join("/");
+    const name = `${ns === "library" ? "" : `${ns}/`}${repo}:${tag}`;
+
+    const digests = new Set([manifest.config?.digest]);
+    for (const layer of manifest.layers ?? []) digests.add(layer.digest);
+    let sizeBytes = 0;
+    for (const digest of digests) {
+      if (typeof digest !== "string") continue;
+      try {
+        sizeBytes += (await stat(join(blobsRoot, digest.replace(":", "-")))).size;
+      } catch {
+        /* missing blob (pruned/partial pull) — size is a lower bound */
+      }
+    }
+    models.push({ name, sizeBytes, registry, manifestPath });
+  }
+
+  return models.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function collectFiles(root) {
+  const out = [];
+  const walk = async (dir) => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isFile()) out.push(path);
+    }
+  };
+  await walk(root);
+  return out;
+}
 
 // ── Scan for GGUF models and MTP drafters ────────────────────────────────
 

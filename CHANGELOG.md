@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.7.0] - 2026-09-03
+
+### Added
+- Added an Ollama disk catalog (manifests + blob sizes under ~/.ollama/models) so the models page shows the Ollama bucket with the server down — same disk-first policy as oMLX, with live tags enriching when the server is up.
+- Added a live settings page backed by a new `GET /api/settings`: real config.json values, resolved scan paths, the harness list, and the oMLX app's own settings file.
+
+### Changed
+- Converted the Learn page to self-contained static prose — no mock-snapshot dependency (the content framework itself stays deferred to v4).
+- Made `/api/benchmarks` surface prompt-parse errors instead of silently returning an empty catalog; a missing benchmarks dir is still an honest `[]`.
+
+### Removed
+- Deleted the mock-data snapshot and its machinery: the generated data.json, the mock runs array, the lookup helpers, the extract script, and 143 fake preview images under public/previews.
+
 ## [3.6.0] - 2026-09-03
 
 ### Added

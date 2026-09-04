@@ -31,6 +31,7 @@ import {
   profileMatchesModel,
   resolveRunsRoot,
   runsFor,
+  settingsInfo,
   setupInfo,
 } from "./api/data.ts";
 import { parseModelRef } from "./api/model-ref.ts";
@@ -155,6 +156,8 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     const ref = parseModelRef(c.req.param("id"));
     return ref;
   }
+
+  app.get("/api/settings", async (c) => c.json(await settingsInfo()));
 
   app.get("/api/models/:id", async (c) => {
     const ref = refParam(c);

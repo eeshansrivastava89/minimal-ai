@@ -17,12 +17,15 @@ export type {
   ModelDetail,
   Benchmark,
   LogEntry,
+  Settings,
   Job,
   JobStatus,
   JobType,
 } from "@hub/api/types";
 
-import type { Profile, MemoryHeatmap, AutotuneRun, Benchmark } from "@hub/api/types";
+// Locally used for the SetupInfo shape below.
+import type { MemoryHeatmap, Profile } from "@hub/api/types";
+
 
 // Per-model setup read: heatmap (llama.cpp only) + the profile riding
 // along + detected capabilities / max context before a profile exists.
@@ -54,25 +57,4 @@ export interface AutotunePlan {
     estMinutes?: number;
   }[];
   testedCount: number;
-}
-
-// Static mock snapshot — only pages not yet on live data read this
-// (jobs, learn, settings, and the Phase 3–5 write flows).
-export interface HubData {
-  meta: { app: string; version: string; capturedAt: string; note: string };
-  hardware: { chip: string; ramBytes: number; ramLabel: string; metal: string; platform: string };
-  config: Record<string, unknown>;
-  backends: { id: string; label: string; type: string; port: number; baseUrl: string; version?: string }[];
-  omlxStatus: Record<string, unknown>;
-  profiles: Profile[];
-  omlxModels: { id: string; maxModelLen: number | null; kind: string }[];
-  ollamaModels: { id: string; sizeBytes: number; quant: string; capabilities: string[] }[];
-  ggufModels: Record<string, unknown>[];
-  memoryHeatmaps: MemoryHeatmap[];
-  autotune: AutotuneRun[];
-  benchmarks: Benchmark[];
-  omlxSettingKeys: { key: string; label: string; group: string }[];
-  omlxModelSettings: Record<string, Record<string, unknown>>;
-  omlxServerSettings: Record<string, Record<string, unknown>>;
-  learn: { id: string; title: string; tag: string; body: string }[];
 }

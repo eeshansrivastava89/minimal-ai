@@ -73,7 +73,10 @@ export async function downloadExecutor(ctx: JobContext) {
   // phase here — drafters can still be downloaded by naming the file.
   let extraFiles: string[] = [];
   if (plan.format === "gguf") {
-    const mmprojs = await listMmprojFiles(repo, { tree }).catch(() => []);
+    const mmprojs = await listMmprojFiles(repo, { tree }).catch((err) => {
+      ctx.log(`[hub] warning: could not list vision projectors (${(err as Error).message}) — skipping the auto-download`);
+      return [];
+    });
     if (mmprojs.length > 0) extraFiles.push(mmprojs[0].path);
   }
 

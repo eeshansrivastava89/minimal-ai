@@ -130,7 +130,60 @@ test("GET /api/media/run/... → 404 for missing, rejects bad names", async () =
   assert.equal(missing.status, 404);
 });
 
+test("GET /api/settings → real config + resolved paths", async () => {
+  const res = await get("/api/settings");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(typeof body.version, "string");
+  assert.equal(typeof body.dataDir, "string");
+  assert.ok(Array.isArray(body.scanDirs) && body.scanDirs.length > 0);
+  assert.ok(body.harnesses.length >= 1);
+  assert.equal(body.harnesses.filter((h) => h.active).length, 1);
+  assert.ok(typeof body.config === "object");
+});
+
+test("GET /api/benchmarks: parse errors surface instead of an empty catalog", async () => {
+  // The live tree answers 200; an unreadable benchmarks dir (missing) is an
+  // honest [] — covered by GET /api/benchmarks below.
+  const res = await get("/api/benchmarks");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(Array.isArray(body));
+});
+
 test("GET / → built client or 503 build hint", async () => {
   const res = await get("/");
   assert.ok([200, 503].includes(res.status));
+});
+
+test("scanOllamaModels reads manifests from disk (server-independent)", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const home = mkdtempSync(join(tmpdir(), "minimal-ollama-home-"));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const { scanOllamaModels } = await import("../src/scan.mjs");
+    const manifests = join(home, ".ollama", "models", "manifests", "registry.ollama.ai");
+    const blobs = join(home, ".ollama", "models", "blobs");
+    mkdirSync(join(manifests, "library", "stub"), { recursive: true });
+    mkdirSync(blobs, { recursive: true });
+    const layerDigest = "sha256-" + "a".repeat(64);
+    writeFileSync(join(blobs, layerDigest), "x".repeat(1000));
+    writeFileSync(
+      join(manifests, "library", "stub", "7b"),
+      JSON.stringify({
+        schemaVersion: 2,
+        config: { digest: "sha256-" + "b".repeat(64) },
+        layers: [{ digest: layerDigest, size: 1000 }],
+      })
+    );
+    const models = await scanOllamaModels();
+    assert.equal(models.length, 1);
+    assert.equal(models[0].name, "stub:7b"); // "library" ns dropped
+    assert.equal(models[0].sizeBytes, 1000); // missing config blob tolerated — lower bound
+  } finally {
+    process.env.HOME = prevHome;
+  }
 });

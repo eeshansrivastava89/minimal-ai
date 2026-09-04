@@ -194,6 +194,29 @@ export interface LogEntry {
   kind: "friendly" | "raw" | "server" | "other";
 }
 
+// Read-model settings: real config + resolved paths (read-only display —
+// editing config.json lands with the v4 parity pass).
+export interface Settings {
+  version: string;
+  dataDir: string;
+  logDir: string;
+  hfCacheDir: string;
+  benchmarkRepoPath: string | null;
+  benchmarkRepoFound: boolean;
+  scanDirs: string[];
+  harness: string;
+  harnesses: { id: string; label: string; active: boolean }[];
+  config: {
+    modelScanDirs: string[];
+    binaryOverrides: Record<string, unknown>;
+    lastSeenVersion: string | null;
+    enable_benchmarking: boolean;
+    enable_omlx: boolean;
+    enable_ollama: boolean;
+  };
+  omlxServerSettings: Record<string, Record<string, unknown>> | null;
+}
+
 export interface ApiError {
   error: string;
 }

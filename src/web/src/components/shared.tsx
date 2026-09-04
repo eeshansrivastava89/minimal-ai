@@ -25,6 +25,9 @@ export interface SweepConfig {
 // The sweep config-space matrix: 3 KV-quant blocks, each a 3×4 sub-matrix
 // (speculative × thinking×ANE). One component renders all three states:
 // plan (✓ will measure), live (values as they land), results (★ on the pick).
+// The axes mirror src/autotune/matrix.mjs but can't import it — that module
+// pulls node:fs through report.mjs → recommend.mjs. If the grid changes in
+// the CLI, these axes change with it.
 const SPEC_ROWS: [string, string][] = [
   ["none", "none"],
   ["mtp", "MTP (own heads)"],

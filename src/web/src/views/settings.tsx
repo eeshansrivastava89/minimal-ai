@@ -1,45 +1,63 @@
-import { Button } from "@/components/ui/button";
+// Settings — live: real config.json values, resolved paths, harnesses, and
+// the oMLX app's own settings file, all read from GET /api/settings. No
+// update button: v3 ships npm releases via tag-triggered CI, and the update
+// flow moves to git in v4 — pretending to check would be a fake.
+
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { HUB_DATA } from "@/data/data";
+import { api } from "@/api";
 import { SectionTitle, StatusBadge } from "@/components/shared";
 
+const Code = ({ children }: { children: React.ReactNode }) => (
+  <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-primary">{children}</code>
+);
+
 export function Settings() {
-  const cfg = HUB_DATA.config as Record<string, unknown>;
-  const srv = HUB_DATA.omlxServerSettings;
+  const { data: s, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+
+  if (error) {
+    return <p className="text-sm text-destructive">{(error as Error).message}</p>;
+  }
+  if (!s) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
 
   return (
     <div>
       <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        Data dir <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-primary">{String(cfg.dataDir)}</code> ·
-        benchmark repo <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-primary">{String(cfg.benchmarkRepoPath)}</code>
+        Installed <strong className="text-foreground">v{s.version}</strong> · data dir <Code>{s.dataDir}</Code> ·
+        benchmark repo{" "}
+        {s.benchmarkRepoPath ? (
+          <Code>{s.benchmarkRepoPath}</Code>
+        ) : (
+          "not linked"
+        )}
+        {!s.benchmarkRepoFound && s.benchmarkRepoPath && (
+          <StatusBadge status="failed">path has no runs/</StatusBadge>
+        )}
       </p>
 
-      <SectionTitle title="Chat harness" />
+      <SectionTitle title="Chat harness" meta={`config.json \`harness\` = ${s.harness}`} />
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableBody>
-              <TableRow>
-                <TableCell>
-                  <div className="text-foreground">Pi</div>
-                  <div className="text-xs text-muted-foreground">The coding agent minimal-ai launches for chatting. Sessions stay in the terminal.</div>
-                </TableCell>
-                <TableCell className="text-right">
-                  <StatusBadge status="ok">active</StatusBadge>
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>
-                  <div className="text-foreground">omp</div>
-                  <div className="text-xs text-muted-foreground">Alternative chat harness.</div>
-                </TableCell>
-                <TableCell className="text-right">
-                  <StatusBadge status="warn">available</StatusBadge>
-                </TableCell>
-              </TableRow>
+              {s.harnesses.map((h) => (
+                <TableRow key={h.id}>
+                  <TableCell>
+                    <div className="text-foreground">{h.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      The agent minimal-ai launches for chat sessions.
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {h.active ? <StatusBadge status="ok">active</StatusBadge> : <StatusBadge status="warn">available</StatusBadge>}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
@@ -50,10 +68,9 @@ export function Settings() {
         <CardContent className="p-0">
           <Table>
             <TableBody>
-              {["~/.lmstudio/models", "~/.omlx/models", "~/.cache/huggingface/hub"].map((p) => (
+              {s.scanDirs.map((p) => (
                 <TableRow key={p}>
                   <TableCell className="text-foreground">{p}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">built-in</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -61,57 +78,76 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <SectionTitle title="oMLX server" meta="~/.omlx/settings.json" />
-      <Card>
-        <CardContent className="p-4">
-          <Accordion type="single" collapsible className="w-full">
-            {Object.entries(srv).map(([section, entries]) => (
-              <AccordionItem key={section} value={section}>
-                <AccordionTrigger className="text-sm font-medium">{section}</AccordionTrigger>
-                <AccordionContent>
-                  <Table>
-                    <TableBody>
-                      {Object.entries(entries).map(([k, v]) => (
-                        <TableRow key={`${section}.${k}`}>
-                          <TableCell className="w-72 text-muted-foreground">{k}</TableCell>
-                          <TableCell className="tabular-nums text-foreground">{String(v)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </CardContent>
-      </Card>
-
-      <SectionTitle title="Feature flags" meta="config.json" />
+      <SectionTitle title="config.json" meta="read-only — edit the file directly" />
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableBody>
-              {["enable_benchmarking", "enable_omlx", "enable_ollama", "lastSeenVersion"].map((k) => (
-                <TableRow key={k}>
-                  <TableCell className="w-72 text-muted-foreground">{k}</TableCell>
-                  <TableCell className="tabular-nums text-foreground">{String(cfg[k])}</TableCell>
-                </TableRow>
-              ))}
+              <TableRow>
+                <TableCell className="w-72 text-muted-foreground">modelScanDirs (extra)</TableCell>
+                <TableCell className="text-foreground">{s.config.modelScanDirs.join(", ") || "—"}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground">binaryOverrides</TableCell>
+                <TableCell className="text-foreground">
+                  {Object.keys(s.config.binaryOverrides).join(", ") || "—"}
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground">lastSeenVersion</TableCell>
+                <TableCell className="text-foreground">{s.config.lastSeenVersion ?? "—"}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground">HF cache</TableCell>
+                <TableCell className="text-foreground">{s.hfCacheDir}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground">logs</TableCell>
+                <TableCell className="text-foreground">{s.logDir}</TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
+      {s.omlxServerSettings && (
+        <>
+          <SectionTitle title="oMLX server" meta="~/.omlx/settings.json (read-only)" />
+          <Card>
+            <CardContent className="p-4">
+              <Accordion type="single" collapsible className="w-full">
+                {Object.entries(s.omlxServerSettings)
+                  .filter(([, v]) => v && typeof v === "object")
+                  .map(([section, entries]) => (
+                    <AccordionItem key={section} value={section}>
+                      <AccordionTrigger className="text-sm font-medium">{section}</AccordionTrigger>
+                      <AccordionContent>
+                        <Table>
+                          <TableBody>
+                            {Object.entries(entries as Record<string, unknown>).map(([k, v]) => (
+                              <TableRow key={`${section}.${k}`}>
+                                <TableCell className="w-72 text-muted-foreground">{k}</TableCell>
+                                <TableCell className="tabular-nums text-foreground">
+                                  {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+              </Accordion>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
       <SectionTitle title="Update" />
       <Card>
-        <CardContent className="flex items-center gap-3 p-4">
-          <div className="flex-1">
-            <div className="text-foreground">
-              Installed <strong>v{HUB_DATA.meta.version}</strong>
-            </div>
-            <div className="text-xs text-muted-foreground">Updates publish via tag-triggered CI — never locally.</div>
-          </div>
-          <Button variant="outline">Check for updates</Button>
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          Releases publish via git tags through CI — never locally. To update a clone: <Code>git pull</Code> and
+          check the changelog for the new tag. (The in-app update check moves from the npm registry to git in v4.)
         </CardContent>
       </Card>
     </div>
