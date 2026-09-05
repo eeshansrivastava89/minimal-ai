@@ -3,7 +3,7 @@
 // hand-rolled UI, no custom colors. Every visual is a shadcn component
 // using its default variants.
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Play } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -338,8 +338,9 @@ export function Spinner({ className }: { className?: string }) {
 // One run card, ported from the gallery's workbench: preview, mode-aware
 // primary identity, model/harness/backend pills, state label + date.
 // `mode` mirrors the workbench view: "model" groups name the prompt on the
-// card, "benchmark" groups name the model.
-export function RunCard({ run, onClick, mode }: { run: Run; onClick?: () => void; mode?: "model" | "benchmark" }) {
+// card, "benchmark" groups name the model. `live` labels an in-flight job
+// targeting this run ("Preparing"/"Capturing"/"Scoring") with an overlay.
+export function RunCard({ run, onClick, mode, live }: { run: Run; onClick?: () => void; mode?: "model" | "benchmark"; live?: string | null }) {
   const state = runCardState(run);
   const message = runCardMediaMessage(run);
   const id = runCardIdentity(run, mode ?? "model");
@@ -351,6 +352,19 @@ export function RunCard({ run, onClick, mode }: { run: Run; onClick?: () => void
         ) : (
           <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
             {message}
+          </div>
+        )}
+        {run.video && !live && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="rounded-full bg-background/80 p-2.5 shadow-sm ring-1 ring-foreground/10">
+              <Play className="size-4 fill-foreground text-foreground" />
+            </div>
+          </div>
+        )}
+        {live && (
+          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/70">
+            <Spinner />
+            <span className="text-xs font-medium text-foreground">{live}…</span>
           </div>
         )}
       </div>

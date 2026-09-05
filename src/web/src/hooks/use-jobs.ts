@@ -51,6 +51,14 @@ export function useJobsLive() {
       for (const j of jobs) {
         const was = seenNow.get(j.id);
         seenNow.set(j.id, j.status);
+        // A benchmark job entering running = its run slot is being written
+        // to disk (prepared) — refresh runs so the slot shows up live
+        // instead of waiting out the whole run.
+        if (j.type === "benchmark" && j.status === "running" && was !== "running") {
+          void queryClient.invalidateQueries({ queryKey: ["runs"] });
+          if (j.ref) void queryClient.invalidateQueries({ queryKey: ["modelRuns", j.ref] });
+          continue;
+        }
         if (was === undefined || was === j.status || !FINISHED.has(j.status)) continue;
         // First transition into a finished state: the caches this job may
         // have mutated are stale now. (Duplicate invalidations across hook

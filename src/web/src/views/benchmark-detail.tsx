@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { api, type RunRef } from "@/api";
@@ -19,6 +20,7 @@ export function BenchmarkDetail({ run, navigate }: { run: RunRef; navigate: Navi
   const { data: benchmarks } = useQuery({ queryKey: ["benchmarks"], queryFn: api.benchmarks, staleTime: 300_000 });
   const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 30_000 });
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const r = (runs ?? []).find((x) => x.id === run.runId && x.bench === run.bench && x.slug === run.slug);
   if (isLoading) {
@@ -51,6 +53,7 @@ export function BenchmarkDetail({ run, navigate }: { run: RunRef; navigate: Navi
   };
 
   const remove = async () => {
+    setConfirmDelete(false);
     setBusy("delete");
     try {
       await api.deleteRun(run);
@@ -105,6 +108,17 @@ export function BenchmarkDetail({ run, navigate }: { run: RunRef; navigate: Navi
             </Button>
           </>
         )}
+        {b?.prompt && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard.writeText(b.prompt);
+              toast("Prompt copied");
+            }}
+          >
+            Copy prompt
+          </Button>
+        )}
         {r.kind === "data-science" && (
           <Button
             variant="outline"
@@ -114,15 +128,35 @@ export function BenchmarkDetail({ run, navigate }: { run: RunRef; navigate: Navi
             Score run
           </Button>
         )}
-        <Button variant="destructive" disabled={busy === "delete"} onClick={remove}>
+        <Button variant="destructive" disabled={busy === "delete"} onClick={() => setConfirmDelete(true)}>
           Delete run
         </Button>
       </div>
 
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete run?</DialogTitle>
+            <DialogDescription>
+              Removes the whole run folder from disk — metadata, prompt, HTML, preview, and raw responses. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={remove}>
+              Delete folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card className="mt-4 overflow-hidden">
         <CardContent className="p-0">
           {r.video ? (
-            <video src={r.video} controls preload="metadata" className="w-full" />
+            <video src={r.video} controls autoPlay muted loop playsInline preload="auto" poster={r.preview ?? undefined} className="mx-auto max-h-[65vh] w-full bg-black object-contain" />
           ) : r.preview ? (
             <img src={r.preview} alt="" loading="lazy" className="w-full" />
           ) : (

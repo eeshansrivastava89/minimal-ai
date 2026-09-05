@@ -4,6 +4,20 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.17.0] - 2026-09-05
+
+### Added
+- Added live run-slot updates: a benchmark job entering running refreshes the runs cache, so the prepared slot appears within seconds instead of after the whole run.
+- Added spinner overlays (Preparing / Capturing / Scoring) to run cards while a job targets them; job payloads (ids/flags only) are exposed in the jobs API to map jobs to runs.
+- Added a play overlay to run cards that have captured video, matching the gallery affordance.
+- Added a Copy prompt button and a delete-confirmation dialog to the run detail page (delete previously fired on a single click).
+
+### Changed
+- Changed the run detail video to autoplay muted looping with a poster and a 65vh cap, matching the gallery's detail view.
+
+### Fixed
+- Fixed benchmark-page scroll jank with ~150+ runs: group sections now use content-visibility so offscreen groups skip rendering.
+
 ## [3.16.0] - 2026-09-05
 
 ### Added

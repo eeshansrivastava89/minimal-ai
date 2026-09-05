@@ -47,11 +47,14 @@ export interface Job {
 }
 
 // What the API exposes — logPath stays internal (log content is streamed).
+// Payload rides along so clients can map a job to its target (run slot,
+// model) for live status; payloads are ids/flags only, never secrets.
 export interface JobDto {
   id: string;
   type: JobType;
   ref: string | null;
   title: string;
+  payload: Record<string, unknown>;
   status: JobStatus;
   progress: number | null; // null = indeterminate — no fake bars
   message: string | null;
@@ -63,7 +66,7 @@ export interface JobDto {
 }
 
 export function toJobDto(job: Job): JobDto {
-  const { logPath: _logPath, payload: _payload, progress, ...dto } = job;
+  const { logPath: _logPath, progress, ...dto } = job;
   return { ...dto, progress: progress < 0 ? null : progress };
 }
 

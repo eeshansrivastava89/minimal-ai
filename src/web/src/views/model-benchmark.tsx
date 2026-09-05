@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { RunCard, SectionTitle } from "@/components/shared";
+import { useJobsLive } from "@/hooks/use-jobs";
 import type { Navigate } from "@/App";
 import type { Profile, Run } from "@/data/types";
 
@@ -13,6 +14,20 @@ export function ModelBenchmark({
   profile?: Profile;
   navigate: Navigate;
 }) {
+  const { jobs } = useJobsLive();
+  // Same live-job overlay as the benchmarks workbench, scoped to this
+  // model's runs.
+  const liveFor = (r: Run): string | null => {
+    for (const j of jobs ?? []) {
+      if (j.status !== "running" && j.status !== "queued") continue;
+      const p = j.payload ?? {};
+      if (j.type === "capture" && p.runId === r.id && p.bench === r.bench) return "Capturing";
+      if (j.type === "score" && p.runId === r.id && p.bench === r.bench) return "Scoring";
+      if (j.type === "benchmark" && j.status === "running" && j.ref === r.ownerRef && p.benchmarkId === r.bench && r.status === "prepared")
+        return "Preparing";
+    }
+    return null;
+  };
   return (
     <div>
       <div className="flex items-center gap-3">
@@ -42,6 +57,7 @@ export function ModelBenchmark({
               <RunCard
                 key={r.id}
                 run={r}
+                live={liveFor(r)}
                 onClick={() => navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" })}
               />
             ))}

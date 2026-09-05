@@ -34,6 +34,7 @@ import {
   type RunKind,
 } from "@/lib/runs-view";
 import { RunCard, StatusBadge } from "@/components/shared";
+import { useJobsLive } from "@/hooks/use-jobs";
 import type { Navigate } from "@/App";
 import type { Benchmark, Run } from "@/data/types";
 
@@ -48,6 +49,7 @@ const VIEW_META: Record<string, { title: string; subtitle: string }> = {
 
 export function Benchmarks({ navigate }: { navigate: Navigate }) {
   const queryClient = useQueryClient();
+  const { jobs } = useJobsLive();
   const { data: runs } = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
   const { data: benchmarks } = useQuery({ queryKey: ["benchmarks"], queryFn: api.benchmarks, staleTime: 300_000 });
   const { data: machine } = useQuery({ queryKey: ["machine"], queryFn: api.machine, staleTime: 60_000 });
@@ -97,6 +99,22 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
   };
 
   const openRun = (r: Run) => navigate("benchmarkRun", { runId: r.id, bench: r.bench, slug: r.slug ?? "" });
+
+  // In-flight job targeting this run → overlay label on its card. Capture
+  // and score name the run in their payload; a benchmark job's slot is
+  // identified by model + benchmark while it runs (slots are created on
+  // job start and the queue is serial, so the pair is unambiguous).
+  const liveFor = (r: Run): string | null => {
+    for (const j of jobs ?? []) {
+      if (j.status !== "running" && j.status !== "queued") continue;
+      const p = j.payload ?? {};
+      if (j.type === "capture" && p.runId === r.id && p.bench === r.bench) return "Capturing";
+      if (j.type === "score" && p.runId === r.id && p.bench === r.bench) return "Scoring";
+      if (j.type === "benchmark" && j.status === "running" && j.ref === r.ownerRef && p.benchmarkId === r.bench && r.status === "prepared")
+        return "Preparing";
+    }
+    return null;
+  };
 
   const selectedRuns = filtered.filter((r) => selected.includes(keyOf(r)));
 
@@ -324,7 +342,7 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {selectedRuns.map((r) => (
-                    <RunCard key={keyOf(r)} run={r} onClick={() => openRun(r)} mode="model" />
+                    <RunCard key={keyOf(r)} run={r} onClick={() => openRun(r)} mode="model" live={liveFor(r)} />
                   ))}
                 </div>
               </div>
@@ -333,7 +351,9 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
         ) : (
           <div className="flex flex-col gap-6">
             {groups.map((g) => (
-              <section key={g.title}>
+              // content-visibility: skip rendering offscreen groups — with
+              // 150+ cards on the page this is what keeps scrolling smooth.
+              <section key={g.title} className="[content-visibility:auto] [contain-intrinsic-size:auto_460px]">
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-base font-semibold tracking-tight text-foreground">{g.title}</h3>
                   {mode === "benchmark" && (
@@ -366,6 +386,7 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
                       run={r}
                       mode={mode === "model" ? "model" : "benchmark"}
                       onClick={() => openRun(r)}
+                      live={liveFor(r)}
                     />
                   ))}
                 </div>
