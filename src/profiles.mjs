@@ -97,6 +97,17 @@ export async function saveProfile(profile) {
   return saved;
 }
 
+/** Mark a profile as used just now (lastUsedAt) — the hub's models-table
+ *  recency sort and the dashboard's "recent" list key on it. Called on every
+ *  real launch (CLI and hub benchmark); a missing profile is a no-op. */
+export async function touchProfile(id) {
+  try {
+    return await saveProfile({ ...(await readProfile(id)), lastUsedAt: new Date().toISOString() });
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteProfile(id, options = {}) {
   const dir = profileDir(id);
   const results = { profileDir: false, state: false, logs: [] };

@@ -57,11 +57,14 @@ export async function deleteRunDirectory(input: DeleteRunDirectoryInput): Promis
 }
 
 export async function listRunMetadata(
-  runsRoot = join(process.cwd(), "runs")
+  runsRoot = join(process.cwd(), "runs"),
+  /** Skip reading prompt.md per run (the hub's Run DTO never uses it).
+   *  Default false keeps the gallery-faithful behavior. */
+  options: { skipPromptText?: boolean } = {}
 ): Promise<RunMetadata[]> {
   const metadataPaths = await findMetadataFiles(runsRoot);
   const runMetadata = (
-    await Promise.all(metadataPaths.map((path) => readMetadataIfPresent(path)))
+    await Promise.all(metadataPaths.map((path) => readMetadataIfPresent(path, options)))
   ).filter((metadata): metadata is RunMetadata => Boolean(metadata));
 
   return runMetadata.sort((left, right) =>
@@ -159,13 +162,16 @@ async function readDirentsIfPresent(path: string) {
   }
 }
 
-async function readMetadataIfPresent(path: string): Promise<RunMetadata | undefined> {
+async function readMetadataIfPresent(
+  path: string,
+  options: { skipPromptText?: boolean }
+): Promise<RunMetadata | undefined> {
   try {
     const metadata = JSON.parse(await readFile(path, "utf8")) as RunMetadata;
     if (metadata.kind && !isKnownRunKind(metadata.kind)) {
       return undefined;
     }
-    return hydrateAssetAvailability(metadata);
+    return hydrateAssetAvailability(metadata, options);
   } catch (error) {
     if (isMissingPathError(error) || error instanceof SyntaxError) {
       return undefined;
@@ -175,7 +181,10 @@ async function readMetadataIfPresent(path: string): Promise<RunMetadata | undefi
   }
 }
 
-async function hydrateAssetAvailability(metadata: RunMetadata): Promise<RunMetadata> {
+async function hydrateAssetAvailability(
+  metadata: RunMetadata,
+  options: { skipPromptText?: boolean }
+): Promise<RunMetadata> {
   const declared = metadata.assets ?? {};
   const kind = metadata.kind ?? "visual";
   const isDs = kind === "data-science";
@@ -226,9 +235,11 @@ async function hydrateAssetAvailability(metadata: RunMetadata): Promise<RunMetad
   }
   if (hasDs) assets.ds = dsAssets;
 
-  const promptText = assets.prompt
-    ? await readAssetTextIfPresent(metadata, assets.prompt)
-    : undefined;
+  const promptText = options.skipPromptText
+    ? undefined
+    : assets.prompt
+      ? await readAssetTextIfPresent(metadata, assets.prompt)
+      : undefined;
 
   const dsSummary = isDs && assets.ds?.summary
     ? await readDsSummaryIfPresent(metadata, assets.ds.summary)

@@ -164,7 +164,10 @@ export class JobRunner {
     const existing = await this.readLog(id);
     if (existing) for (const line of existing.split("\n")) listener(line);
     return () => {
-      set?.delete(listener);
+      set.delete(listener);
+      // Drop the set when the last subscriber leaves — the Map is keyed by
+      // job id and would otherwise grow with job history forever.
+      if (set.size === 0) this.logListeners.delete(id);
     };
   }
 
@@ -180,10 +183,7 @@ export class JobRunner {
   /** Run queued jobs serially until the queue is empty. */
   private pump() {
     if (this.running) return;
-    const next = this.store
-      .list()
-      .filter((j) => j.status === "queued")
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    const next = this.store.queued()[0];
     if (!next) return;
     this.running = next.id;
     this.run(next.id)
@@ -214,8 +214,13 @@ export class JobRunner {
       const set = this.logListeners.get(id);
       if (set) for (const l of set) l(line);
     };
+    // Live view over the row, not a start-time snapshot: executors should
+    // see current truth if the row changes while they run.
+    const getJob = () => this.store.get(id)!;
     const ctx: JobContext = {
-      job: this.store.get(id)!,
+      get job() {
+        return getJob();
+      },
       signal: controller.signal,
       enqueue: (input) => this.enqueue(input),
       setMetrics: (metrics) => {

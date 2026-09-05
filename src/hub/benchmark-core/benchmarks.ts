@@ -5,6 +5,8 @@ export interface BenchmarkDefinition {
   id: string;
   title: string;
   description: string;
+  /** "visual" | "data-science" — frontmatter `kind`, default visual. */
+  kind: "visual" | "data-science";
   prompt: string;
   sourcePath: string;
 }
@@ -13,6 +15,7 @@ interface BenchmarkFrontmatter {
   id?: unknown;
   title?: unknown;
   description?: unknown;
+  kind?: unknown;
 }
 
 interface ParsedFrontmatter {
@@ -81,6 +84,7 @@ export async function loadBenchmarks(
     const id = readRequiredString(frontmatter, "id", filename);
     const title = readRequiredString(frontmatter, "title", filename);
     const description = readRequiredString(frontmatter, "description", filename);
+    const kind = readKind(frontmatter, filename);
 
     const duplicateSource = seenIds.get(id);
     if (duplicateSource) {
@@ -94,6 +98,7 @@ export async function loadBenchmarks(
       id,
       title,
       description,
+      kind,
       prompt: parsed.content.trim(),
       sourcePath
     });
@@ -116,4 +121,13 @@ function readRequiredString(
   }
 
   return value.trim();
+}
+
+function readKind(frontmatter: BenchmarkFrontmatter, filename: string): "visual" | "data-science" {
+  const value = frontmatter.kind;
+  if (value == null || value === "") return "visual";
+  if (value === "visual" || value === "data-science") return value;
+  throw new Error(
+    `Benchmark ${filename} has an invalid "kind" (want "visual" or "data-science"): ${String(value)}`
+  );
 }

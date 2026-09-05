@@ -8,14 +8,12 @@ import type { Run } from "@/data/types";
 
 export type RunKind = "visual" | "data-science";
 
-// The A/B analysis is the one data-science benchmark (same rule as the
-// gallery's runs.js and the CLI loader).
-const DS_BENCHMARK_IDS = new Set(["ab-test-analysis"]);
+// A run's own `kind` field (written at prepare time from the benchmark's
+// frontmatter `kind`) is the single source of truth — no benchmark-id
+// hardcodes here.
 
-export function benchmarkMatchesKind(benchmarkId: string, kind: RunKind): boolean {
-  return kind === "data-science"
-    ? DS_BENCHMARK_IDS.has(benchmarkId)
-    : !DS_BENCHMARK_IDS.has(benchmarkId);
+export function runMatchesKind(run: Run, kind: RunKind): boolean {
+  return runKind(run) === kind;
 }
 
 export function runKind(run: Run): RunKind {

@@ -55,6 +55,7 @@ export async function loadBenchmarks(benchDir) {
     let id = filename.replace(/\.md$/u, "");
     let title = id;
     let description = "";
+    let kind = "visual";
     for (const line of frontmatter.split("\n")) {
       const kv = line.match(/^(\w+):\s*(.+)$/);
       if (kv) {
@@ -62,9 +63,12 @@ export async function loadBenchmarks(benchDir) {
         if (key === "id") id = val.trim();
         if (key === "title") title = val.trim();
         if (key === "description") description = val.trim();
+        if (key === "kind") kind = val.trim();
       }
     }
-    const kind = id === "ab-test-analysis" ? "data-science" : "visual";
+    if (kind !== "visual" && kind !== "data-science") {
+      throw new Error(`${filename}: invalid benchmark "kind" (want visual or data-science): ${kind}`);
+    }
     benchmarks.push({ id, title, description, prompt: content, kind });
   }
   return benchmarks;

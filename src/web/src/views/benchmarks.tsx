@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { api, type RunRef } from "@/api";
 import { fmtDateShort } from "@/lib/format";
 import {
-  benchmarkMatchesKind,
+  runMatchesKind,
   filterOptions,
   filterRuns,
   groupRuns,
@@ -67,7 +67,7 @@ export function Benchmarks({ navigate }: { navigate: Navigate }) {
   // The kind's workspace — select options and filters derive from it, like
   // the gallery's runsForCurrentWorkspace.
   const kindRuns = useMemo(
-    () => (runs ?? []).filter((r) => benchmarkMatchesKind(r.bench, kind)),
+    () => (runs ?? []).filter((r) => runMatchesKind(r, kind)),
     [runs, kind]
   );
   const options = useMemo(() => filterOptions(kindRuns), [kindRuns]);

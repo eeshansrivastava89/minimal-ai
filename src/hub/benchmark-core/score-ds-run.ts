@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { isPathInside } from "./asset-paths.ts";
 import type { DsScorecard, RunMetadata } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -46,8 +47,9 @@ export async function scoreDsRun(
   const runsRoot = resolve(options.runsRoot);
   const runDirectory = resolve(options.runDirectory);
 
-  // Validate directory is inside runs root
-  if (!runDirectory.startsWith(runsRoot + "/") && runDirectory !== runsRoot) {
+  // Validate directory is inside runs root (shared containment check,
+  // same as every other run-scoped write).
+  if (!isPathInside(runDirectory, runsRoot)) {
     throw new Error("Run directory is outside the configured runs folder.");
   }
 

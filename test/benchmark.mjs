@@ -64,12 +64,21 @@ describe("loadBenchmarks", () => {
     assert.equal(plain.prompt, "No frontmatter here.");
   });
 
-  it("marks ab-test-analysis as data-science", async () => {
+  it("reads kind from frontmatter (data-science) and defaults to visual", async () => {
     const dir = await makeTmp();
     after(() => rm(dir, { recursive: true, force: true }));
-    await writeFile(join(dir, "ab-test-analysis.md"), "---\nid: ab-test-analysis\ntitle: A/B Test\n---\n\nAnalyze.\n");
-    const [bench] = await loadBenchmarks(dir);
-    assert.equal(bench.kind, "data-science");
+    await writeFile(join(dir, "ab-test-analysis.md"), "---\nid: ab-test-analysis\ntitle: A/B Test\nkind: data-science\n---\n\nAnalyze.\n");
+    await writeFile(join(dir, "sakura.md"), "---\nid: sakura\ntitle: Sakura\n---\n\nPaint.\n");
+    const benchmarks = await loadBenchmarks(dir);
+    assert.equal(benchmarks.find((b) => b.id === "ab-test-analysis").kind, "data-science");
+    assert.equal(benchmarks.find((b) => b.id === "sakura").kind, "visual");
+  });
+
+  it("rejects an invalid kind", async () => {
+    const dir = await makeTmp();
+    after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, "weird.md"), "---\nid: weird\ntitle: Weird\nkind: quantum\n---\n\nNope.\n");
+    await assert.rejects(() => loadBenchmarks(dir), /invalid benchmark "kind"/);
   });
 });
 

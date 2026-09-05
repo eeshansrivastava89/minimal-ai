@@ -6,7 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { backendFor } from "./backends.mjs";
-import { normalizeProfile, saveProfile, effectiveModelId } from "./profiles.mjs";
+import { normalizeProfile, saveProfile, touchProfile, effectiveModelId } from "./profiles.mjs";
 import { startServer, stopProfile, waitForReady, serverMatchesProfile, modelAvailableOnServer, stopOrUnload, preflightInference } from "./process.mjs";
 import { serverReady } from "./server-check.mjs";
 import { configuredHarness, harnessFor, listHarnesses } from "./harnesses.mjs";
@@ -68,6 +68,7 @@ export async function runProfile(profile, options = {}) {
     throw new Error(`Model "${modelId}" failed to generate a test token: ${preflight.error}. The server was ready but the model could not load or infer. Check the model format and backend compatibility.`);
   }
   console.log(status({ kind: "success", message: "[preflight] Model loaded and generated a test token." }));
+  await touchProfile(profile.id); // the model ran — recency sorts key on this
 
   if (profile.backend === "ollama") {
     profile = await refreshOllamaServedContext(profile);

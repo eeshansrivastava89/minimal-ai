@@ -4,6 +4,19 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.12.1] - 2026-09-05
+
+### Changed
+- Changed benchmark kind to come from the benchmark's own frontmatter (`kind: data-science`, default visual) instead of a hardcoded prompt id, in both the hub and CLI loaders.
+- Changed /api/runs to reuse the hydration pass's asset checks (no re-statting per run, no reading prompt.md the DTO never used) and capped the job list at the most recent 200 rows (logs stay on disk; the queue is unbounded).
+
+### Fixed
+- Fixed profileMatchesModel mutating the shared BACKENDS registry — the llama-cpp modelIdFields array grew on every catalog call, leaking memory in the long-lived hub.
+- Fixed lastUsedAt never being written anywhere — CLI launches and hub benchmark runs now mark the profile, so the models-page recency sort and dashboard recent list have real data.
+- Fixed the jobs SSE: one shared connection app-wide (was one per view) and EventSource's native reconnect keeps job updates live across hub restarts.
+- Fixed the publish dev-mode gate living only on /api/publish — the export executor itself now refuses to publish outside a git checkout, closing the generic-enqueue bypass.
+- Fixed runner.onLog leaking a per-job listener set for every job ever streamed.
+
 ## [3.12.0] - 2026-09-04
 
 ### Added

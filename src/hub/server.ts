@@ -462,8 +462,6 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     if (!machine.devMode) {
       return c.json({ error: "publishing needs a git checkout (dev mode)" }, 403);
     }
-    const dto = ExportDto.safeParse((await c.req.json().catch(() => ({}))) ?? {});
-    if (!dto.success) return zodError(c, dto.error.issues);
     const job = await runner.enqueue({
       type: "export",
       title: "Publish benchmark gallery",

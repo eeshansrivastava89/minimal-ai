@@ -55,7 +55,7 @@ writeFileSync(
 );
 writeFileSync(
   join(GALLERY, "benchmarks", "ab-test-analysis.md"),
-  "---\nid: ab-test-analysis\ntitle: A/B Test Production Analysis\ndescription: Full production A/B analysis.\n---\n\nAnalyze the A/B test.\n"
+  "---\nid: ab-test-analysis\nkind: data-science\ntitle: A/B Test Production Analysis\ndescription: Full production A/B analysis.\n---\n\nAnalyze the A/B test.\n"
 );
 writeFileSync(join(DATA, "config.json"), JSON.stringify({ benchmarkRepoPath: GALLERY }));
 

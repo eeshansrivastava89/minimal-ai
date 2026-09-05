@@ -179,8 +179,10 @@ async function llamaCppInfo(): Promise<{ installed: boolean; version?: string }>
 // alias (backendFor(...).modelIdFields defines the lookup order).
 export function profileMatchesModel(p: Profile, backend: string, id: string): boolean {
   if (p.backend !== backend) return false;
-  const fields: string[] = backendFor(backend).modelIdFields ?? ["modelAlias"];
+  // Copy before extending — backendFor returns the SHARED BACKENDS entry;
+  // pushing onto it would mutate the registry on every call.
   // GGUF identity is the file path; llama.cpp profiles key on modelPath.
+  const fields: string[] = [...(backendFor(backend).modelIdFields ?? ["modelAlias"])];
   if (backend === "llama-cpp") fields.push("modelPath");
   return fields.some((f) => (p as unknown as Record<string, unknown>)[f] === id);
 }
@@ -507,7 +509,10 @@ async function managedHeatmap(ref: ModelRef): Promise<MemoryHeatmap | null> {
 
 // ── Autotune ────────────────────────────────────────────────────────────────
 
-export async function autotuneFor(ref: ModelRef): Promise<AutotuneRun | null> {
+/** Latest sweep for a model, or null. `profiles` may be passed in by
+ *  callers that already hold the catalog (allAutotune) — otherwise it is
+ *  fetched only when a sweep actually exists. */
+export async function autotuneFor(ref: ModelRef, profiles?: Profile[]): Promise<AutotuneRun | null> {
   const root = join(DATA_DIR, "autotune", slugModelId(ref.id));
   if (!existsSync(root)) return null;
   const runDirs = (await readdir(root)).filter((d) => !d.startsWith(".")).sort().reverse();
@@ -538,8 +543,8 @@ export async function autotuneFor(ref: ModelRef): Promise<AutotuneRun | null> {
     } catch {
       /* no journal — configs stay empty */
     }
-    const { profiles } = await catalog();
-    const profile = profiles.find((p) => profileMatchesModel(p, ref.backend, ref.id));
+    const owned = profiles ?? (await catalog()).profiles;
+    const profile = owned.find((p) => profileMatchesModel(p, ref.backend, ref.id));
     const rec = optimal.recommended ?? {};
     return {
       modelId: ref.id,
@@ -630,38 +635,18 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
     }
   }
 
-  let preview: string | null = null;
-  try {
-    const s = await stat(join(m.runDirectory, "preview.png"));
-    if (s.isFile()) {
-      preview = `/api/media/run/${m.benchmark.id}/${m.model.slug}/${m.runId}/preview.png`;
-    }
-  } catch {
-    /* no preview */
-  }
-
+  // Asset availability was already resolved by listRunMetadata's hydrator
+  // (one stat per candidate) — reuse it instead of re-statting per run.
+  const preview = m.assets?.preview
+    ? `/api/media/run/${m.benchmark.id}/${m.model.slug}/${m.runId}/${m.assets.preview}`
+    : null;
   // html presence drives the card state ("needs capture" vs "slot") — same
   // rule the gallery's runCardState uses.
-  let html = false;
-  try {
-    html = (await stat(join(m.runDirectory, "index.html"))).isFile();
-  } catch {
-    /* no html yet */
-  }
-
+  const html = Boolean(m.assets?.html);
   // Constrained media: prefer the Safari-friendly mp4, fall back to webm.
-  let video: string | null = null;
-  for (const file of ["preview.mp4", "preview.webm"]) {
-    try {
-      const s = await stat(join(m.runDirectory, file));
-      if (s.isFile()) {
-        video = `/api/media/run/${m.benchmark.id}/${m.model.slug}/${m.runId}/${file}`;
-        break;
-      }
-    } catch {
-      /* keep looking */
-    }
-  }
+  const video = (m.assets?.videoMp4 ?? m.assets?.video)
+    ? `/api/media/run/${m.benchmark.id}/${m.model.slug}/${m.runId}/${m.assets?.videoMp4 ?? m.assets?.video}`
+    : null;
 
   return {
     id: m.runId,
@@ -705,7 +690,12 @@ async function runFromMetadata(m: RunMetadata): Promise<Run> {
 export async function allRuns(): Promise<Run[]> {
   const runsRoot = await resolveRunsRoot();
   if (!runsRoot) return [];
-  const [metadata, { models, profiles }] = await Promise.all([listRunMetadata(runsRoot), catalog()]);
+  const [metadata, { models, profiles }] = await Promise.all([
+    // skipPromptText: the Run DTO never uses prompt.md content — hydration
+    // stat-checks assets either way, but must not read the file.
+    listRunMetadata(runsRoot, { skipPromptText: true }),
+    catalog(),
+  ]);
   const runs = await Promise.all(metadata.map(runFromMetadata));
   // Attach the owning catalog model (spine: runs are children of models).
   // A run names its model by raw id/slug/display; a model answers to its
@@ -754,10 +744,10 @@ export async function runsFor(ref: ModelRef): Promise<Run[]> {
 export async function allAutotune(): Promise<AutotuneRun[]> {
   const root = join(DATA_DIR, "autotune");
   if (!existsSync(root)) return [];
-  const { models } = await catalog();
+  const { models, profiles } = await catalog();
   const out: AutotuneRun[] = [];
   for (const m of models) {
-    const run = await autotuneFor({ backend: m.backend as ModelRef["backend"], id: m.id });
+    const run = await autotuneFor({ backend: m.backend as ModelRef["backend"], id: m.id }, profiles);
     if (run) out.push(run);
   }
   return out.sort((a, b) => b.recommendedAt.localeCompare(a.recommendedAt));
@@ -781,7 +771,7 @@ export async function allBenchmarks(): Promise<Benchmark[]> {
   return defs.map((d) => ({
     id: d.id,
     title: d.title,
-    kind: d.id === "ab-test-analysis" ? "data-science" : "visual",
+    kind: d.kind,
     description: d.description,
     prompt: d.prompt,
   }));

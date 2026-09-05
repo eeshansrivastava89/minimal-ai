@@ -10,6 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { backendFor } from "../../backends.mjs";
 import { DATA_DIR } from "../../config.mjs";
 import { configuredHarness, harnessFor } from "../../harnesses.mjs";
+import { touchProfile } from "../../profiles.mjs";
 import {
   modelAvailableOnServer,
   preflightInference,
@@ -21,7 +22,7 @@ import {
 } from "../../process.mjs";
 import { prepareBenchmarkRun } from "../../benchmark.mjs";
 
-import { allBenchmarks, resolveRunsRoot } from "../api/data.ts";
+import { allBenchmarks, machineInfo, resolveRunsRoot } from "../api/data.ts";
 import { parseModelRef } from "../api/model-ref.ts";
 import { captureSingleRunMedia } from "../benchmark-core/capture-media.ts";
 import { exportComparisonVideo } from "../benchmark-core/comparison-video.ts";
@@ -153,6 +154,9 @@ export async function runModelHeadless(
     throw new Error(`model failed to generate a test token: ${preflight.error}`);
   }
   ctx.log("[hub] preflight ok — model loaded");
+  // The model ran (this is the hub's only launch path) — bump the profile's
+  // lastUsedAt so the models table's recency sort has real data.
+  await touchProfile(profile.id);
 
   const harness = harnessFor((await configuredHarness()).id);
   if (!(await harness.detect())) throw new Error(`${harness.label} is not installed — npm install -g ${harness.npm}`);
@@ -317,6 +321,12 @@ export function comparisonVideoExecutor() {
 export function exportExecutor() {
   return async function exportGallery(ctx: JobContext) {
     const { publish } = ctx.job.payload as { publish?: boolean };
+    // The dev-mode backstop lives HERE, not only on /api/publish — the
+    // generic jobs enqueue could otherwise reach this path on an installed
+    // (non-git) copy and push a snapshot from a machine with no repo.
+    if (publish && !(await machineInfo()).devMode) {
+      throw new Error("publishing needs a git checkout (dev mode)");
+    }
     const { runsRoot, root } = await galleryRoot();
     ctx.progress(null, "building gallery snapshot");
     const manifest = await generateStaticExport({

@@ -189,8 +189,22 @@ export class JobStore {
   }
 
   list(): Job[] {
+    // Bounded: the Jobs page is a live queue view, not an audit log (logs
+    // persist on disk). Unbounded growth made every SSE tick serialize the
+    // entire job history.
     const rows = this.db
-      .prepare(`SELECT ${SQL_COLUMNS} FROM jobs ORDER BY created_at DESC, id DESC`)
+      .prepare(
+        `SELECT ${SQL_COLUMNS} FROM jobs ORDER BY created_at DESC, id DESC LIMIT 200`
+      )
+      .all() as unknown as Row[];
+    return rows.map(rowToJob);
+  }
+
+  /** All queued jobs in FIFO order — the runner's pump source. Unbounded on
+   *  purpose: a queued job must never fall outside the window `list()` caps. */
+  queued(): Job[] {
+    const rows = this.db
+      .prepare(`SELECT ${SQL_COLUMNS} FROM jobs WHERE status = 'queued' ORDER BY created_at ASC, id ASC`)
       .all() as unknown as Row[];
     return rows.map(rowToJob);
   }
