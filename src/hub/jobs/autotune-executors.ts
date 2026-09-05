@@ -8,6 +8,9 @@
 // runs); the finally block always restores the snapshotted settings so a
 // cancelled or failed sweep never leaves the last measured config live.
 
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { backendFor } from "../../backends.mjs";
 import { effectiveModelId } from "../../profiles.mjs";
 import { serverReady, apiRootUrl } from "../../process.mjs";
@@ -15,6 +18,7 @@ import { restartOmlxServer, putOmlxModelSettings } from "../../omlx-runtime.mjs"
 import { sleep } from "../../exec.mjs";
 import {
   acquireAutotuneLock,
+  appendJournal,
   createRunDir,
   restoreSettingsSnapshot,
   readJournal,
@@ -132,6 +136,10 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
     );
 
     const runDir = await createRunDir(modelId);
+    // The plan is part of the durable record: the results DTO reads settings
+    // from here (journal rows carry them too, but the plan is the full grid
+    // including skipped rows).
+    await writeFile(join(runDir, "plan.json"), `${JSON.stringify(rows, null, 2)}\n`);
     const snapshot = await snapshotModelSettings(runDir, modelId);
     const lock: any = await acquireAutotuneLock({ modelId });
     if (!lock.ok) {
@@ -178,6 +186,10 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
         sweepRan = true;
         if (!result.ok) {
           ctx.log(`[hub] ${row.label} failed: ${result.reason}`);
+          // Non-fatal measurement failure — journal it so the results page
+          // shows the config was attempted (and why it has no number). Resume
+          // still retries it (only config-done rows are skipped).
+          await appendJournal(runDir, { event: "config-failed", configId: row.id, label: row.label, reason: result.reason });
           if (["precheck", "put", "ram-gate"].includes(result.reason)) {
             await discardSweep(ctx, baseUrl, runDir, modelId, baselineSettings);
             settled = true;

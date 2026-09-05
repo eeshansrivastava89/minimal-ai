@@ -50,11 +50,15 @@ export interface AutotuneConfig {
   id: string;
   label: string;
   family: string;
-  median: number;
+  median: number | null;
   mad: number;
   n: number;
   accept: number | null;
   settings: Record<string, unknown>;
+  /** Set when the config was attempted but its measurement failed —
+   *  median is null and this explains why (e.g. the cold run OOM-killed
+   *  the server). The sweep records it and moves on. */
+  error?: string;
 }
 
 export interface AutotuneRun {

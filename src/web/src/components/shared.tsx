@@ -26,6 +26,8 @@ export interface SweepConfig {
   settings: Record<string, unknown>;
   tested?: boolean;
   median?: number | null;
+  /** Attempted but failed (e.g. the cold run OOM-killed the server). */
+  error?: string;
 }
 
 // The sweep config-space matrix: 3 KV-quant blocks, each a 3×4 sub-matrix
@@ -89,6 +91,7 @@ export function SweepMatrix({
       return k.spec === spec && k.think === think && k.ane === ane && k.kv === kv;
     });
     if (!c) return { cls: "text-muted-foreground", t: "–", d: null, star: false };
+    if (c.error) return { cls: "text-destructive/80", t: "✗", d: c.error, star: false };
     if (c.median == null) {
       // Live sweep: the measuring config spins; the rest of the plan reads
       // as pending (…) or skipped (–). Plan preview (no activeId) keeps ✓
@@ -287,7 +290,10 @@ export function AutotuneTable({ autotune, navigate, limit }: { autotune?: Autotu
             {(autotune ?? []).slice(0, limit).map((a) => {
               const rec = a.configs.find((c) => c.id === a.recommended);
               const base = a.configs.find((c) => c.id === "vanilla");
-              const delta = rec && base && rec.id !== "vanilla" ? ((rec.median - base.median) / base.median) * 100 : null;
+              const delta =
+                rec && base && rec.id !== "vanilla" && rec.median != null && base.median != null
+                  ? ((rec.median - base.median) / base.median) * 100
+                  : null;
               return (
                 <ClickableRow
                   key={a.modelId}

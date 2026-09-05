@@ -535,27 +535,74 @@ export async function autotuneFor(ref: ModelRef, profiles?: Profile[]): Promise<
     const optimalPath = join(runDir, "optimal.json");
     if (!existsSync(optimalPath)) continue;
     const optimal = JSON.parse(await readFile(optimalPath, "utf8"));
+    // The plan (full grid, settings per config) is the durable source for
+    // what each config WAS; journal rows carry results (and, from the
+    // journal-fix onward, settings too — plan wins on conflict).
+    let plan: any[] = [];
+    try {
+      plan = JSON.parse(await readFile(join(runDir, "plan.json"), "utf8"));
+    } catch {
+      /* older run — no plan.json; journal rows carry what they carry */
+    }
+    const planById = new Map(plan.map((p) => [p.id, p]));
     // Journal rows carry every probed config; map to the scorecard shape.
     const configs: AutotuneRun["configs"] = [];
+    const seen = new Set<string>();
     try {
       const journal = await readFile(join(runDir, "sweep.jsonl"), "utf8");
       for (const line of journal.split("\n")) {
         if (!line.trim()) continue;
         const row = JSON.parse(line);
-        if (!row.configId || !row.summary) continue;
+        if (!row.configId) continue;
+        if (row.event === "config-failed") {
+          // Attempted but no measurement — surface it (unless a later
+          // config-done row for the same config supersedes the failure).
+          if (seen.has(row.configId)) continue;
+          configs.push({
+            id: row.configId,
+            label: row.label ?? row.configId,
+            family: planById.get(row.configId)?.family ?? row.family ?? "",
+            median: null,
+            mad: 0,
+            n: 0,
+            accept: null,
+            settings: planById.get(row.configId)?.settings ?? {},
+            error: row.reason ?? "failed",
+          });
+          seen.add(row.configId);
+          continue;
+        }
+        if (!row.summary || seen.has(row.configId)) continue;
+        const p = planById.get(row.configId);
         configs.push({
           id: row.configId,
           label: row.label ?? row.configId,
-          family: row.family ?? "",
+          family: row.family ?? p?.family ?? "",
           median: row.summary.median,
           mad: row.summary.mad,
           n: row.summary.n,
           accept: row.summary.mtp?.accept ?? null,
-          settings: row.settings ?? {},
+          settings: row.settings ?? p?.settings ?? {},
         });
+        seen.add(row.configId);
       }
     } catch {
       /* no journal — configs stay empty */
+    }
+    // Grid rows the sweep never reached (skipped or never attempted) still
+    // belong in the config space — the matrix needs their settings.
+    for (const p of plan) {
+      if (seen.has(p.id) || p.tested === false) continue;
+      configs.push({
+        id: p.id,
+        label: p.label ?? p.id,
+        family: p.family ?? "",
+        median: null,
+        mad: 0,
+        n: 0,
+        accept: null,
+        settings: p.settings ?? {},
+      });
     }
     const owned = profiles ?? (await catalog()).profiles;
     const profile = owned.find((p) => profileMatchesModel(p, ref.backend, ref.id));

@@ -249,12 +249,19 @@ export function ModelAutotune({
                 <TableBody>
                   {run.configs.map((c) => {
                     const isThink = c.id === "thinking" || c.id === "mtp-thinking";
-                    const delta = c.id === "vanilla" || !base ? null : ((c.median - base.median) / base.median) * 100;
+                    const delta =
+                      c.id === "vanilla" || !base || c.median == null || base.median == null
+                        ? null
+                        : ((c.median - base.median) / base.median) * 100;
                     return (
                       <TableRow key={c.id}>
                         <TableCell className="font-medium text-foreground">{c.label}</TableCell>
                         <TableCell>
-                          <StatusBadge status={isThink ? "warn" : "ok"}>{isThink ? "beauty" : "fast"}</StatusBadge>
+                          {c.error ? (
+                            <StatusBadge status="failed">failed: {c.error}</StatusBadge>
+                          ) : (
+                            <StatusBadge status={isThink ? "warn" : "ok"}>{isThink ? "beauty" : "fast"}</StatusBadge>
+                          )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{fmtTps(c.median)}</TableCell>
                         <TableCell className="text-right tabular-nums">{c.mad.toFixed(2)}</TableCell>

@@ -4,6 +4,15 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.15.1] - 2026-09-05
+
+### Added
+- Added plan.json to the sweep run directory (the full grid with each config's settings), so the results page renders the matrix even when journal rows predate the settings fix; existing runs were backfilled from the job metrics the hub had already stored.
+
+### Fixed
+- Fixed the result matrix collapsing to a single cell for sweeps whose journal rows lacked settings — configs are now placed by their plan settings.
+- Fixed failed sweep configs being invisible: they are journaled (config-failed), shown as ✗ in the matrix, and listed with a failed badge in the per-config table (e.g. DFlash on 27B — its cold run died when the drifted oMLX server process exited mid-load; the 3.6GB draft is fine, a fresh server measures it).
+
 ## [3.15.0] - 2026-09-05
 
 ### Added
