@@ -11,7 +11,7 @@ import { useJobsLive } from "@/hooks/use-jobs";
 // in use while a launch/benchmark runs; the benchmarks pipeline is its own
 // family; autotune and the queue itself.
 const SECTION_TYPES: Record<string, JobType[]> = {
-  "/models": ["benchmark"],
+  "/models": ["benchmark", "start"],
   "/benchmarks": ["benchmark", "capture", "comparison-video", "export"],
   "/autotune": ["autotune"],
 };

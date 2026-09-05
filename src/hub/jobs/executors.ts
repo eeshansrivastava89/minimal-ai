@@ -15,7 +15,7 @@ import {
 import { getFreeDiskBytes } from "../../hardware.mjs";
 import { formatBytes } from "../../ui.mjs";
 import { HF_HUB_DIR } from "../../config.mjs";
-import { createProfileFromModel } from "../../profiles.mjs";
+import { createProfileFromModel, effectiveModelId, touchProfile } from "../../profiles.mjs";
 import { createManagedProfile } from "../../model-catalog.mjs";
 import { scanGgufModels, matchDrafter } from "../../scan.mjs";
 import {
@@ -29,13 +29,81 @@ import {
 } from "../../profile-flags.mjs";
 import { configuredHarness, harnessFor } from "../../harnesses.mjs";
 import { applyProfileSettingsToOmlx } from "../../managed-backends.mjs";
+import { stopOrUnload } from "../../process.mjs";
 
-import { profileMatchesModel } from "../api/data.ts";
-import { catalog } from "../api/data.ts";
+import { allBenchmarks, catalog, chatApiFor, profileMatchesModel } from "../api/data.ts";
 import { parseModelRef, type ModelRef } from "../api/model-ref.ts";
 import type { JobContext } from "./runner.ts";
+import { backendFor } from "../../backends.mjs";
+import {
+  modelAvailableOnServer,
+  preflightInference,
+  serverMatchesProfile,
+  serverReady,
+  startServer,
+  waitForReady,
+} from "../../process.mjs";
 
-// ── download ────────────────────────────────────────────────────────────────
+/** Bring a model fully up: backend server (if needed) + the model loaded
+ *  + a preflight token (so "running" means genuinely ready, not just
+ *  "server listening"). Shared by the start job and benchmark launches —
+ *  the hub owns the lifecycle either way. Also bumps lastUsedAt. */
+export async function ensureModelRunning(ctx: JobContext, profile: any): Promise<void> {
+  const backend = backendFor(profile.backend);
+  const managed = backend.type === "managed-server";
+  if (managed) {
+    if (!(await serverReady(profile.baseUrl))) {
+      ctx.log(`[hub] starting ${backend.label}…`);
+      await startServer(profile);
+    }
+    const available = await modelAvailableOnServer(profile);
+    if (available === null) throw new Error(`couldn't reach ${backend.label} at ${profile.baseUrl} to confirm the model is available`);
+    if (!available) throw new Error(`${profile.modelAlias} is not available on ${backend.label}`);
+  } else {
+    if (await serverReady(profile.baseUrl)) {
+      const match = await serverMatchesProfile(profile);
+      if (!match.matches) throw new Error(`a different server is already responding at ${profile.baseUrl} — ${match.reason}`);
+      ctx.log(`[hub] reusing server at ${profile.baseUrl}`);
+    } else {
+      ctx.log("[hub] starting llama-server…");
+      const state = await startServer(profile);
+      ctx.progress(null, "waiting for the server");
+      await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
+    }
+  }
+
+  ctx.progress(null, "preflight inference test");
+  const preflight = await preflightInference(profile);
+  if (!preflight.ok) {
+    try {
+      await stopOrUnload(profile);
+    } catch {
+      /* best effort */
+    }
+    throw new Error(`model failed to generate a test token: ${preflight.error}`);
+  }
+  ctx.log("[hub] preflight ok — model loaded");
+  // The model ran — bump lastUsedAt so the models table's recency sort and
+  // the dashboard's recent list have real data.
+  await touchProfile(profile.id);
+}
+
+// ── start (bring the model up and leave it running) ──────────────────────
+
+export async function startExecutor(ctx: JobContext) {
+  const ref = parseModelRef(ctx.job.ref ?? "");
+  if (!ref) throw new Error("start job is missing its model ref");
+  const { profile } = await baseProfileFor(ref, false);
+  if (!profile) throw new Error("no saved profile for this model — set it up first");
+  ctx.log(`[hub] starting ${profile.label} (${backendFor(profile.backend).label})`);
+  await ensureModelRunning(ctx, profile);
+  const api = chatApiFor(profile);
+  ctx.progress(null, "model ready");
+  ctx.log(`[hub] model ready — chat API at ${api.baseUrl} (model "${api.model}")`);
+  return api;
+}
+
+// ── download ───────────────────────────────────────────────────────────────
 
 export async function downloadExecutor(ctx: JobContext) {
   const { repo, filename } = ctx.job.payload as { repo: string; filename?: string | null };

@@ -183,6 +183,9 @@ export interface ModelDetail {
   contextLength?: number;
   capabilities: Record<string, unknown>;
   profile?: Profile;
+  /** OpenAI-compatible chat API served by the backend when the model is
+   *  running (baseUrl + model name to hit). Present iff a profile exists. */
+  api?: { baseUrl: string; model: string };
   omlxModelSettings?: Record<string, unknown>;
 }
 

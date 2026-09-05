@@ -14,6 +14,7 @@ import { DATA_DIR } from "../../config.mjs";
 export type JobType =
   | "download"
   | "setup"
+  | "start"
   | "benchmark"
   | "capture"
   | "score"

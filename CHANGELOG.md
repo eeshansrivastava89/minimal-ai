@@ -4,6 +4,26 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.14.1] - 2026-09-05
+
+### Changed
+- Changed table and header layout: Start/Stop buttons sit next to the model name and the status column shows status only — on the models table and the model page header (running pill stays on the right).
+
+### Fixed
+- Fixed stale UI after job completion — a job reaching a finished state now invalidates the models, runs, and autotune caches, so running state, the API card, and spinners appear without a reload or waiting out staleTime.
+- Fixed the start experience navigating away — Start keeps you where you are and shows inline progress (button flips to Starting…, the model page shows a live bring-up card).
+
+## [3.14.0] - 2026-09-05
+
+### Added
+- Added Start model: a job (POST /api/models/:id/start) that brings the backend server up, loads the model, and preflights a test token — the hub owns the model's lifecycle instead of handing the user a pi command and hoping.
+- Added the model page's Run section for a started model: the backend's own OpenAI-compatible chat API (base URL + model name, for apps) alongside the copyable pi command (for chat) — the hub proxies nothing.
+- Added a Start button on ready rows of the models table, disabled while that model's start job is queued or running.
+
+### Changed
+- Changed benchmark launches and the start job to share one ensureModelRunning path (server up → load → preflight), which also bumps lastUsedAt in both cases.
+- Changed the model page's stopped state: the primary action is now Start model, with the raw pi command demoted to an inline alternative.
+
 ## [3.13.0] - 2026-09-05
 
 ### Changed

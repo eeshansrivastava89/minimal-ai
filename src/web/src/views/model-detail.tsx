@@ -89,13 +89,20 @@ function SettingsTable({ rows }: { rows: [string, unknown][] }) {
 function OverviewTab({
   detail,
   profile,
+  running,
   navigate,
 }: {
   detail: ModelDetailT;
   profile?: Profile;
+  running: boolean;
   navigate: Navigate;
 }) {
   const caps = detail.capabilities;
+  const queryClient = useQueryClient();
+  const { jobs } = useJobsLive();
+  const startPending = (jobs ?? []).some(
+    (j) => j.type === "start" && j.ref === detail.ref && (j.status === "queued" || j.status === "running")
+  );
 
   // The pi launch command for this model — the hub never owns the session;
   // the user pastes it into whatever terminal they like.
@@ -104,10 +111,19 @@ function OverviewTab({
       (profile.thinkingOff ? " --thinking off" : profile.thinkingLevel ? ` --thinking ${profile.thinkingLevel}` : "")
     : "";
 
-  const copyCommand = async () => {
+  const copy = async (text: string, message: string) => {
     try {
-      await navigator.clipboard.writeText(launchCommand);
-      toast("Copied — run it in the terminal of your choice");
+      await navigator.clipboard.writeText(text);
+      toast(message);
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  };
+  const startModel = async () => {
+    try {
+      await api.startModel(detail.ref);
+      toast("Starting — the model page shows the API once it's ready");
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
     } catch (err) {
       toast((err as Error).message);
     }
@@ -123,30 +139,85 @@ function OverviewTab({
       </div>
 
       <SectionTitle title="Run" meta={profile ? undefined : "set the model up first"} />
-      <Card>
-        <CardContent className="flex flex-col gap-2 p-4">
-          {profile ? (
-            <>
+      {profile ? (
+        running || startPending ? (
+          // Running (or getting there): both ways to use it.
+          <div className="flex flex-col gap-3">
+            {startPending && !running && (
+              <Card>
+                <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
+                  <Spinner className="size-4" /> Starting the model — server up, then a preflight token…
+                </CardContent>
+              </Card>
+            )}
+            {running && detail.api && (
+              <Card>
+                <CardContent className="flex flex-col gap-2 p-4">
+                  <div className="text-sm font-medium text-foreground">Use it in your apps</div>
+                  <p className="text-sm text-muted-foreground">
+                    The backend serves an OpenAI-compatible chat API on this machine. Point your
+                    application at the base URL and model name below (POST {`${detail.api.baseUrl}/chat/completions`}).
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                      {detail.api.baseUrl}
+                    </code>
+                    <code className="rounded border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                      model: {detail.api.model}
+                    </code>
+                    <Button size="sm" variant="outline" onClick={() => copy(detail.api!.baseUrl, "Copied — the API base URL")}>
+                      Copy
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <Card>
+              <CardContent className="flex flex-col gap-2 p-4">
+                <div className="text-sm font-medium text-foreground">Chat with it</div>
+                <p className="text-sm text-muted-foreground">
+                  Copy the pi command and run it in the terminal of your choice — the session lives
+                  there, the hub never owns it. The model stays loaded until you stop it here.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                    {launchCommand}
+                  </code>
+                  <Button size="sm" variant="outline" onClick={() => copy(launchCommand, "Copied — run it in the terminal of your choice")}>
+                    Copy
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          // Ready to run, not running: Start owns the lifecycle.
+          <Card>
+            <CardContent className="flex flex-col gap-2 p-4">
               <p className="text-sm text-muted-foreground">
-                The pi launch command for this model. Copy it and run it in the terminal of your
-                choice — the session lives there, the hub never owns it.
+                Start the model and the hub brings up the server, loads it, and verifies it
+                generates a test token. Then use it from your apps (API) or chat with it (pi) —
+                it stays running until you stop it here.
               </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-border bg-muted px-3 py-2 text-sm text-foreground">
-                  {launchCommand}
-                </code>
-                <Button size="sm" variant="outline" onClick={copyCommand}>
-                  Copy
-                </Button>
+              <div>
+                <Button onClick={startModel}>Start model</Button>
               </div>
-            </>
-          ) : (
+              <p className="text-xs text-muted-foreground">
+                Or run it directly — note the hub won't own the session: {" "}
+                <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs">{launchCommand}</code>
+              </p>
+            </CardContent>
+          </Card>
+        )
+      ) : (
+        <Card>
+          <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">
-              No saved profile yet — set this model up first and its launch command appears here.
+              No saved profile yet — set this model up first and its launch options appear here.
             </p>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <RecentActivity modelRef={detail.ref} navigate={navigate} />
     </div>
@@ -319,19 +390,19 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{profile?.label ?? detail.title}</h1>
+        {runningNow && (
+          <Button variant="destructive" size="sm" disabled={stopping} onClick={stopModel}>
+            {stopping ? "Stopping…" : "Stop model"}
+          </Button>
+        )}
         <span className="min-w-0 truncate text-sm text-muted-foreground">{detail.id}</span>
         {runningNow && (
           <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-green-500/15 px-3 py-1 text-sm font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
             <span className="size-2 animate-pulse rounded-full bg-green-500" />
             running now
           </span>
-        )}
-        {runningNow && (
-          <Button variant="destructive" size="sm" disabled={stopping} onClick={stopModel}>
-            {stopping ? "Stopping…" : "Stop model"}
-          </Button>
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -350,7 +421,7 @@ export function ModelDetail({ id, tab, navigate }: { id: string; tab: string; na
       </Tabs>
 
       <div className="mt-4">
-        {tab === "overview" && <OverviewTab detail={detail} profile={profile} navigate={navigate} />}
+        {tab === "overview" && <OverviewTab detail={detail} profile={profile} running={runningNow} navigate={navigate} />}
         {tab === "configuration" && (
           <ConfigurationTab
             detail={detail}

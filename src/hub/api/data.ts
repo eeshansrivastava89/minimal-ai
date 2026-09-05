@@ -22,6 +22,7 @@ import { installedRamGB, availableRamBytes } from "../../hardware.mjs";
 import { findLlamaServer } from "../../config.mjs";
 import { DATA_DIR, HF_HUB_DIR, LOG_DIR } from "../../config.mjs";
 import { loadProfiles } from "../../profiles.mjs";
+import { effectiveModelId } from "../../profiles.mjs";
 import { scanGgufModels, scanOllamaModels } from "../../scan.mjs";
 
 import { slugModelId } from "../benchmark-core/paths.ts";
@@ -345,12 +346,25 @@ export async function modelDetail(ref: ModelRef): Promise<ModelDetail | null> {
     contextLength: summary.contextLength,
     capabilities: summary.capabilities,
     profile,
+    // The chat API apps hit when the model is running (OpenAI-compatible:
+    // `${baseUrl}/chat/completions`). The hub proxies nothing — this is the
+    // backend's own endpoint, served by the server the hub starts.
+    api: profile ? chatApiFor(profile) : undefined,
   };
   if (ref.backend === "omlx") {
     const settings = await readOmlxModelSettings(ref.id).catch(() => null);
     if (settings && Object.keys(settings).length) detail.omlxModelSettings = settings;
   }
   return detail;
+}
+
+/** The chat API a running profile serves — what an app points at to use
+ *  the model. One definition, used by the model detail DTO and the start
+ *  job's metrics. Profiles store the base with a /v1 suffix (all three
+ *  backends) — normalize so both conventions come out canonical. */
+export function chatApiFor(profile: any): { baseUrl: string; model: string } {
+  const base = String(profile.baseUrl ?? "").replace(/\/v1\/?$/, "");
+  return { baseUrl: `${base}/v1`, model: effectiveModelId(profile) };
 }
 
 // ── Setup (read model) ──────────────────────────────────────────────────────

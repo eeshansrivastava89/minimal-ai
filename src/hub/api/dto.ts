@@ -92,11 +92,16 @@ export const AutotuneStartDto = z
   })
   .strict();
 
+// Starting a model is ref-only — the payload is empty by design; the
+// model's profile is the entire instruction set.
+export const StartDto = z.object({}).strict();
+
 export const JobEnqueueDto = z
   .object({
     type: z.enum([
       "download",
       "setup",
+      "start",
       "benchmark",
       "capture",
       "score",

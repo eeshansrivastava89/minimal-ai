@@ -44,8 +44,9 @@ import {
   JobEnqueueDto,
   RunRefDto,
   SetupFormDto,
+  StartDto,
 } from "./api/dto.ts";
-import { downloadExecutor, setupExecutor } from "./jobs/executors.ts";
+import { downloadExecutor, setupExecutor, startExecutor } from "./jobs/executors.ts";
 import {
   benchmarkExecutor,
   captureExecutor,
@@ -267,7 +268,9 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
                     ? ExportDto.safeParse(payload)
                     : type === "autotune"
                       ? AutotuneStartDto.safeParse(payload)
-                      : SetupFormDto.safeParse(payload);
+                      : type === "start"
+                        ? StartDto.safeParse(payload)
+                        : SetupFormDto.safeParse(payload);
       if (!typed.success) return zodError(c, typed.error.issues);
       const job = await runner.enqueue({
         type,
@@ -305,11 +308,29 @@ export function createApp(opts: { runner?: JobRunner } = {}): Hono {
     }
   });
 
-  // Stop/unload a running model — the inverse of the copied launch command.
-  // oMLX/Ollama unload via their admin APIs; llama.cpp stops the tracked
-  // server (SIGTERM → SIGKILL), refusing honestly when the hub doesn't own
-  // the process. Soft results (unload refused, no tracked pid) come back
-  // 200 with the reason — the UI surfaces it.
+  // Start a saved profile's model — the hub owns the lifecycle. Brings the
+  // backend server up (if needed), loads the model, preflights a test token,
+  // and leaves it running: the model page then shows the backend's chat API
+  // (for apps) and the pi command (for chat) until the user stops it.
+  app.post("/api/models/:id/start", async (c) => {
+    if (!runner) return c.json({ error: "job runner not started" }, 503);
+    const ref = refParam(c);
+    if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
+    const detail = await modelDetail(ref);
+    if (!detail) return c.json({ error: "model not found" }, 404);
+    if (!detail.profile) return c.json({ error: "no saved profile for this model — set it up first" }, 409);
+    const job = await runner.enqueue({
+      type: "start",
+      ref: detail.ref,
+      title: `Start ${detail.profile.label}`,
+      payload: {},
+    });
+    return c.json(toJobDto(job), 201);
+  });
+
+  // Stop/unload a running model — the inverse of start. oMLX/Ollama unload
+  // via their admin APIs; llama.cpp stops the tracked server (SIGTERM →
+  // SIGKILL), refusing honestly when the hub doesn't own the process.
   app.post("/api/models/:id/stop", async (c) => {
     const ref = refParam(c);
     if (!ref) return c.json({ error: "invalid model ref (want backend:id)" }, 400);
@@ -552,6 +573,7 @@ function createRunner(): JobRunner {
   const runner = new JobRunner();
   runner.registerExecutor("download", downloadExecutor);
   runner.registerExecutor("setup", setupExecutor);
+  runner.registerExecutor("start", startExecutor);
   runner.registerExecutor("benchmark", benchmarkExecutor());
   runner.registerExecutor("capture", captureExecutor());
   runner.registerExecutor("score", scoreExecutor());

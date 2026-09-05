@@ -10,16 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { backendFor } from "../../backends.mjs";
 import { DATA_DIR } from "../../config.mjs";
 import { configuredHarness, harnessFor } from "../../harnesses.mjs";
-import { touchProfile } from "../../profiles.mjs";
-import {
-  modelAvailableOnServer,
-  preflightInference,
-  serverMatchesProfile,
-  serverReady,
-  startServer,
-  stopOrUnload,
-  waitForReady,
-} from "../../process.mjs";
+import { stopOrUnload } from "../../process.mjs";
 import { prepareBenchmarkRun } from "../../benchmark.mjs";
 
 import { allBenchmarks, machineInfo, resolveRunsRoot } from "../api/data.ts";
@@ -28,7 +19,7 @@ import { captureSingleRunMedia } from "../benchmark-core/capture-media.ts";
 import { exportComparisonVideo } from "../benchmark-core/comparison-video.ts";
 import { generateStaticExport } from "../benchmark-core/export.ts";
 import { scoreDsRun } from "../benchmark-core/score-ds-run.ts";
-import { baseProfileFor } from "./executors.ts";
+import { baseProfileFor, ensureModelRunning } from "./executors.ts";
 import type { JobContext } from "./runner.ts";
 
 export interface RunRef {
@@ -117,46 +108,12 @@ export async function runModelHeadless(
   profile: any,
   opts: { piBin?: string; message?: string; thinking?: string; keepServer?: boolean; cwd: string }
 ): Promise<Record<string, unknown>> {
-  const backend = backendFor(profile.backend);
   const started = Date.now();
-
+  const backend = backendFor(profile.backend);
   ctx.log(`[hub] launching ${profile.label} (${backend.label})`);
-  const managed = backend.type === "managed-server";
-  if (managed) {
-    if (!(await serverReady(profile.baseUrl))) {
-      ctx.log(`[hub] starting ${backend.label}…`);
-      await startServer(profile);
-    }
-    const available = await modelAvailableOnServer(profile);
-    if (available === null) throw new Error(`couldn't reach ${backend.label} at ${profile.baseUrl} to confirm the model is available`);
-    if (!available) throw new Error(`${profile.modelAlias} is not available on ${backend.label}`);
-  } else {
-    if (await serverReady(profile.baseUrl)) {
-      const match = await serverMatchesProfile(profile);
-      if (!match.matches) throw new Error(`a different server is already responding at ${profile.baseUrl} — ${match.reason}`);
-      ctx.log(`[hub] reusing server at ${profile.baseUrl}`);
-    } else {
-      ctx.log("[hub] starting llama-server…");
-      const state = await startServer(profile);
-      ctx.progress(null, "waiting for the server");
-      await waitForReady(profile, state?.pid, (state as { rawLogPath?: string } | null)?.rawLogPath);
-    }
-  }
-
-  ctx.progress(null, "preflight inference test");
-  const preflight = await preflightInference(profile);
-  if (!preflight.ok) {
-    try {
-      await stopOrUnload(profile);
-    } catch {
-      /* best effort */
-    }
-    throw new Error(`model failed to generate a test token: ${preflight.error}`);
-  }
-  ctx.log("[hub] preflight ok — model loaded");
-  // The model ran (this is the hub's only launch path) — bump the profile's
-  // lastUsedAt so the models table's recency sort has real data.
-  await touchProfile(profile.id);
+  // Bring the model up (server + load + preflight) — the same path the
+  // start job uses, minus the pi session that follows.
+  await ensureModelRunning(ctx, profile);
 
   const harness = harnessFor((await configuredHarness()).id);
   if (!(await harness.detect())) throw new Error(`${harness.label} is not installed — npm install -g ${harness.npm}`);

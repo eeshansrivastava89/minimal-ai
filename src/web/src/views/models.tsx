@@ -7,6 +7,7 @@ import { api } from "@/api";
 import { toast } from "sonner";
 import { fmtBytes, fmtCtx } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useJobsLive } from "@/hooks/use-jobs";
 import { CapabilityBadges, ClickableRow, SectionTitle, StatusBadge } from "@/components/shared";
 import { DownloadDialog } from "@/components/flows";
 import type { Navigate } from "@/App";
@@ -23,6 +24,31 @@ const COLS = (
     <col className="w-[12%]" />
   </colgroup>
 );
+
+// Start = the hub-owned lifecycle: job brings the server up, loads the
+// model, preflights it — then the model page shows the API + pi command.
+function StartButton({ ref, label }: { ref: string; label: string }) {
+  const queryClient = useQueryClient();
+  const { jobs } = useJobsLive();
+  const pending = (jobs ?? []).some(
+    (j) => j.type === "start" && j.ref === ref && (j.status === "queued" || j.status === "running")
+  );
+  const start = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // the row navigates — the button starts
+    try {
+      await api.startModel(ref);
+      toast(`Starting ${label} — watch it in Jobs`);
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  };
+  return (
+    <Button size="sm" variant="outline" disabled={pending} onClick={start}>
+      {pending ? "Starting…" : "Start"}
+    </Button>
+  );
+}
 
 // A model is running when its backend reports it loaded — hub jobs and
 // copy-pasted pi sessions alike.
@@ -85,7 +111,14 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                 }
               >
                 <TableCell>
-                  <div className="truncate font-medium text-foreground" title={r.title}>{r.title}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1 truncate font-medium text-foreground" title={r.title}>{r.title}</div>
+                    {isRunning ? (
+                      <StopButton ref={r.ref} label={r.title} />
+                    ) : r.status === "ready" ? (
+                      <StartButton ref={r.ref} label={r.title} />
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{r.sizeBytes ? fmtBytes(r.sizeBytes) : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtCtx(r.contextLength)}</TableCell>
@@ -93,23 +126,20 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                   {isSidekick ? "—" : <CapabilityBadges caps={r.capabilities} />}
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    {isRunning ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
-                        <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
-                        running
-                      </span>
-                    ) : r.status === "ready" ? (
-                      <StatusBadge status="ok">ready</StatusBadge>
-                    ) : r.status === "setup" ? (
-                      <StatusBadge status="needs-setup">needs setup</StatusBadge>
-                    ) : r.status === "draft" ? (
-                      <StatusBadge status="active">draft</StatusBadge>
-                    ) : (
-                      <StatusBadge status="warn">helper</StatusBadge>
-                    )}
-                    {isRunning && <StopButton ref={r.ref} label={r.title} />}
-                  </div>
+                  {isRunning ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
+                      <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+                      running
+                    </span>
+                  ) : r.status === "ready" ? (
+                    <StatusBadge status="ok">ready</StatusBadge>
+                  ) : r.status === "setup" ? (
+                    <StatusBadge status="needs-setup">needs setup</StatusBadge>
+                  ) : r.status === "draft" ? (
+                    <StatusBadge status="active">draft</StatusBadge>
+                  ) : (
+                    <StatusBadge status="warn">helper</StatusBadge>
+                  )}
                 </TableCell>
               </ClickableRow>
               );

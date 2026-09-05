@@ -28,7 +28,7 @@ process.env.PATH = `${BIN}:${process.env.PATH}`;
 
 const { JobStore } = await import("../src/hub/jobs/store.ts");
 const { JobRunner } = await import("../src/hub/jobs/runner.ts");
-const { setupExecutor } = await import("../src/hub/jobs/executors.ts");
+const { setupExecutor, startExecutor } = await import("../src/hub/jobs/executors.ts");
 const { createApp } = await import("../src/hub/server.ts");
 
 const dbPath = (name) => join(DATA, `${name}.db`);
@@ -350,4 +350,73 @@ test("GET /api/jobs lists; cancel/restart endpoints behave", async () => {
   assert.equal(restarted.status, "queued");
   assert.notEqual(restarted.id, job.id);
   assert.equal((await app.request("/api/jobs/missing/restart", { method: "POST" })).status, 404);
+});
+// ── start job: the hub-owned model lifecycle ───────────────────────────────
+
+// Stub OpenAI-compatible model server + a saved llama-cpp profile pointing
+// at it (same shape as the hub-benchmark test's machinery).
+async function stubModelServer() {
+  const server = createServer((req, res) => {
+    if (req.url.endsWith("/models")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "stub-model" }] }));
+    } else if (req.url.endsWith("/chat/completions")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    } else {
+      res.writeHead(404);
+      res.end("{}");
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
+    stubServers.push(server);
+    resolve(server);
+  }));
+  return { server, port: server.address().port };
+}
+
+function saveProfile(id, port) {
+  const dir = join(DATA, "profiles", id);
+  mkdirSync(dir, { recursive: true });
+  const profile = {
+    id,
+    label: `Stub ${id}`,
+    backend: "llama-cpp",
+    providerId: "llama-cpp",
+    modelAlias: "stub-model",
+    modelPath: `/tmp/${id}.gguf`,
+    baseUrl: `http://127.0.0.1:${port}`,
+    capabilities: { thinking: false },
+    flags: { ctxSize: 4096, host: "127.0.0.1", port },
+  };
+  writeFileSync(join(dir, "profile.json"), JSON.stringify(profile));
+  return profile;
+}
+
+test("start job brings the model up and reports the chat API", async () => {
+  const { port } = await stubModelServer();
+  saveProfile("start-me", port);
+  const runner = newRunner("start-job", { start: startExecutor });
+
+  const ref = `llama-cpp:${encodeURIComponent("/tmp/start-me.gguf")}`;
+  const job = await runner.enqueue({ type: "start", ref, title: "Start Stub", payload: {} });
+  await waitFor(() => runner.get(job.id)?.status === "completed");
+  const done = runner.get(job.id);
+  assert.equal(done.status, "completed", done.error);
+  assert.deepEqual(done.metrics, { baseUrl: `http://127.0.0.1:${port}/v1`, model: "stub-model" });
+  // A real use bumps lastUsedAt — the models-table recency sort keys on it.
+  const saved = JSON.parse(readFileSync(join(DATA, "profiles", "start-me", "profile.json"), "utf8"));
+  assert.ok(saved.lastUsedAt, "start should bump lastUsedAt");
+});
+
+test("POST /api/models/:id/start contract: 400 bad ref, 404 unknown model", async () => {
+  const runner = newRunner("start-api", { start: startExecutor });
+  const app = createApp({ runner });
+  assert.equal((await app.request("/api/models/nonsense/start", { method: "POST" })).status, 400);
+  assert.equal((await app.request("/api/models/omlx:ghost/start", { method: "POST" })).status, 404);
+  // chatApiFor normalizes both baseUrl conventions (profiles store a
+  // trailing /v1; stub/test servers may not).
+  const { chatApiFor } = await import("../src/hub/api/data.ts");
+  assert.equal(chatApiFor({ backend: "llama-cpp", baseUrl: "http://x:1/v1", modelAlias: "m" }).baseUrl, "http://x:1/v1");
+  assert.equal(chatApiFor({ backend: "llama-cpp", baseUrl: "http://x:1", modelAlias: "m" }).baseUrl, "http://x:1/v1");
 });
