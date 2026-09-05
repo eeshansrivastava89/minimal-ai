@@ -1,6 +1,12 @@
-// The model's autotune tab: the latest recommendation + result matrix
-// (from the sweep journal), a live matrix + progress while a sweep job runs
-// (rides the jobs SSE), and the model's sweep job history.
+// The model's autotune tab. Two states, one page:
+//
+//  • Sweep running → the page IS the live view: progress + the animated
+//    matrix (spinner on the config being measured, tps as configs land).
+//    Previous results collapse to a one-liner — the running sweep owns
+//    the page until it finishes.
+//  • Idle → the recommendation (reasoning + the settings it puts on the
+//    server) → the config-space matrix → per-config numbers → clickable
+//    sweep history (each row is a job; it opens the job's log).
 
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -10,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { api } from "@/api";
 import { fmtDate, fmtPct, fmtTps, backendLabel } from "@/lib/format";
-import { SectionTitle, Spinner, StatusBadge, SweepMatrix, type SweepConfig } from "@/components/shared";
+import { ClickableRow, SectionTitle, Spinner, StatusBadge, SweepMatrix, type SweepConfig } from "@/components/shared";
 import { useJobsLive } from "@/hooks/use-jobs";
 import type { Navigate } from "@/App";
 import type { AutotuneRun, Profile } from "@/data/types";
@@ -33,6 +39,14 @@ function liveConfigs(m: SweepMetrics): SweepConfig[] {
     ...p,
     median: m.results?.find((r) => r.configId === p.id)?.summary.median ?? null,
   }));
+}
+
+/** The config the sweep is measuring right now: the first planned one
+ *  without a result (the sweep walks the plan in order). */
+function runningConfigId(m: SweepMetrics | undefined): string | null {
+  return (
+    m?.plan?.find((p) => p.tested !== false && !m.results?.some((r) => r.configId === p.id))?.id ?? null
+  );
 }
 
 function LiveSweep({ modelRef, navigate }: { modelRef: string; navigate: Navigate }) {
@@ -58,8 +72,8 @@ function LiveSweep({ modelRef, navigate }: { modelRef: string; navigate: Navigat
         title="Sweep in progress"
         meta={active.status === "queued" ? "queued" : `${metrics?.done ?? 0}/${metrics?.total ?? "?"} configs`}
         action={
-          <Button variant="outline" size="sm" onClick={() => navigate("jobs")}>
-            Watch logs in Jobs
+          <Button variant="outline" size="sm" onClick={() => navigate("jobs", { jobId: active.id })}>
+            Job log
           </Button>
         }
       />
@@ -79,17 +93,32 @@ function LiveSweep({ modelRef, navigate }: { modelRef: string; navigate: Navigat
             )}
           </div>
           {metrics?.plan?.length ? (
-            <SweepMatrix configs={liveConfigs(metrics)} recommended={metrics.recommendation?.configId ?? null} />
+            <SweepMatrix
+              configs={liveConfigs(metrics)}
+              activeId={runningConfigId(metrics)}
+              recommended={metrics.recommendation?.configId ?? null}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">Probing the server and building the config grid…</p>
           )}
           <p className="text-xs text-muted-foreground">
-            ✓ will measure · – compatible, not measured · NA not possible · each config is a cold load + warm runs with
-            unload + RAM-gate bookends.
+            ⟳ measuring · … queued · – compatible, not measured · NA not possible. Each config is a cold load + warm
+            runs with unload + RAM-gate bookends; your settings are restored at the end.
           </p>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** One line about the previous result while a new sweep owns the page. */
+function PreviousSweepLine({ run }: { run: AutotuneRun | null }) {
+  if (!run) return null;
+  return (
+    <p className="mt-3 text-xs text-muted-foreground">
+      Previous sweep ({fmtDate(run.recommendedAt)}): {run.noChange ? "kept current settings" : run.recommended} —
+      results return when this sweep finishes.
+    </p>
   );
 }
 
@@ -107,7 +136,10 @@ export function ModelAutotune({
   navigate: Navigate;
 }) {
   const { jobs } = useJobsLive();
-  const history = (jobs ?? []).filter((j) => j.type === "autotune" && j.ref === modelRef).slice(0, 5);
+  // Finished sweeps only — the running one owns the page via LiveSweep.
+  const history = (jobs ?? []).filter(
+    (j) => j.type === "autotune" && j.ref === modelRef && !["queued", "running"].includes(j.status)
+  );
   const active = (jobs ?? []).some(
     (j) => j.type === "autotune" && j.ref === modelRef && (j.status === "queued" || j.status === "running")
   );
@@ -135,10 +167,19 @@ export function ModelAutotune({
   const rec = run?.configs.find((c) => c.id === run.recommended);
   const base = run?.configs.find((c) => c.id === "vanilla");
 
+  // ── live: the running sweep owns the page ────────────────────────────────
+  if (active) {
+    return (
+      <div>
+        <LiveSweep modelRef={modelRef} navigate={navigate} />
+        <PreviousSweepLine run={run} />
+      </div>
+    );
+  }
+
+  // ── idle ─────────────────────────────────────────────────────────────────
   return (
     <div>
-      <LiveSweep modelRef={modelRef} navigate={navigate} />
-
       {!run ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10">
@@ -151,10 +192,10 @@ export function ModelAutotune({
       ) : (
         <>
           <SectionTitle
-            title="Latest recommendation"
-            meta={fmtDate(run.recommendedAt)}
+            title="Recommendation"
+            meta={run.noChange ? "keep current settings" : fmtDate(run.recommendedAt)}
             action={
-              profile && !active ? (
+              profile ? (
                 <Button variant="outline" size="sm" onClick={() => navigate("autotuneNew", { modelId: modelRef })}>
                   ◉ New sweep
                 </Button>
@@ -162,8 +203,23 @@ export function ModelAutotune({
             }
           />
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="flex flex-col gap-4 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={run.noChange ? "warn" : "ok"}>
+                  {run.noChange ? "nothing beat your settings" : rec?.label}
+                </StatusBadge>
+                {run.dflashDraft && <StatusBadge status="active">{run.dflashDraft} draft</StatusBadge>}
+              </div>
               <p className="max-w-3xl text-sm text-muted-foreground">{run.reasoning}</p>
+              {rec && (
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                  {Object.entries(rec.settings).map(([k, v]) => (
+                    <span key={k} className="text-muted-foreground">
+                      {k}: <span className="tabular-nums text-foreground">{String(v)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -171,10 +227,11 @@ export function ModelAutotune({
           <Card>
             <CardContent className="p-4">
               <SweepMatrix configs={run.configs} recommended={run.recommended} />
+              <p className="mt-2 text-xs text-muted-foreground">– compatible, not measured · NA not possible · ★ recommended</p>
             </CardContent>
           </Card>
 
-          <SectionTitle title="Speed sweep" meta="median tps, thinking off vs on" />
+          <SectionTitle title="Per-config results" meta="median tps across warm runs" />
           <Card>
             <CardContent className="p-0">
               <Table>
@@ -223,41 +280,24 @@ export function ModelAutotune({
               </p>
             </CardContent>
           </Card>
-
-          <SectionTitle title="Recommended settings" meta="what gets PUT to the server" />
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableBody>
-                  {rec &&
-                    Object.entries(rec.settings).map(([k, v]) => (
-                      <TableRow key={k}>
-                        <TableCell className="w-64 text-muted-foreground">{k}</TableCell>
-                        <TableCell className="tabular-nums text-foreground">{String(v)}</TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
         </>
       )}
 
       {history.length > 0 && (
         <>
-          <SectionTitle title="Sweep history" meta="jobs recorded against this model" />
+          <SectionTitle title="Sweep history" meta="each row opens the job's log" />
           <Card>
             <CardContent className="p-0">
               <Table>
                 <TableBody>
                   {history.map((j) => (
-                    <TableRow key={j.id}>
+                    <ClickableRow key={j.id} onClick={() => navigate("jobs", { jobId: j.id })}>
                       <TableCell className="font-medium text-foreground">{j.title}</TableCell>
                       <TableCell>
                         <StatusBadge status={j.status} />
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">{fmtDate(j.createdAt)}</TableCell>
-                    </TableRow>
+                    </ClickableRow>
                   ))}
                 </TableBody>
               </Table>

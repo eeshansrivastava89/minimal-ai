@@ -4,6 +4,18 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.15.0] - 2026-09-05
+
+### Added
+- Added a live-sweep view that owns the model's autotune page while a sweep runs: progress + the matrix with a spinner on the config being measured, dots on queued ones, and medians as they land.
+- Added clickable sweep-history rows and a Job log button that deep-link to the finished job's log (/jobs?job=…).
+
+### Changed
+- Changed the idle autotune page layout: recommendation (reasoning + the settings it puts on the server, one card) → result matrix → per-config results (renamed from "Speed sweep") → sweep history; previous results collapse to a one-liner while a new sweep runs.
+
+### Fixed
+- Fixed sweep journal rows missing the config's settings and family, so results read from the journal (the hub's autotune DTO) render what each measured config was.
+
 ## [3.14.1] - 2026-09-05
 
 ### Changed

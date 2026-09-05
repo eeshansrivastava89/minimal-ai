@@ -67,7 +67,7 @@ export function useNav(): Navigate {
           params: { bench: opts?.bench ?? "", slug: opts?.slug ?? "", runId: opts?.runId ?? "" },
         });
       default:
-        return navigate({ to: `/${view}` });
+        return navigate({ to: `/${view}`, search: view === "jobs" ? { job: opts?.jobId } : undefined });
     }
   };
 }
@@ -124,6 +124,11 @@ function AutotunePage() {
   return <Autotune navigate={useNav()} />;
 }
 
+function JobsPage() {
+  const { job } = useSearch({ from: jobsRoute.id });
+  return <Jobs initialJobId={job} />;
+}
+
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dashboard",
@@ -172,7 +177,14 @@ const autotuneRoute = createRoute({
   path: "/autotune",
   component: AutotunePage,
 });
-const jobsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/jobs", component: Jobs });
+const jobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/jobs",
+  validateSearch: (s: Record<string, unknown>): { job?: string } => ({
+    job: typeof s.job === "string" ? s.job : undefined,
+  }),
+  component: JobsPage,
+});
 const learnRoute = createRoute({ getParentRoute: () => rootRoute, path: "/learn", component: Learn });
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,

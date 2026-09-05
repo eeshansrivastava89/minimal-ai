@@ -56,7 +56,16 @@ function sweepCoord(s: Record<string, unknown>) {
   };
 }
 
-export function SweepMatrix({ configs, recommended }: { configs: SweepConfig[]; recommended?: string | null }) {
+export function SweepMatrix({
+  configs,
+  recommended,
+  activeId,
+}: {
+  configs: SweepConfig[];
+  recommended?: string | null;
+  /** Config currently being measured (live sweep) — its cells spin. */
+  activeId?: string | null;
+}) {
   const base = configs.find((c) => c.id === "vanilla");
   const thinkLabel = (() => {
     const t = configs.find((c) => c.settings.enable_thinking);
@@ -81,10 +90,15 @@ export function SweepMatrix({ configs, recommended }: { configs: SweepConfig[]; 
     });
     if (!c) return { cls: "text-muted-foreground", t: "–", d: null, star: false };
     if (c.median == null) {
-      // In the grid but not measured: untested (–) or planned/pending (✓).
+      // Live sweep: the measuring config spins; the rest of the plan reads
+      // as pending (…) or skipped (–). Plan preview (no activeId) keeps ✓
+      // for "will measure".
+      if (activeId === c.id) return { cls: "", t: "spin", d: null, star: false };
       return c.tested === false
         ? { cls: "text-muted-foreground", t: "–", d: null, star: false }
-        : { cls: "text-muted-foreground", t: "✓", d: null, star: false };
+        : activeId != null
+          ? { cls: "text-muted-foreground", t: "…", d: null, star: false }
+          : { cls: "text-muted-foreground", t: "✓", d: null, star: false };
     }
     const delta = c.id === "vanilla" || !base?.median ? null : ((c.median - base.median) / base.median) * 100;
     const star = c.id === recommended;
@@ -117,7 +131,11 @@ export function SweepMatrix({ configs, recommended }: { configs: SweepConfig[]; 
                     return (
                       <TableCell key={`${think}-${ane}`} className={cn("text-center tabular-nums", cell.cls)}>
                         {cell.star && <span className="mr-1 text-primary">★</span>}
-                        <span className="font-medium">{cell.t}</span>
+                        {cell.t === "spin" ? (
+                          <Spinner className="mx-auto size-3.5" />
+                        ) : (
+                          <span className="font-medium">{cell.t}</span>
+                        )}
                         {cell.d && <div className="text-[10px] text-muted-foreground">{cell.d}</div>}
                       </TableCell>
                     );

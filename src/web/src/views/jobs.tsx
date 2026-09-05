@@ -127,9 +127,9 @@ function JobRow({ job, selected, onSelect }: { job: Job; selected: boolean; onSe
   );
 }
 
-export function Jobs() {
+export function Jobs({ initialJobId }: { initialJobId?: string }) {
   const { jobs, isLoading } = useJobsLive();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null);
   const selected = jobs?.find((j) => j.id === selectedId) ?? null;
   // Default to the first active job so the log view is useful on arrival.
   const shown = selected ?? jobs?.find((j) => ACTIVE.has(j.status)) ?? null;

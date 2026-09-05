@@ -29,7 +29,7 @@ import { useSidebarActivity } from "@/hooks/use-sidebar-activity";
 // optional model/tab/run ids. router.tsx's useNav() adapts it to URLs.
 export type Navigate = (
   view: string,
-  opts?: { modelId?: string; tab?: string; runId?: string; bench?: string; slug?: string }
+  opts?: { modelId?: string; tab?: string; runId?: string; bench?: string; slug?: string; jobId?: string }
 ) => void;
 
 const NAV = [

@@ -323,11 +323,15 @@ export async function sweepConfig(baseUrl, runDir, modelId, row, options = {}) {
   };
 
   // JOURNAL — the resume source of truth. Summary carries everything
-  // recommend.mjs needs, so a restart can recommend off the journal alone.
+  // recommend.mjs needs, so a restart can recommend off the journal alone;
+  // settings/family ride along so the hub's results DTO (which reads the
+  // journal, not the in-memory grid) can render what each config was.
   await appendJournal(runDir, {
     event: "config-done",
     configId: row.id,
     label: row.label,
+    family: row.family,
+    settings: row.settings,
     summary,
   });
   return result;
