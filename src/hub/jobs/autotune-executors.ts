@@ -1,8 +1,9 @@
-// Autotune job executor — the CLI wizard's sweep as one hub job: probe →
-// grid → snapshot + lock → per-config sweep (safety layer unchanged: one
-// model loaded at a time, RAM gate, journal, verified PUTs) → recommendation
-// → apply (or discard) → memory reclaim (oMLX restart). The grid/report
-// modules are reused as-is; the live matrix rides the job's metrics column.
+// Autotune job executor — the CLI wizard's sweep as one hub job: restart
+// (fresh baseline) → probe → grid → snapshot + lock → per-config sweep
+// (safety layer unchanged: one model loaded at a time, RAM gate, journal,
+// verified PUTs) → recommendation → apply (or discard) → oMLX restart
+// (reclaim). The grid/report modules are reused as-is; the live matrix
+// rides the job's metrics column.
 //
 // Cancel: takes effect between configs (each config is one cold load + warm
 // runs); the finally block always restores the snapshotted settings so a
@@ -85,11 +86,12 @@ async function discardSweep(
   ctx.log(`[hub] settings restore incomplete: ${restore.reason}`);
 }
 
-/** oMLX restart to reclaim process memory the sweep pushed to swap — the
- *  server frees model memory per load/unload, but only a restart returns
- *  the process footprint to baseline. Settings persist across restarts. */
+/** oMLX restart — used twice: before the sweep (a fresh process is the
+ *  honest measurement baseline — drift made vanilla read 13.3→12.75 and
+ *  killed a dflash cold run on a 2-day-old process) and after it (reclaim
+ *  the memory the sweep pushed around). Settings persist across restarts. */
 async function reclaimMemory(ctx: JobContext, baseUrl: string): Promise<void> {
-  ctx.log("[hub] restarting oMLX to reclaim memory freed by the sweep…");
+  ctx.log("[hub] restarting oMLX…");
   const r: any = await restartOmlxServer();
   if (!r.ok) {
     ctx.log(`[hub] could not auto-restart oMLX (${r.reason}) — run \`omlx restart\` to reclaim memory`);
@@ -98,7 +100,7 @@ async function reclaimMemory(ctx: JobContext, baseUrl: string): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (await serverReady(baseUrl)) {
-      ctx.log("[hub] oMLX restarted — memory reclaimed");
+      ctx.log("[hub] oMLX restarted — fresh process, settings intact");
       return;
     }
     await sleep(2000);
@@ -125,6 +127,12 @@ export function autotuneExecutor(options: AutotuneOptions = {}) {
     }
     const baseUrl = profile.baseUrl;
     const modelId = effectiveModelId(profile);
+
+    // Fresh process before the first measurement: the sweep compares configs
+    // against each other, so the baseline must not carry days of footprint
+    // drift. The post-sweep reclaim is the symmetric other end.
+    ctx.progress(null, "restarting oMLX for a clean baseline");
+    await reclaim(ctx, baseUrl);
 
     ctx.progress(null, "probing the oMLX server");
     const { model, allModels, rows } = await probeForSweep(baseUrl, modelId);

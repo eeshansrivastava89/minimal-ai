@@ -4,6 +4,11 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.16.0] - 2026-09-05
+
+### Added
+- Added a pre-sweep oMLX restart so every autotune measures on a fresh process — footprint drift had degraded vanilla from 13.3 to 12.75 tps and killed a DFlash cold run on a 2-day-old server; the post-sweep reclaim remains as the symmetric other end.
+
 ## [3.15.1] - 2026-09-05
 
 ### Added
@@ -11,7 +16,7 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 
 ### Fixed
 - Fixed the result matrix collapsing to a single cell for sweeps whose journal rows lacked settings — configs are now placed by their plan settings.
-- Fixed failed sweep configs being invisible: they are journaled (config-failed), shown as ✗ in the matrix, and listed with a failed badge in the per-config table (e.g. DFlash on 27B — its cold run died when the drifted oMLX server process exited mid-load; the 3.6GB draft is fine, a fresh server measures it).
+- Fixed failed sweep configs being invisible: they are journaled (config-failed), shown as ✗ in the matrix, and listed with a failed badge in the per-config table — e.g. the 27B DFlash cold run, which died because the drifted oMLX process exited mid-load.
 
 ## [3.15.0] - 2026-09-05
 
