@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/api";
 import { fmtCtx, fmtRelative } from "@/lib/format";
-import { AutotuneTable, SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
+import { AutotuneTable, ClickableRow, SummaryCard, StatusBadge, BackendBadge, SectionTitle, RunCard } from "@/components/shared";
 import type { Navigate } from "@/App";
 
 export function Dashboard({ navigate }: { navigate: Navigate }) {
@@ -59,7 +59,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
 
       <SectionTitle
         title="Quick launch"
-        meta="opens Terminal/iTerm with the command"
+        meta="click a model to open its page"
         action={
           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("models")}>
             All models
@@ -76,12 +76,11 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                 <TableHead className="text-right">Context</TableHead>
                 <TableHead>Thinking</TableHead>
                 <TableHead>Last used</TableHead>
-                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {recentProfiles.map((p) => (
-                <TableRow key={p.id}>
+                <ClickableRow key={p.id} onClick={() => navigate("model", { modelId: p.id })}>
                   <TableCell>
                     <div className="font-medium text-foreground">{p.label}</div>
                     <div className="text-xs text-muted-foreground">{p.modelAlias}</div>
@@ -100,12 +99,7 @@ export function Dashboard({ navigate }: { navigate: Navigate }) {
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{fmtRelative(p.lastUsedAt)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" onClick={() => navigate("model", { modelId: p.id })}>
-                      Run
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                </ClickableRow>
               ))}
             </TableBody>
           </Table>

@@ -4,6 +4,13 @@ All notable changes to minimal-ai (formerly offgrid-ai) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/) starting from v0.18.44.
 
+## [3.13.0] - 2026-09-05
+
+### Changed
+- Changed model table rows to clickable — the models page, dashboard quick-launch, and autotune tables open the target on row click instead of carrying per-row action buttons.
+- Changed the models table's Open/Set up buttons away (row click covers both), leaving the Stop button inline next to the running badge; the autotune table's View button and Action columns are gone.
+- Added one shared ClickableRow component as the single clickable-row style for every table.
+
 ## [3.12.1] - 2026-09-05
 
 ### Changed

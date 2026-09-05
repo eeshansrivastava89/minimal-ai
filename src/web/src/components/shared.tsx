@@ -239,8 +239,19 @@ export function CapabilityBadges({ caps }: { caps: Record<string, unknown> }) {
   );
 }
 
+// A table row that navigates on click — the one clickable-row style,
+// shared by the models, quick-launch, and autotune tables.
+export function ClickableRow({ onClick, className, children }: { onClick: () => void; className?: string; children: React.ReactNode }) {
+  return (
+    <TableRow className={cn("cursor-pointer hover:bg-muted/50", className)} onClick={onClick}>
+      {children}
+    </TableRow>
+  );
+}
+
 // The autotune results table — one component, used by both the dashboard
-// (recent) and the /autotune section (all models).
+// (recent) and the /autotune section (all models). Rows open the model's
+// autotune tab; no action column needed.
 export function AutotuneTable({ autotune, navigate, limit }: { autotune?: AutotuneRun[]; navigate: Navigate; limit?: number }) {
   return (
     <Card>
@@ -252,7 +263,6 @@ export function AutotuneTable({ autotune, navigate, limit }: { autotune?: Autotu
               <TableHead>Recommended</TableHead>
               <TableHead className="text-right">Median tps</TableHead>
               <TableHead className="text-right">vs vanilla</TableHead>
-              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -261,7 +271,10 @@ export function AutotuneTable({ autotune, navigate, limit }: { autotune?: Autotu
               const base = a.configs.find((c) => c.id === "vanilla");
               const delta = rec && base && rec.id !== "vanilla" ? ((rec.median - base.median) / base.median) * 100 : null;
               return (
-                <TableRow key={a.modelId}>
+                <ClickableRow
+                  key={a.modelId}
+                  onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}
+                >
                   <TableCell className="font-medium text-foreground">{a.modelId}</TableCell>
                   <TableCell>
                     <StatusBadge status="ok">{rec?.label}</StatusBadge>
@@ -277,12 +290,7 @@ export function AutotuneTable({ autotune, navigate, limit }: { autotune?: Autotu
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: a.profileId, tab: "autotune" })}>
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                </ClickableRow>
               );
             })}
           </TableBody>

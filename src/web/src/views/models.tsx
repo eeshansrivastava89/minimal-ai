@@ -7,7 +7,7 @@ import { api } from "@/api";
 import { toast } from "sonner";
 import { fmtBytes, fmtCtx } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CapabilityBadges, SectionTitle, StatusBadge } from "@/components/shared";
+import { CapabilityBadges, ClickableRow, SectionTitle, StatusBadge } from "@/components/shared";
 import { DownloadDialog } from "@/components/flows";
 import type { Navigate } from "@/App";
 import type { ModelSummary } from "@/data/types";
@@ -16,12 +16,11 @@ import type { ModelSummary } from "@/data/types";
 // each table independently and the columns would drift apart per bucket.
 const COLS = (
   <colgroup>
-    <col className="w-[34%]" />
-    <col className="w-[10%]" />
-    <col className="w-[10%]" />
+    <col className="w-[38%]" />
+    <col className="w-[12%]" />
+    <col className="w-[12%]" />
     <col className="w-[26%]" />
-    <col className="w-[11%]" />
-    <col className="w-[9%]" />
+    <col className="w-[12%]" />
   </colgroup>
 );
 
@@ -30,7 +29,8 @@ const COLS = (
 function StopButton({ ref, label }: { ref: string; label: string }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const stop = async () => {
+  const stop = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // the row navigates — the button stops
     if (!window.confirm(`Stop ${label}? Any active session using it will end.`)) return;
     setBusy(true);
     try {
@@ -63,7 +63,6 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
               <TableHead className="text-right">Context</TableHead>
               <TableHead>Capabilities</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -71,12 +70,19 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
               const isRunning = running(r);
               const isSidekick = r.status === "draft" || r.status === "helper";
               return (
-              <TableRow
+              <ClickableRow
                 key={r.ref}
                 className={cn(
                   isRunning && "bg-green-500/5 ring-1 ring-green-500/30 ring-inset shadow-[0_0_16px_-6px_theme(colors.green.500)]",
                   isSidekick && "[&_td]:text-muted-foreground/70 [&_.font-medium]:italic"
                 )}
+                // Row click replaces the old Open/Set up buttons: ready models
+                // open their page, un-setup models go straight to setup.
+                onClick={() =>
+                  r.status === "setup"
+                    ? navigate("setupNew", { modelId: r.ref, tab: r.backend })
+                    : navigate("model", { modelId: r.ref })
+                }
               >
                 <TableCell>
                   <div className="truncate font-medium text-foreground" title={r.title}>{r.title}</div>
@@ -84,41 +90,28 @@ function ModelTable({ rows, running, navigate }: { rows: ModelSummary[]; running
                 <TableCell className="text-right tabular-nums">{r.sizeBytes ? fmtBytes(r.sizeBytes) : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtCtx(r.contextLength)}</TableCell>
                 <TableCell>
-                  {r.status === "draft" || r.status === "helper" ? "—" : <CapabilityBadges caps={r.capabilities} />}
+                  {isSidekick ? "—" : <CapabilityBadges caps={r.capabilities} />}
                 </TableCell>
                 <TableCell>
-                  {isRunning ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
-                      <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
-                      running
-                    </span>
-                  ) : r.status === "ready" ? (
-                    <StatusBadge status="ok">ready</StatusBadge>
-                  ) : r.status === "setup" ? (
-                    <StatusBadge status="needs-setup">needs setup</StatusBadge>
-                  ) : r.status === "draft" ? (
-                    <StatusBadge status="active">draft</StatusBadge>
-                  ) : (
-                    <StatusBadge status="warn">helper</StatusBadge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    {running(r) && (
-                      <StopButton ref={r.ref} label={r.title} />
-                    )}
-                    {r.status === "setup" ? (
-                      <Button size="sm" variant="outline" onClick={() => navigate("setupNew", { modelId: r.ref, tab: r.backend })}>
-                        Set up
-                      </Button>
+                  <div className="flex items-center gap-1.5">
+                    {isRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-600 ring-1 ring-green-500/40 dark:text-green-400">
+                        <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+                        running
+                      </span>
+                    ) : r.status === "ready" ? (
+                      <StatusBadge status="ok">ready</StatusBadge>
+                    ) : r.status === "setup" ? (
+                      <StatusBadge status="needs-setup">needs setup</StatusBadge>
+                    ) : r.status === "draft" ? (
+                      <StatusBadge status="active">draft</StatusBadge>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => navigate("model", { modelId: r.ref })}>
-                        Open
-                      </Button>
+                      <StatusBadge status="warn">helper</StatusBadge>
                     )}
+                    {isRunning && <StopButton ref={r.ref} label={r.title} />}
                   </div>
                 </TableCell>
-              </TableRow>
+              </ClickableRow>
               );
             })}
           </TableBody>
